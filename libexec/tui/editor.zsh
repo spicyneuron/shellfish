@@ -410,8 +410,10 @@ sf_tui_input() {
   if [[ $SF_PRESENT_STATE == permission ]]; then
     case $widget in
       self-insert) sf_tui_permission_choice ;;
-      sf_tui_interrupt|sf_tui_escape) "$widget" "$@" ;;
-      bracketed-paste) zle .bracketed-paste paste ;;
+      sf_tui_interrupt) "$widget" "$@" ;;
+      sf_tui_escape) sf_tui_hold_permission || return; "$widget" "$@" ;;
+      bracketed-paste) sf_tui_hold_permission || return; zle .bracketed-paste paste ;;
+      *) sf_tui_hold_permission || return ;;
     esac
     return 0
   fi
@@ -427,14 +429,25 @@ sf_tui_input() {
   esac
 }
 
+# Choices match the prompt's numbering, which adds a session choice for listed access.
 sf_tui_permission_choice() {
   local decision
-  case $KEYS in
-    (a|1) decision=approve ;;
-    (d|2) decision=deny ;;
-    (s|3) sf_tui_interrupt; return ;;
-    *) zle -R; return 0 ;;
-  esac
+  if [[ $SF_PRESENT_PERMISSION_KIND == listed ]]; then
+    case $KEYS in
+      (a|1) decision=approve ;;
+      (t|2) decision=approve_session ;;
+      (d|3) decision=deny ;;
+      (s|4) sf_tui_interrupt; return ;;
+      *) sf_tui_hold_permission || zle reset-prompt; zle -R; return 0 ;;
+    esac
+  else
+    case $KEYS in
+      (a|1) decision=approve ;;
+      (d|2) decision=deny ;;
+      (s|3) sf_tui_interrupt; return ;;
+      *) sf_tui_hold_permission || zle reset-prompt; zle -R; return 0 ;;
+    esac
+  fi
   sf_tui_answer_permission "$decision" || zle reset-prompt
   zle -R
 }

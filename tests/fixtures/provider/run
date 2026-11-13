@@ -5,7 +5,7 @@ setopt err_exit no_aliases no_multios pipe_fail
 
 typeset request decoded user_text prompt_text text tool_command tool_bypass keyword_mode=false
 typeset tool_mode tool_name tool_input fixture_dir fixture_path old_string new_string
-typeset cleanup_path cleanup_dir temp_root tool_bypass_reason tool_bypass_flag
+typeset cleanup_path cleanup_dir temp_root
 typeset -a parts deltas
 integer keyword_count delay_match think error_count lorem delta_index input_tokens cached_tokens
 integer text_tokens output_tokens reasoning_tokens
@@ -216,8 +216,6 @@ if [[ ${SF_TEST_PROVIDER_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_co
     tool_name=${SF_TEST_PROVIDER_TOOL_NAME:-shell}
     tool_input='{}'
     tool_bypass=${SF_TEST_PROVIDER_TOOL_BYPASS:-false}
-    tool_bypass_reason=${SF_TEST_PROVIDER_TOOL_BYPASS_REASON-Required by the test fixture}
-    tool_bypass_flag=${SF_TEST_PROVIDER_TOOL_BYPASS_FLAG:-true}
     if [[ -n $tool_mode ]]; then
       tool_bypass=${SF_TEST_PROVIDER_TOOL_BYPASS:-true}
       temp_root=${${TMPDIR:-/tmp}%/}
@@ -246,8 +244,8 @@ if [[ ${SF_TEST_PROVIDER_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_co
         ;;
     esac
     if [[ -n $tool_mode && $tool_bypass == true ]]; then
-      tool_input=$(jq -c --arg reason "$tool_bypass_reason" --argjson flag "$tool_bypass_flag" '
-        . + {request_sandbox_bypass:$flag,sandbox_bypass_reason:$reason}
+      tool_input=$(jq -c '
+        . + {request_sandbox_access:{unrestricted:true,reason:"Required by the test fixture"}}
       ' <<<"$tool_input")
     fi
     if [[ ${SF_TEST_PROVIDER_TOOL_CALL:-0} != 1 && -z $tool_mode ]]; then
@@ -266,6 +264,7 @@ if [[ ${SF_TEST_PROVIDER_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_co
       --argjson tool_input "$tool_input" \
       --argjson native "$([[ -n $tool_mode ]] && print true || print false)" \
       --argjson bypass "$tool_bypass" \
+      --argjson extra "${SF_TEST_PROVIDER_TOOL_EXTRA:-{\}}" \
       --argjson count "${SF_TEST_PROVIDER_TOOL_COUNT:-1}" \
       --argjson think "$think" \
       --argjson input "$input_tokens" \
@@ -287,8 +286,8 @@ if [[ ${SF_TEST_PROVIDER_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_co
                "; i++)); do print -r -- \"Test tool $i completed.\"; done"
              else $command end))} +
           (if $call.value == "TOOL" then {
-             request_sandbox_bypass:$bypass_flag,sandbox_bypass_reason:$bypass_reason
-           } else {} end)
+             request_sandbox_access:{unrestricted:true,reason:"Required by the test fixture"}
+           } else {} end) + $extra
         end;
       (if $native then ["tool"] elif $keyword_mode then
         [$prompt | scan("\\b(?:tool|TOOL)\\b")]
@@ -302,7 +301,7 @@ if [[ ${SF_TEST_PROVIDER_TOOL_CALL:-0} == 1 || -n $tool_mode ]] || (( keyword_co
             input:call_input($call)}]),
        usage:({input_tokens:$input,cached_tokens:$cached,output_tokens:$output} +
          (if $reasoning > 0 then {reasoning_tokens:$reasoning} else {} end))}
-    ' --arg bypass_reason "$tool_bypass_reason" --argjson bypass_flag "$tool_bypass_flag"
+    '
   fi
   exit
 fi

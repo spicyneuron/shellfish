@@ -52,11 +52,12 @@ def preview: .user_preview_lines // "default" | tostring;
 
 # Context and notice select presentation styling.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
-# The core marks sandbox bypass requests so that no template can hide them.
-# The client draws the badge; an empty template still shows the tool name.
+# The core marks sandbox requests so that no template can hide them. The
+# client draws the badge; an empty template still shows the tool name.
 def result_text:
-  if has("sandbox_bypass") then .user_text // .name else .user_text // "" end;
-def bypass: .sandbox_bypass // "";
+  if has("sandbox_access") then .user_text // .name else .user_text // "" end;
+def badge:
+  if .sandbox_access == "session" then "approved for session" else .sandbox_access // "" end;
 # A hook's deny is policy, not failure; commands deny every prompt they handle.
 def failed: if .exit_code != 0 then "1" else "" end;
 
@@ -109,7 +110,7 @@ def record_actions($mode; $window; $drawn):
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
   elif .type == "tool_result" then
-    [["execution_end", .id, "tool", result_text, preview, "", bypass, failed]]
+    [["execution_end", .id, "tool", result_text, preview, "", badge, failed]]
   elif .type == "hook_result" then
     [["execution_end", .id, hook_class, result_text, preview,
       ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]
@@ -128,14 +129,23 @@ def event_actions($window; $drawn):
   # A tool draft names its tool.
   elif .type == "_draft" then
     [["execution_update", .id, (if has("name") then "tool" else "notice" end), result_text,
-      preview, bypass]]
-  # The preview is deliberately truncated. Deny when it is not enough to decide;
-  # review hooks receive the full input.
+      preview, badge]]
+  # Bound operation and access separately so neither hides the other.
   elif .type == "_tool_permission_request" then
-    (.tool.input | tojson) as $preview |
+    (.access.unrestricted // false) as $bypass |
+    (.tool.input | del(.request_sandbox_access) | tojson |
+      if length > 300 then .[0:300] + "…" else . end) as $operation |
+    (if $bypass then "Unrestricted (this call only)"
+     else [.access | to_entries[] | .key as $kind | .value[] | $kind + " " + .] |
+       join("\n") | if length > 300 then .[0:300] + "…" else . end
+     end) as $preview |
     [["permission", .id, .tool.name,
-      (if ($preview | length) > 300 then $preview[0:300] + "…" else $preview end),
-      (.reason // ""), (.timeout | tostring)]]
+      ("Operation:\n" + $operation + "\nAccess:\n" + $preview),
+      (.reason // ""), (.timeout | tostring), (if $bypass then "bypass" else "listed" end)] +
+      if .reviewing then ["checking"] else [] end]
+  elif .type == "_tool_permission_review" then
+    [["permission_review", .id, .decision, .reason, (.timeout | tostring)]]
+  elif .type == "_tool_permission_end" then [["permission_end", .id]]
   elif .type == "_handoff" then [["handoff"] + .argv]
   elif .type == "_session_update" then model_actions
   elif .type == "_session_load" then [["session", .path]]

@@ -250,8 +250,8 @@ def test_permission_decision_restores_draft():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["exit_code"] == 126
-        assert results[0]["model_text"] == "sandbox bypass denied by user"
-        assert results[0]["sandbox_bypass"] == "denied"
+        assert results[0]["model_text"] == "sandbox access denied by user"
+        assert results[0]["sandbox_access"] == "denied"
         users = [record for record in records if record.get("type") == "user"]
         assert len(users) == 1
         assert users[0]["content"] == [{"type": "text", "text": prompt}]
@@ -259,6 +259,96 @@ def test_permission_decision_restores_draft():
     finally:
         release.touch()
         session.close()
+
+
+def test_permission_review_runs_with_prompt():
+    for pending in (True, False):
+        review = r'''#!/usr/bin/env zsh
+cat >/dev/null
+print -r -- $$ >"$SHELLFISH_SESSION.review-pid"
+sleep "${REVIEW_DELAY:-0}"
+print -r -u2 -- reviewed
+print -r -u3 -- '{"action":"allow","reason":"ok"}'
+'''
+        session = Session(
+            explicit_session=True,
+            hooks={"review": review},
+            env={
+                "SF_TEST_PROVIDER_TOOL_CALL": "1",
+                "SF_TEST_PROVIDER_TOOL_BYPASS": "true",
+                "REVIEW_DELAY": "30" if pending else "0",
+            },
+        )
+        try:
+            manifest = session.shellfish_dir / "hooks/review/manifest.json"
+            manifest.write_text(json.dumps({
+                "on": "permission_request", "user_text": "${output.stderr}",
+            }))
+            mark = len(session.output)
+            session.send(b"review access\r")
+            session.wait_after(mark, "Allow shell outside of sandbox?")
+            if pending:
+                session.wait_after(mark, "Reviewer: checking")
+                pid_file = Path(str(session.explicit_session) + ".review-pid")
+                deadline = time.monotonic() + 3
+                while not pid_file.exists() and time.monotonic() < deadline:
+                    session.pump()
+                assert pid_file.exists(), "review did not start while the prompt was open"
+                session.send(b"a")
+            else:
+                session.wait_after(mark, "Reviewer: approve: ok")
+                session.wait_after(mark, "applying in")
+                takeover = len(session.output)
+                session.send(b"x")
+                session.wait_after(takeover, "waiting for your decision")
+                session.send(b"d")
+            session.wait_after(mark, "Tool complete.")
+            _, records = session.wait_session_records(5, path=session.explicit_session)
+            results = [r for r in records if r.get("type") == "tool_result"]
+            assert len(results) == 1
+            assert results[0]["sandbox_access"] == ("approved" if pending else "denied")
+            if pending:
+                try:
+                    os.kill(int(pid_file.read_text()), 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    raise AssertionError("reviewer survived the user's answer")
+        finally:
+            session.close()
+
+
+def test_permission_grant_for_session():
+    granted = tempfile.mkdtemp()
+    grant = {"request_sandbox_access": {"read": [granted], "reason": "read the fixture"}}
+    session = Session(
+        explicit_session=True,
+        env={
+            "SF_TEST_PROVIDER_TOOL_CALL": "1",
+            "SF_TEST_PROVIDER_TOOL_EXTRA": json.dumps(grant),
+        },
+    )
+    try:
+        mark = len(session.output)
+        session.send(b"grant access\r")
+        session.wait_after(mark, "Grant shell this sandbox access?")
+        session.wait_after(mark, 'Operation:')
+        session.wait_after(mark, '"command":')
+        session.wait_after(mark, 'Access:')
+        session.wait_after(mark, "read " + granted)
+        session.wait_after(mark, "2. approve for [t]his session")
+        session.send(b"t")
+        _, records = session.wait_session_records(5, path=session.explicit_session)
+        session.wait_after(mark, "[sandbox access approved for session]")
+        results = [record for record in records if record.get("type") == "tool_result"]
+        assert len(results) == 1
+        assert results[0]["sandbox_access"] == "session"
+        assert records[0]["profile"]["sandbox"]["tools"]["shell"]["read"] == [
+            str(Path(granted).resolve())
+        ]
+    finally:
+        session.close()
+        os.rmdir(granted)
 
 
 def test_permission_stop_cancels_pending_tools():
@@ -287,7 +377,7 @@ def test_permission_stop_cancels_pending_tools():
                 ("call_2", 126),
                 ("call_3", 126),
             ]
-            assert [record.get("sandbox_bypass") for record in results] == [
+            assert [record.get("sandbox_access") for record in results] == [
                 "cancelled",
                 None,
                 None,
@@ -411,6 +501,8 @@ if __name__ == "__main__":
         test_activity_input_does_not_delay_interrupt,
         test_interrupt_drains_partial_recovery,
         test_permission_decision_restores_draft,
+        test_permission_review_runs_with_prompt,
+        test_permission_grant_for_session,
         test_permission_stop_cancels_pending_tools,
         test_chat_end,
         test_zle_multiline_editing,

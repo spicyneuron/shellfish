@@ -75,12 +75,13 @@ def result_fields($required):
   (if has("model_text") then .model_text | type == "string" and length > 0 else true end) and
   ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint));
 
-# A settled sandbox bypass request records whether it was approved. Model
-# content replaces model text.
+# A settled sandbox access request records whether it was approved, and
+# whether for the session. Model content replaces model text.
 def canonical_tool_result:
-  (del(.sandbox_bypass, .model_content) |
+  (del(.sandbox_access, .model_content) |
     result_fields(["exit_code", "id", "input", "name"])) and
-  ((has("sandbox_bypass") | not) or (.sandbox_bypass | IN("approved", "denied", "cancelled"))) and
+  ((has("sandbox_access") | not) or
+    (.sandbox_access | IN("approved", "session", "denied", "cancelled"))) and
   ((has("model_content") | not) or ((has("model_text") | not) and
     (.model_content | type == "array" and length > 0 and
       all(.[]; canonical_content_part)))) and

@@ -42,6 +42,23 @@ child=${$(<"$stdout")##*|}
 [[ -z $(find "$capture" -mindepth 1 ! -name stdout ! -name stderr -print -quit) ]] ||
   fail 'runner left internal files in the capture directory'
 
+# A polling callback can cancel a command that emits no control lines.
+typeset cancelled_capture="$tmp/cancelled-capture" cancel_pid="$tmp/cancel-pid"
+mkdir "$cancelled_capture"
+cat >"$tmp/cancel-command" <<'ZSH'
+#!/usr/bin/env zsh
+print -r -- $$ >"$1"
+sleep 30
+ZSH
+chmod +x "$tmp/cancel-command"
+cancel_ready() { [[ ! -s $cancel_pid ]]; }
+sf_process_run --poll cancel_ready "$cancelled_capture" "$tmp" "$input_file" 512 512 collect \
+  "$tmp/cancel-command" "$cancel_pid" || fail 'cooperative cancellation failed'
+result=( "${reply[@]}" )
+assert_equal 1 "$result[cancelled]"
+child=$(<"$cancel_pid")
+! kill -0 "$child" 2>/dev/null || fail 'cooperative cancellation left its child alive'
+
 # Lines arrive while the command runs, even when split across writes.
 typeset stream="$tmp/stream" stream_capture="$tmp/stream-capture" seen="$tmp/seen"
 cat >"$stream" <<'ZSH'

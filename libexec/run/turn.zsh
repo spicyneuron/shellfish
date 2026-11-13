@@ -1,5 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
+zmodload zsh/datetime
 
 source "$SF_ROOT/lib/session.zsh"
 source "$SF_ROOT/lib/profile.zsh"
@@ -133,35 +134,165 @@ sf_run_interrupt() {
   [[ -z $SF_PROVIDER[pid] ]] || sf_process_stop "$SF_PROVIDER[pid]" "$SF_PROVIDER[group_file]"
 }
 
-# Ask the client, into reply as (DECISION REASON). Without a client or a timely
-# answer, the request is denied. Answers to earlier, expired requests are skipped.
-sf_run_permission_client() {
-  local name=$1 input=$2 reason=$3 response id
-  integer deadline=$(( SECONDS + SF_RUN[user_approval_timeout] )) wait
-  (( SF_RUN[jsonl] )) || { reply=( deny 'no client to approve sandbox bypass' ); return 0; }
-  (( SF_RUN[permission_count] += 1 ))
-  id="permission_$SF_RUN[permission_count]"
-  sf_run_emit "$(jq -cn --arg id "$id" --arg name "$name" --argjson input "$input" \
-    --arg reason "$reason" --argjson timeout "$SF_RUN[user_approval_timeout]" '
-      {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},
-       reason:$reason,timeout:$timeout}')" || return 2
-  reply=( deny 'sandbox bypass approval timed out' )
-  while (( (wait = deadline - SECONDS) > 0 )); do
-    IFS= read -r -t $wait response || {
-      (( SECONDS >= deadline )) || reply=( deny 'no client to approve sandbox bypass' )
-      return 0
-    }
-    REPLY=$(jq -r --arg id "$id" '
+# Poll client input before applying any reviewer verdict or deadline. These
+# locals belong to sf_run_permission; process polling keeps the same owner.
+sf_run_permission_poll() {
+  local response choice
+  (( ! SF_RUN[write_failed] )) || { permission_error='session writing has stopped'; return 1; }
+  while (( ! permission_closed )) && zselect -r 0 -t 0 >/dev/null 2>&1; do
+    if ! IFS= read -r response; then permission_closed=1; break; fi
+    choice=$(jq -r --arg id "$permission_id" --argjson access "$SF_TOOL_PLAN[access]" '
       if type == "object" and .type == "_tool_permission_response" and
-        (.id | type == "string") and (.decision == "approve" or .decision == "deny")
-      then if .id == $id then .decision else "" end
+        (.id | type == "string") and (.decision | IN("approve", "approve_session", "deny", "hold"))
+      then if .id != $id then ""
+        elif .decision == "approve_session" and ($access.unrestricted // false) then error
+        else .decision end
       else error end
-    ' <<<"$response" 2>/dev/null) || { REPLY='invalid permission response'; return 2; }
-    case $REPLY in
-      (approve) reply=( approve '' ); return 0 ;;
-      (deny) reply=( deny 'sandbox bypass denied by user' ); return 0 ;;
+    ' <<<"$response" 2>/dev/null) || { permission_error='invalid permission response'; return 1; }
+    case $choice in
+      (hold) permission_hold=1 ;;
+      (approve|approve_session|deny)
+        permission_decision=$choice
+        [[ $choice != deny ]] || permission_reason='sandbox access denied by user'
+        return 1 ;;
     esac
   done
+  (( ! SF_RUN[signal_status] )) || { permission_error='permission request interrupted'; return 1; }
+  if [[ -n $permission_auto ]] && (( ! permission_hold &&
+      (permission_closed || EPOCHREALTIME >= permission_auto_deadline) )); then
+    permission_decision=$permission_auto
+    permission_reason=$permission_auto_reason
+    return 1
+  fi
+  if (( EPOCHREALTIME >= permission_deadline )); then
+    permission_decision=deny permission_reason='sandbox access approval timed out'
+    return 1
+  fi
+  return 0
+}
+
+# The prompt and hooks run together. An explicit client decision cancels an
+# active hook; an untouched reviewer verdict applies ten seconds after arrival.
+sf_run_permission() {
+  local session=$1 turn_state=$2 permission_id='' permission_decision=''
+  local permission_reason='' permission_error='' permission_auto='' permission_auto_reason=''
+  float permission_deadline=0 permission_auto_deadline=0
+  (( permission_deadline = EPOCHREALTIME + SF_RUN[user_approval_timeout] ))
+  integer permission_closed=$(( ! SF_RUN[jsonl] )) permission_hold=0 reviewing=0
+  local -A review
+  (( SF_RUN[permission_count] += 1 ))
+  permission_id="permission_$SF_RUN[permission_count]"
+  [[ " $SF_RUN[lifecycles] " != *' permission_request '* ]] || reviewing=1
+  sf_run_emit "$(jq -cn --arg id "$permission_id" --arg name "$SF_TOOL_PLAN[name]" \
+    --argjson input "$SF_TOOL_PLAN[input]" --arg reason "$SF_TOOL_PLAN[permission_reason]" \
+    --argjson access "$SF_TOOL_PLAN[access]" --argjson reviewing $reviewing \
+    --argjson timeout "$SF_RUN[user_approval_timeout]" '
+      {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},
+       access:$access,reason:$reason,timeout:$timeout,reviewing:($reviewing == 1)}')" || return 1
+  {
+    if sf_run_permission_poll; then
+      if sf_run_hooks --poll sf_run_permission_poll "$session" permission_request \
+          "$SF_TOOL_PLAN[request]" "$turn_state" "$SF_TOOL_PLAN[name]" "$SF_TOOL_PLAN[id]"; then
+        review=( "${reply[@]}" )
+      elif [[ -z $permission_decision && -z $permission_error ]]; then
+        (( ! SF_RUN[signal_status] && ! SF_RUN[write_failed] )) || permission_error=$SF_RUN_HOOK_ERROR
+        review=( action '' reason 'Review failed; waiting for your decision.' )
+      fi
+      if [[ -z $permission_decision && -z $permission_error ]]; then
+        permission_auto=$review[action]
+        [[ $permission_auto != allow ]] || permission_auto=approve
+        permission_auto_reason=$review[reason]
+        [[ -z $permission_auto || $permission_auto != deny || -n $permission_auto_reason ]] ||
+          permission_auto_reason='sandbox access denied by permission_request hook'
+        (( permission_auto_deadline = EPOCHREALTIME + 10 ))
+        [[ -z $permission_auto ]] || (( permission_deadline =
+          permission_deadline > permission_auto_deadline ? permission_deadline : permission_auto_deadline ))
+        sf_run_permission_poll || true
+        if (( reviewing )) && [[ -z $permission_decision && -z $permission_error ]]; then
+          sf_run_emit "$(jq -cn --arg id "$permission_id" --arg decision "$permission_auto" \
+            --arg reason "$permission_auto_reason" --argjson held $permission_hold '
+              {type:"_tool_permission_review",id:$id,decision:$decision,reason:$reason,
+               timeout:(if $decision == "" or $held == 1 then 0 else 10 end)}')" ||
+            permission_error='cannot emit permission review'
+        fi
+      fi
+    fi
+    while [[ -z $permission_decision && -z $permission_error ]]; do
+      sf_run_permission_poll || break
+      if (( permission_closed )); then
+        permission_decision=deny permission_reason='no client to approve sandbox access'
+        break
+      fi
+      zselect -t 10 2>/dev/null || true
+    done
+  } always {
+    sf_run_emit "$(jq -cn --arg id "$permission_id" '{type:"_tool_permission_end",id:$id}')" ||
+      permission_error='cannot end permission request'
+  }
+  [[ -z $permission_error ]] || { REPLY=$permission_error; return 1; }
+  reply=( "$permission_decision" "$permission_reason" )
+}
+
+# Resolve requested paths before review and ask only for access not already
+# granted to this tool. Unrestricted execution always needs a fresh decision.
+sf_run_access_prepare() {
+  [[ $SF_TOOL_PLAN[sandbox] == true ]] || return 0
+  local access=$SF_TOOL_PLAN[access] kind entry
+  local -a paths
+  for kind in read write; do
+    paths=()
+    for entry in ${(f)"$(jq -r --arg kind $kind '.[$kind][]' <<<"$access")"}; do
+      case $entry in
+        ('~') entry=$HOME ;;
+        ('~/'*) entry=$HOME/${entry#\~/} ;;
+        (/*) ;;
+        (*) entry=$SF_RUN[cwd]/$entry ;;
+      esac
+      paths+=( ${entry:A} )
+    done
+    access=$(jq -c --arg kind $kind '.[$kind] = $ARGS.positional' \
+      --args "${paths[@]}" <<<"$access") || { REPLY='cannot resolve sandbox access'; return 1; }
+  done
+  SF_TOOL_PLAN[access]=$(jq -c --argjson profile "$SF_RUN[profile]" \
+      --arg name "$SF_TOOL_PLAN[name]" '
+    def covered($paths):
+      . as $target | any($paths[]; . as $grant |
+        . == $target or ($target | startswith(($grant | rtrimstr("/")) + "/")));
+    ($profile.sandbox.tools[$name] // {read:[],write:[],domains:[]}) as $grants |
+    .read |= map(select(covered($grants.read + $grants.write) | not)) |
+    .write |= map(select(covered($grants.write) | not)) |
+    .domains |= map(. as $target | select(any($grants.domains[]; . as $grant |
+      . == $target or (startswith("*.") and ($target | endswith($grant[1:])))) | not))
+  ' <<<"$access") || { REPLY='cannot inspect sandbox access'; return 1; }
+  if jq -e 'all(.[]; length == 0)' <<<"$SF_TOOL_PLAN[access]" >/dev/null; then
+    SF_TOOL_PLAN[decision]=session
+    SF_TOOL_PLAN[component]=$(jq -c '.draft.sandbox_access = "session"' \
+      <<<"$SF_TOOL_PLAN[component]") || { REPLY='cannot prepare sandbox access'; return 1; }
+  fi
+}
+
+# Extend this call and optionally keep its approved access in the session.
+sf_run_access_grant() {
+  local session=$1 keep=$2 access=$SF_TOOL_PLAN[access] kind config entries
+  for kind in read write; do
+    entries=$(jq -r --arg kind "$kind" '.[$kind] | join("\n")' <<<"$access") ||
+      { REPLY='cannot resolve sandbox access'; return 1; }
+    [[ -z $entries ]] ||
+      SF_TOOL_PLAN[${kind}_paths]+=${SF_TOOL_PLAN[${kind}_paths]:+$'\n'}$entries
+  done
+  SF_TOOL_PLAN[domains]=$(jq -c --argjson access "$access" '. + ($access.domains - .)' \
+    <<<"$SF_TOOL_PLAN[domains]") || { REPLY='cannot resolve sandbox access'; return 1; }
+  [[ $keep == true ]] || return 0
+  config=$(jq -c --arg name "$SF_TOOL_PLAN[name]" --argjson access "$access" \
+      --argjson model "$SF_RUN[model]" '
+    .sandbox.tools[$name] //= {read:[], write:[], domains:[]} |
+    .sandbox.tools[$name] |= with_entries(.value += ($access[.key] - .value)) |
+    {profile:., model:$model}
+  ' <<<"$SF_RUN[profile]") || { REPLY='cannot keep sandbox access'; return 1; }
+  sf_session_update "$session" "$config" || { REPLY=$SF_SESSION_ERROR; return 1; }
+  SF_RUN[profile]=$(jq -c .profile <<<"$config")
+  sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" ||
+    { REPLY='cannot emit session update'; return 1; }
 }
 
 # A signal status, or a failure message for anything else.
@@ -176,7 +307,7 @@ sf_run_status() {
 
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 config context_command
-  local id name decision outcome message failure='' turn_state
+  local id name decision outcome message failure='' turn_state keep
   local -A hook_result completed
   integer begun=0 run_status catalog_ready=${4:-0}
 
@@ -276,33 +407,37 @@ sf_run_turn() {
               sf_run_tool_refused "tool is not allowed: $name" 127
               outcome=$REPLY
             else
+              if [[ $decision == request ]]; then
+                sf_run_access_prepare || { failure=$REPLY; break; }
+                decision=$SF_TOOL_PLAN[decision]
+              fi
               if [[ $decision == deny ]]; then
                 sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
                 outcome=$REPLY
               elif [[ $decision == request ]]; then
                 sf_run_component_draft "$SF_TOOL_PLAN[component]" ||
                   { failure='cannot emit tool draft'; break; }
-                sf_run_hooks "$session" permission_request "$SF_TOOL_PLAN[request]" \
-                  "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
-                hook_result=( "${reply[@]}" )
-                decision=$hook_result[action]
-                if [[ -z $decision ]]; then
-                  sf_run_permission_client "$name" "$SF_TOOL_PLAN[input]" \
-                    "$SF_TOOL_PLAN[permission_reason]" || { failure=$REPLY; break; }
-                  decision=$reply[1]
-                  hook_result[reason]=$reply[2]
-                fi
+                sf_run_permission "$session" "$turn_state" || { failure=$REPLY; break; }
+                decision=$reply[1]
+                hook_result[reason]=$reply[2]
                 if [[ $decision == deny ]]; then
                   sf_run_tool_refused \
-                    "${hook_result[reason]:-sandbox bypass denied by permission_request hook}" 126
+                    "${hook_result[reason]:-sandbox access denied by permission_request hook}" 126
                   outcome=$REPLY
                   decision=denied
-                else
+                # A requested bypass leaves the call unsandboxed and is never kept.
+                elif [[ $SF_TOOL_PLAN[sandbox] == false ]]; then
                   decision=approved
+                else
+                  keep=false
+                  [[ $decision != approve_session ]] || keep=true
+                  sf_run_access_grant "$session" $keep || { failure=$REPLY; break; }
+                  decision=approved
+                  [[ $keep == false ]] || decision=session
                 fi
-                SF_TOOL_PLAN[component]=$(jq -c --arg bypass "$decision" \
-                  '.draft.sandbox_bypass = $bypass' <<<"$SF_TOOL_PLAN[component]") ||
-                  { failure='cannot settle sandbox bypass request'; break; }
+                SF_TOOL_PLAN[component]=$(jq -c --arg decision "$decision" \
+                  '.draft.sandbox_access = $decision' <<<"$SF_TOOL_PLAN[component]") ||
+                  { failure='cannot settle sandbox access request'; break; }
               fi
               if [[ -z $outcome && $SF_TOOL_PLAN[sandbox] == true && -z ${commands[fence]-} ]]; then
                 sf_run_tool_refused 'sandboxing requires fence' 126
@@ -312,6 +447,10 @@ sf_run_turn() {
                 sf_run_tool_execute "$session" ||
                   { sf_run_status $? "${SF_RUN_TOOL_ERROR:-cannot execute tool}"; break; }
                 outcome=$REPLY
+                if [[ $decision == session ]]; then
+                  outcome=$(jq -c '.output.stdout += "\n<sandbox_notice>This access is granted for the rest of this session. Later calls of this tool have it without asking. Omit request_sandbox_access for it.</sandbox_notice>"' <<<"$outcome") ||
+                    { failure='cannot decode tool result'; break; }
+                fi
               fi
             fi
           fi

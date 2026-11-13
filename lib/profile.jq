@@ -80,10 +80,8 @@ def tool_manifest:
     ((.properties // {}) | type == "object") and
     ((.required // []) | type == "array" and all(.[]; type == "string") and
       length == (unique | length)) and
-    ((.properties // {}) |
-      has("request_sandbox_bypass") or has("sandbox_bypass_reason") | not) and
-    ((.required // []) |
-      index("request_sandbox_bypass") == null and index("sandbox_bypass_reason") == null)) and
+    ((.properties // {}) | has("request_sandbox_access") | not) and
+    ((.required // []) | index("request_sandbox_access") == null)) and
   ((.environment // []) | type == "array" and length == (unique | length) and
     all(.[]; type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$"))) and
   (.sandbox | type == "boolean") and
@@ -125,7 +123,7 @@ def config_model($path):
     $path + ["request"]; "must be an object");
 
 # Sandbox settings enable or disable sandboxing, grant extra paths, and limit
-# how long a bypass waits for the user.
+# how long an access request waits for the user.
 def config_sandbox($path):
   config_object($path; ["enabled", "tools", "user_approval_timeout"]) |
   config_assert((has("enabled") | not) or (.enabled | type == "boolean");

@@ -86,7 +86,7 @@ sf_test_session "$opted_out_session"
 SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run opted-out "$opted_out_session" >"$opted_out_stream" ||
   fail 'opted-out tool turn failed'
 jq -eRn '[inputs | fromjson] as $events |
-  all($events[]; has("sandbox_bypass") | not) and
+  all($events[]; has("sandbox_access") | not) and
   ($events | any(.type == "tool_result" and .exit_code == 0)) and
   ($events | any(.type == "_tool_permission_request") | not)
 ' <"$opted_out_stream" >/dev/null || fail 'opted-out tool was treated as a bypass'
@@ -202,28 +202,27 @@ SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   SF_TEST_PROVIDER_REQUEST="$tmp/bypass-request.json" \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook allow failed'
 jq -e '.tools[] | select(.name == "shell").input_schema |
-  .properties.request_sandbox_bypass.type == "boolean" and
-  .properties.sandbox_bypass_reason.type == "string" and
-  (.required | index("request_sandbox_bypass") == null and
-    index("sandbox_bypass_reason") == null)' \
-  "$tmp/bypass-request.json" >/dev/null || fail 'model schema lacks the bypass fields'
+  .properties.request_sandbox_access.type == "object" and
+  .properties.request_sandbox_access.properties.unrestricted.type == "boolean" and
+  (.required | index("request_sandbox_access") == null)' \
+  "$tmp/bypass-request.json" >/dev/null || fail 'model schema lacks the access field'
 jq -e '. == {turn_id:1,tool_name:"shell",tool_use_id:"call_1",tool_input:{
-  command:"print -rn -- approved",request_sandbox_bypass:true,
-  sandbox_bypass_reason:"Required by the test fixture"}}' \
+  command:"print -rn -- approved",request_sandbox_access:{unrestricted:true,
+  reason:"Required by the test fixture"}}}' \
   "$permission_input" >/dev/null || fail 'permission hook received the wrong request'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ($events | any(.type == "_tool_permission_request") | not) and
+  ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   [$events[] | select(.type | IN("state_update","hook_result","tool_result")) | .type] ==
     ["state_update","hook_result","tool_result"] and
   ($events | map(select(.type == "hook_result"))[0] |
     .lifecycle == "permission_request" and
     .model_text == "<context script=\"permission\">\nreview context\n</context>" and .user_text == "review display") and
-  ([$events[] | select(.type | IN("hook_result","_draft")) | [.type, .sandbox_bypass]] ==
+  ([$events[] | select(.type | IN("hook_result","_draft")) | [.type, .sandbox_access]] ==
     [["_draft","requested"],["hook_result",null],["_draft","approved"]]) and
   ($events | map(select(.type == "_draft"))[1].user_text == "**Shell** print -rn -- approved\n") and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .sandbox_bypass == "approved" and
+    .exit_code == 0 and .sandbox_access == "approved" and
     .user_text == "**Shell** print -rn -- approved\napproved\nexit 0")
 ' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
 
@@ -245,13 +244,13 @@ for gate in sandbox-disabled unsupported no-reason reason-only blank-unrequested
   session="$tmp/permission-$gate.jsonl"
   sf_test_session "$session"
   gate_status=0
-  SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
-    SF_TEST_PROVIDER_TOOL_BYPASS_REASON=$reason SF_TEST_PROVIDER_TOOL_BYPASS_FLAG=$flag \
+  SF_TEST_PROVIDER_TOOL_CALL=1 \
+    SF_TEST_PROVIDER_TOOL_EXTRA="$(jq -cn --arg reason "$reason" --argjson flag "$flag" '{request_sandbox_access:{unrestricted:$flag,reason:$reason}}')" \
     SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- unreviewed' \
     sf_test_run permission "$session" >"$stream" 2>"$tmp/gate.err" || gate_status=$?
   [[ ! -e $permission_input ]] || fail "permission hook ran for $gate"
   jq -eRn 'all(inputs | fromjson; .type != "_tool_permission_request" and
-    (has("sandbox_bypass") | not) and
+    (has("sandbox_access") | not) and
     (.type != "hook_result" or .lifecycle != "permission_request"))' <"$stream" >/dev/null ||
     fail "permission was requested for $gate"
   case $gate in
@@ -268,12 +267,12 @@ for gate in sandbox-disabled unsupported no-reason reason-only blank-unrequested
     no-reason)
       (( gate_status == 0 )) || fail 'bypass without a reason failed the turn'
       jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
-        [[126,"request_sandbox_bypass requires a sandbox_bypass_reason"]]' "$session" >/dev/null ||
+        [[126,"request_sandbox_access requires a reason"]]' "$session" >/dev/null ||
         fail 'missing bypass reason was not refused' ;;
     reason-only)
       (( gate_status == 0 )) || fail 'bypass reason without a request failed the turn'
       jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
-        [[126,"sandbox_bypass_reason requires request_sandbox_bypass: true. Omit it to run in the sandbox."]]' \
+        [[0,"unreviewed\nexit 0"]]' \
         "$session" >/dev/null || fail 'bypass reason without a request was not refused' ;;
     blank-unrequested)
       (( gate_status == 0 )) || fail 'unrequested bypass with a blank reason failed the turn'
@@ -297,15 +296,15 @@ SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook deny failed'
 jq -eRn '
   [inputs | fromjson] as $events |
-  ([$events[] | select(.type == "_draft") | .sandbox_bypass] == ["requested"]) and
+  ([$events[] | select(.type == "_draft") | .sandbox_access] == ["requested"]) and
   ($events | map(select(.type == "hook_result"))[0] ==
     {type:"hook_result",lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 126 and .model_text == "review denied" and .sandbox_bypass == "denied" and
+    .exit_code == 126 and .model_text == "review denied" and .sandbox_access == "denied" and
     .user_text == "**Shell** true\nreview denied")
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
-# If every hook defers, approval falls back to the client.
+# The client may answer before the review hooks finish.
 typeset defer_one="$tmp/defer-one" defer_two="$tmp/defer-two"
 sf_test_hook "$defer_one" '{"user_text":"reviewed"}' <<'ZSH'
 #!/usr/bin/env zsh
@@ -330,13 +329,29 @@ jq -eRn '
   ($events | map(select(.type == "_tool_permission_request")) | length) == 1 and
   ($events | map(select(.type == "_tool_permission_request"))[0] |
     .timeout == 120 and .tool.input.command == "print -rn -- approved") and
-  ($events | map(select(.type == "hook_result")) | any(.user_text == "reviewed")) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .sandbox_bypass == "approved")
+    .exit_code == 0 and .sandbox_access == "approved")
 ' <"$stream" >/dev/null || fail 'client permission was not requested explicitly'
 jq -e -s 'all(.[]; .type != "_tool_permission_request" and
   .type != "_tool_permission_response")' "$session" >/dev/null ||
   fail 'permission exchange became durable'
+
+# A client cannot approve unrestricted access for the session.
+session="$tmp/permission-unrestricted-session.jsonl"
+sf_test_session "$session"
+rm -f "$tool_marker"
+if SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
+    SF_TEST_PROVIDER_TOOL_COMMAND="print -r -- ran >${(q)tool_marker}" \
+    sf_test_run permission "$session" \
+      '{"type":"_tool_permission_response","id":"permission_1","decision":"approve_session"}' \
+      >"$stream" 2>"$tmp/invalid-approval.err"; then
+  fail 'unrestricted session approval was accepted'
+fi
+[[ ! -e $tool_marker ]] || fail 'unrestricted session approval executed the tool'
+grep -q 'invalid permission response' "$tmp/invalid-approval.err" ||
+  fail 'unrestricted session approval did not fail closed'
+head -1 "$session" | jq -e '.profile.sandbox.tools == {}' >/dev/null ||
+  fail 'unrestricted session approval changed the session grants'
 
 # Without an answer, the client request is denied and the turn continues.
 session="$tmp/permission-no-client.jsonl"
@@ -344,8 +359,8 @@ sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'closed client failed the turn'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
-  .exit_code == 126 and .model_text == "no client to approve sandbox bypass" and
-  .sandbox_bypass == "denied"' \
+  .exit_code == 126 and .model_text == "no client to approve sandbox access" and
+  .sandbox_access == "denied"' \
   "$session" >/dev/null || fail 'closed client did not deny the request'
 
 session="$tmp/permission-timeout.jsonl"
@@ -353,7 +368,7 @@ SF_TEST_PROFILE=$(jq -c '.sandbox.user_approval_timeout=1' <<<"$SF_TEST_PROFILE"
   sf_test_session "$session"
 {
   jq -cn '{type:"user",content:[{type:"text",text:"permission"}]}'
-  print -r -- '{"type":"_tool_permission_response","id":"permission_0","decision":"approve"}'
+  print -r -- '{"type":"_tool_permission_response","id":"permission_0","decision":"approve_session"}'
   sleep 3
 } | SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" ||
@@ -361,8 +376,8 @@ SF_TEST_PROFILE=$(jq -c '.sandbox.user_approval_timeout=1' <<<"$SF_TEST_PROFILE"
 jq -e -s 'map(select(.type == "_tool_permission_request"))[0].timeout == 1' \
   "$stream" >/dev/null || fail 'permission request omitted the configured timeout'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
-  .exit_code == 126 and .model_text == "sandbox bypass approval timed out" and
-  .sandbox_bypass == "denied"' \
+  .exit_code == 126 and .model_text == "sandbox access approval timed out" and
+  .sandbox_access == "denied"' \
   "$session" >/dev/null || fail 'stale answer or timeout did not deny the request'
 
 # A failing pre hook settles every pending call before the error.
@@ -564,6 +579,171 @@ jq -eRn '
 ' <"$stream" >/dev/null || fail 'a succeeding tool was annotated'
 jq -e 'has("extends") | not' "$tmp/fence-policy.json" >/dev/null ||
   fail 'a tool without domain grants received a temporary policy'
+
+# An approved grant request runs the call sandboxed with the extra access.
+typeset granted="$tmp/granted" grant_input
+mkdir "$granted"
+grant_input=$(jq -cn --arg dir "$granted" '{request_sandbox_access:{
+  write:[$dir],domains:["Grant.Example.com"],reason:"Write the fixture output"}}')
+session="$tmp/grant-once.jsonl"
+sf_test_session "$session"
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
+  SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- granted' \
+  SF_TEST_PROVIDER_REQUEST="$tmp/grant-request.json" \
+  sf_test_run grant "$session" \
+    '{"type":"_tool_permission_response","id":"permission_1","decision":"approve"}' \
+    >"$stream" || fail 'grant approval turn failed'
+jq -e '.tools[] | select(.name == "shell").input_schema.properties.request_sandbox_access |
+  .type == "object" and (.required // []) == []' "$tmp/grant-request.json" >/dev/null ||
+  fail 'model schema lacks the grant field'
+jq -eRn --arg dir "$granted" '
+  [inputs | fromjson] as $events |
+  ($events | map(select(.type == "_tool_permission_request"))[0].access ==
+    {read:[],write:[$dir],domains:["grant.example.com"]}) and
+  ([$events[] | select(.type == "_draft") | .sandbox_access] == ["requested","approved"]) and
+  ($events | map(select(.type == "tool_result"))[0] |
+    .exit_code == 0 and .model_text == "granted\nexit 0" and .sandbox_access == "approved") and
+  ($events | any(.type == "_session_update") | not)
+' <"$stream" >/dev/null || fail 'grant approval produced the wrong records'
+jq -eRn --arg dir "$granted" '[inputs] as $args |
+  any(range(0; $args | length); $args[.] == "--expose-host-path-rw" and $args[. + 1] == $dir)
+' <"$fence_arguments" >/dev/null || fail 'grant did not reach the sandbox'
+# Linux enforcement needs path grants in the policy, not only exposed.
+jq -e --arg dir "$granted" '.network.allowedDomains == ["grant.example.com"] and
+  .filesystem == {allowRead:[$dir],allowWrite:[$dir]}' "$tmp/fence-policy.json" >/dev/null ||
+  fail 'grant did not reach the sandbox policy'
+head -1 "$session" | jq -e '.profile.sandbox.tools == {}' >/dev/null ||
+  fail 'a one-call grant changed the session profile'
+assert_canonical_session "$session"
+
+# A session approval keeps the grant, so later calls have it without asking.
+session="$tmp/grant-session.jsonl"
+sf_test_session "$session"
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
+  SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- kept' \
+  sf_test_run grant "$session" \
+    '{"type":"_tool_permission_response","id":"permission_1","decision":"approve_session"}' \
+    >"$stream" || fail 'session grant turn failed'
+jq -eRn '
+  [inputs | fromjson] as $events |
+  ($events | any(.type == "_session_update")) and
+  ($events | map(select(.type == "tool_result"))[0] |
+    .exit_code == 0 and .sandbox_access == "session" and
+    (.model_text | startswith("kept\nexit 0\n<sandbox_notice>This access is granted")))
+' <"$stream" >/dev/null || fail 'session grant produced the wrong records'
+head -1 "$session" | jq -e --arg dir "$granted" '.profile.sandbox.tools.shell ==
+  {read:[],write:[$dir],domains:["grant.example.com"]}' >/dev/null ||
+  fail 'session grant did not join the session profile'
+: >"$fence_arguments"
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- again' \
+  sf_test_run again "$session" >"$stream" || fail 'turn after a session grant failed'
+jq -eRn '[inputs | fromjson] | all(.type != "_tool_permission_request")' <"$stream" >/dev/null ||
+  fail 'a kept grant asked again'
+jq -eRn --arg dir "$granted" '[inputs] as $args |
+  any(range(0; $args | length); $args[.] == "--expose-host-path-rw" and $args[. + 1] == $dir)
+' <"$fence_arguments" >/dev/null || fail 'a kept grant did not reach a later call'
+assert_canonical_session "$session"
+
+# Explicit requests for kept access run without another review, including
+# reads beneath a write grant and equivalent path spellings.
+grant_input=$(jq -cn --arg dir "$granted" '{request_sandbox_access:{
+  read:[$dir + "/child"],write:[$dir + "/./"],domains:["Grant.Example.com"],
+  reason:"Reuse the approved access"}}')
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
+  SF_TEST_PROVIDER_REQUEST="$tmp/kept-request.json" \
+  SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- already' \
+  sf_test_run again "$session" >"$stream" || fail 'repeated access request failed'
+jq -eRn '[inputs | fromjson] as $events |
+  ($events | all(.type != "_tool_permission_request" and .type != "_session_update")) and
+  ($events | map(select(.type == "tool_result"))[0] |
+    .exit_code == 0 and .sandbox_access == "session" and
+    (.model_text | contains("This access is granted for the rest of this session")))
+' <"$stream" >/dev/null || fail 'kept access was requested again'
+jq -e '.messages | any(.type == "tool_result" and
+  (.content | contains("This access is granted for the rest of this session")))' \
+  "$tmp/kept-request.json" >/dev/null || fail 'the model did not receive the session access notice'
+
+# A partially covered request asks only for new access, not path-prefix lookalikes.
+grant_input=$(jq -cn --arg dir "$granted" '{request_sandbox_access:{
+  read:[$dir + "/child"],write:[$dir,$dir + "-other"],
+  domains:["grant.example.com","new.example.com"],reason:"Need more access"}}')
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
+  sf_test_run more "$session" \
+    '{"type":"_tool_permission_response","id":"permission_1","decision":"deny"}' \
+    >"$stream" || fail 'partially covered access failed the turn'
+jq -eRn --arg dir "$granted" '[inputs | fromjson] as $events |
+  ($events | map(select(.type == "_tool_permission_request")) | map(.access)) ==
+    [{read:[],write:[$dir + "-other"],domains:["new.example.com"]}] and
+  ($events | map(select(.type == "tool_result"))[0].exit_code == 126)
+' <"$stream" >/dev/null || fail 'partial request did not isolate missing access'
+
+# Read grants cover children, and domain wildcards cover subdomains, not the apex.
+typeset grant_profile=$SF_TEST_PROFILE
+SF_TEST_PROFILE=$(jq -c --arg dir "$granted" '.sandbox.tools.shell =
+  {read:[$dir],write:[],domains:["*.grant.example.com"]}' <<<"$SF_TEST_PROFILE")
+session="$tmp/grant-covered.jsonl"
+sf_test_session "$session"
+grant_input=$(jq -cn --arg dir "$granted" '{request_sandbox_access:{
+  read:[$dir + "/child"],domains:["api.grant.example.com","*.child.grant.example.com"],
+  reason:"Already allowed"}}')
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
+  sf_test_run covered "$session" >"$stream" || fail 'covered read and domains failed'
+jq -eRn '[inputs | fromjson] as $events |
+  ($events | all(.type != "_tool_permission_request")) and
+  ($events | map(select(.type == "tool_result"))[0] |
+    .exit_code == 0 and .sandbox_access == "session")
+' <"$stream" >/dev/null || fail 'covered read or domain asked for approval'
+grant_input=$(jq -cn --arg dir "$granted" '{request_sandbox_access:{
+  read:[$dir],write:[$dir],domains:["grant.example.com","evilgrant.example.com"],
+  reason:"Need writes and the apex"}}')
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
+  sf_test_run uncovered "$session" \
+    '{"type":"_tool_permission_response","id":"permission_1","decision":"deny"}' \
+    >"$stream" || fail 'read escalation failed the turn'
+jq -eRn --arg dir "$granted" '[inputs | fromjson] as $events |
+  ($events | map(select(.type == "_tool_permission_request")) | map(.access)) ==
+    [{read:[],write:[$dir],domains:["grant.example.com","evilgrant.example.com"]}] and
+  ($events | map(select(.type == "tool_result"))[0].exit_code == 126)
+' <"$stream" >/dev/null || fail 'read grant or wildcard silently escalated access'
+SF_TEST_PROFILE=$grant_profile
+
+# The core refuses malformed grant requests without asking.
+for grant_input in '{"request_sandbox_access":true}' \
+    '{"request_sandbox_access":"yes"}' \
+    '{"request_sandbox_access":{"read":"/x","reason":"bad type"}}' \
+    '{"request_sandbox_access":{"unrestricted":"true","reason":"bad type"}}' \
+    '{"request_sandbox_access":{"read":["/x"]}}' \
+    '{"request_sandbox_access":{"domains":["a b"],"reason":"bad host"}}' \
+    '{"request_sandbox_access":{"read":["/x"],"unrestricted":true,"reason":"both"}}'; do
+  session="$tmp/grant-invalid.jsonl"
+  sf_test_session "$session"
+  SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
+    sf_test_run grant "$session" >"$stream" || fail 'invalid grant failed the turn'
+  jq -eRn '[inputs | fromjson] as $events |
+    ($events | any(.type == "_tool_permission_request") | not) and
+    ($events | map(select(.type == "tool_result"))[0] |
+      .exit_code == 126 and (.model_text | startswith("request_sandbox_access")) and
+      (has("sandbox_access") | not))
+  ' <"$stream" >/dev/null || fail "invalid grant was not refused: $grant_input"
+done
+
+# Empty access values run normally without requesting permission.
+for grant_input in '{}' 'null' 'false' '""' \
+    '{"read":[],"write":[],"domains":[],"unrestricted":false,"reason":"not needed"}' \
+    '{"reason":"not needed"}'; do
+  session="$tmp/access-empty.jsonl"
+  sf_test_session "$session"
+  SF_TEST_PROVIDER_TOOL_CALL=1 \
+    SF_TEST_PROVIDER_TOOL_EXTRA="{\"request_sandbox_access\":$grant_input}" \
+    SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- ordinary' \
+    sf_test_run empty "$session" >"$stream" || fail 'empty access request failed the turn'
+  jq -eRn '[inputs | fromjson] as $events |
+    ($events | all(.type != "_tool_permission_request")) and
+    ($events | map(select(.type == "tool_result"))[0] |
+      .exit_code == 0 and (has("sandbox_access") | not) and
+      .model_text == "ordinary\nexit 0")
+  ' <"$stream" >/dev/null || fail "empty access requested permission: $grant_input"
+done
 
 # A sandboxed tool starts clean apart from its declared names.
 sf_test_shell_tool '.environment=["DECLARED"]'

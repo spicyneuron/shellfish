@@ -160,7 +160,8 @@ sf_tui_transport_result() {
 
 sf_tui_transport_reply() {
   local id=$1 decision=$2
-  [[ -n $id && $decision == (approve|deny) && -n $SF_TUI_TRANSPORT_INPUT_FD ]] || return 1
+  [[ -n $id && $decision == (approve|approve_session|deny|hold) && -n $SF_TUI_TRANSPORT_INPUT_FD ]] ||
+    return 1
   jq -cn --arg id "$id" --arg decision "$decision" \
     '{type:"_tool_permission_response",id:$id,decision:$decision}' \
     >&$SF_TUI_TRANSPORT_INPUT_FD

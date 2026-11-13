@@ -242,6 +242,7 @@ sf_tui_repaint() {
   columns=$(( columns > 1 ? columns - 1 : 1 ))
   if [[ $SF_PRESENT_STATE == permission ]]; then
     reserve=$(( 13 + ${#${SF_PRESENT_PERMISSION_TEXT//[^$'\n']}} ))
+    [[ $SF_PRESENT_PERMISSION_KIND != listed ]] || (( reserve += 1 ))
     # Raw input is often one long line, so its wrapped rows count too.
     for line in "${(@f)SF_PRESENT_PERMISSION_TEXT}"; do
       reserve+=$(( ${#line} / columns ))
@@ -269,7 +270,11 @@ sf_tui_repaint() {
   prompt_divider_bottom=$prompt_divider_top
   if [[ $SF_PRESENT_STATE == permission ]]; then
     prompt_style=permission
-    prompt_divider_top="─ Allow $SF_PRESENT_PERMISSION_TOOL outside of sandbox? "
+    if [[ $SF_PRESENT_PERMISSION_KIND == listed ]]; then
+      prompt_divider_top="─ Grant $SF_PRESENT_PERMISSION_TOOL this sandbox access? "
+    else
+      prompt_divider_top="─ Allow $SF_PRESENT_PERMISSION_TOOL outside of sandbox? "
+    fi
     if (( ${#prompt_divider_top} < columns )); then
       prompt_divider_top+=${(l:$(( columns - ${#prompt_divider_top} ))::─:)""}
     elif (( ${#prompt_divider_top} > columns )); then
@@ -282,11 +287,26 @@ sf_tui_repaint() {
     start=${#PREDISPLAY}
     PREDISPLAY+="$prompt_divider_top"
     sf_tui_chrome $start ${#prompt_divider_top} $prompt_style
-    PREDISPLAY+=$'\n\n'
-    PREDISPLAY+="$SF_PRESENT_PERMISSION_TEXT"$'\n\n'
+    PREDISPLAY+=$'\n'
+    PREDISPLAY+="$SF_PRESENT_PERMISSION_TEXT"$'\n'
+    if [[ -n $SF_PRESENT_PERMISSION_REVIEW ]]; then
+      PREDISPLAY+="Reviewer: $SF_PRESENT_PERMISSION_REVIEW"
+      if (( SF_PRESENT_PERMISSION_AUTO )); then
+        remaining=$(( SF_PRESENT_PERMISSION_AUTO - SECONDS ))
+        (( remaining >= 0 )) || remaining=0
+        PREDISPLAY+=" (applying in ${remaining}s)"
+      elif (( SF_PRESENT_PERMISSION_HELD )); then
+        PREDISPLAY+=' (waiting for your decision)'
+      fi
+      PREDISPLAY+=$'\n'
+    fi
     remaining=$(( SF_PRESENT_PERMISSION_DEADLINE - SECONDS ))
     (( remaining >= 0 )) || remaining=0
-    choices=$'1. [a]pprove\n2. [d]eny and continue ('"${remaining}s)"$'\n3. [s]top and discuss'
+    if [[ $SF_PRESENT_PERMISSION_KIND == listed ]]; then
+      choices=$'1. [a]pprove\n2. approve for [t]his session\n3. [d]eny and continue ('"${remaining}s)"$'\n4. [s]top and discuss'
+    else
+      choices=$'1. [a]pprove\n2. [d]eny and continue ('"${remaining}s)"$'\n3. [s]top and discuss'
+    fi
     start=${#PREDISPLAY}
     PREDISPLAY+="$choices"$'\n'
     sf_tui_chrome $start ${#choices} permission

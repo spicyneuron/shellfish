@@ -86,7 +86,7 @@ sf_run_hook_complete() {
         (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
       elif .action == "session_update" then keys == ["action","profile"] and
         (.profile | type == "object")
-      elif .action == "deny" then keys == ["action"] or
+      elif (.action | IN("allow", "deny")) then keys == ["action"] or
         (keys == ["action","reason"] and (.reason | type == "string"))
       else keys == ["action"] end) then . else error("invalid control") end |
     ($component.draft + {type:"hook_result",
@@ -117,6 +117,8 @@ sf_run_hook_complete() {
 # action ends the list; no action leaves reply empty.
 sf_run_hooks() {
   setopt local_options no_err_exit
+  local -a watch=()
+  if [[ $1 == --poll ]]; then watch=( "$1" "$2" ); shift 2; fi
   local session=$1 lifecycle=$2 content=$3 turn_state=$4
   shift 4
   local command input config_dir directory error='' control action='' reason='' payload=''
@@ -182,12 +184,13 @@ sf_run_hooks() {
       sf_run_component_begin "$session" "$prepared[component]"
       if [[ -n $prepared[draft] ]] && ! sf_run_emit "$prepared[draft]"; then
         error='cannot emit hook draft'
-      elif ! sf_run_component_execute "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
+      elif ! sf_run_component_execute "${watch[@]}" "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
           "$max_capture" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_KB=$(( max_capture / 1024 ))" \
           "$command/run" "$@"; then
         error=$REPLY
       else
         case $reply[1] in
+          (cancelled) error="$lifecycle hook cancelled" ;;
           (interrupted)
             SF_RUN[signal_status]=$reply[2]
             error="cannot run $lifecycle hook" ;;

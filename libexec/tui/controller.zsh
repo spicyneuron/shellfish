@@ -6,6 +6,10 @@ typeset -g SF_PRESENT_SESSION=''
 typeset -g SF_PRESENT_ACTION='' SF_PRESENT_SUBMITTED=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_PERMISSION_ID=''
 typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
+# Listed access may be approved for the session; a bypass only once.
+typeset -g SF_PRESENT_PERMISSION_KIND=''
+typeset -g SF_PRESENT_PERMISSION_REVIEW=''
+typeset -gi SF_PRESENT_PERMISSION_AUTO=0 SF_PRESENT_PERMISSION_HELD=0
 typeset -gi SF_PRESENT_PERMISSION_DEADLINE=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
@@ -16,6 +20,10 @@ sf_tui_permission_reset() {
   SF_PRESENT_PERMISSION_ID=''
   SF_PRESENT_PERMISSION_TOOL=''
   SF_PRESENT_PERMISSION_TEXT=''
+  SF_PRESENT_PERMISSION_KIND=''
+  SF_PRESENT_PERMISSION_REVIEW=''
+  SF_PRESENT_PERMISSION_AUTO=0
+  SF_PRESENT_PERMISSION_HELD=0
   SF_PRESENT_PERMISSION_DEADLINE=0
 }
 
@@ -112,8 +120,11 @@ sf_tui_cancel() {
 sf_tui_apply() {
   local type=$1 preview reason
   [[ $type == error ]] || SF_PRESENT_ERROR_SETTLED=0
-  # Later activity means the request expired unanswered.
-  [[ $SF_PRESENT_STATE != permission || $type == permission ]] || sf_tui_permission_close
+  # Review activity does not close the prompt that is racing it.
+  if [[ $SF_PRESENT_STATE == permission && ( $type == error ||
+      ( $type == execution_(update|end) && $3 == tool ) ) ]]; then
+    sf_tui_permission_close
+  fi
   case $type in
     session)
       [[ -n $SF_PRESENT_SESSION ]] || SF_TUI_TRANSPORT_COMMAND=(
@@ -130,10 +141,25 @@ sf_tui_apply() {
       preview=$REPLY
       sf_tui_safe "$5"
       reason=$REPLY
-      SF_PRESENT_PERMISSION_TEXT="$preview"$'\n\nReason: '"$reason"
+      SF_PRESENT_PERMISSION_TEXT="$preview"$'\nReason: '"$reason"
+      SF_PRESENT_PERMISSION_KIND=${7:-bypass}
+      [[ ${8-} != checking ]] || SF_PRESENT_PERMISSION_REVIEW='checking…'
       sf_tui_editor_permission open
       SF_PRESENT_STATE=permission
       sf_tui_activity_hold
+      ;;
+    permission_review)
+      [[ $SF_PRESENT_STATE == permission && $2 == $SF_PRESENT_PERMISSION_ID ]] || return 0
+      sf_tui_safe "$4"
+      SF_PRESENT_PERMISSION_REVIEW="${3:-deferred}${REPLY:+: $REPLY}"
+      (( SF_PRESENT_PERMISSION_HELD || $5 == 0 )) ||
+        SF_PRESENT_PERMISSION_AUTO=$(( SECONDS + $5 ))
+      (( SF_PRESENT_PERMISSION_AUTO <= SF_PRESENT_PERMISSION_DEADLINE )) ||
+        SF_PRESENT_PERMISSION_DEADLINE=$SF_PRESENT_PERMISSION_AUTO
+      ;;
+    permission_end)
+      [[ $SF_PRESENT_STATE != permission || $2 != $SF_PRESENT_PERMISSION_ID ]] ||
+        sf_tui_permission_close
       ;;
     prompt) sf_tui_record_prompt "$2" ;;
     handoff)
@@ -276,7 +302,8 @@ sf_tui_turn() {
 
 sf_tui_answer_permission() {
   local decision=$1
-  [[ $SF_PRESENT_STATE == permission && $decision == (approve|deny) ]] || return 1
+  [[ $SF_PRESENT_STATE == permission && ( $decision == (approve|deny) ||
+    $decision == approve_session && $SF_PRESENT_PERMISSION_KIND == listed ) ]] || return 1
   if ! sf_tui_transport_reply "$SF_PRESENT_PERMISSION_ID" "$decision"; then
     sf_tui_transport_stop
     sf_tui_editor_permission restore
@@ -285,6 +312,19 @@ sf_tui_answer_permission() {
     return 1
   fi
   sf_tui_permission_close
+}
+
+sf_tui_hold_permission() {
+  (( ! SF_PRESENT_PERMISSION_HELD )) || return 0
+  if ! sf_tui_transport_reply "$SF_PRESENT_PERMISSION_ID" hold; then
+    sf_tui_transport_stop
+    sf_tui_editor_permission restore
+    sf_tui_permission_reset
+    sf_tui_stop 'cannot answer permission'
+    return 1
+  fi
+  SF_PRESENT_PERMISSION_HELD=1
+  SF_PRESENT_PERMISSION_AUTO=0
 }
 
 sf_tui_permission_close() {

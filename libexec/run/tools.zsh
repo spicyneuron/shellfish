@@ -144,7 +144,7 @@ sf_run_tool_execute() {
       { SF_RUN_TOOL_ERROR='cannot decode tool content'; return 1; }
   fi
   if (( reply[2] )) && grep -qs $'✗' "$capture/sandbox.log"; then
-    REPLY=$(jq -c '.output.stdout += "\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed.</sandbox_notice>"' <<<"$REPLY") ||
+    REPLY=$(jq -c '.output.stdout += "\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed. If the call needs more access, retry it with request_sandbox_access.</sandbox_notice>"' <<<"$REPLY") ||
       { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
   fi
   } always {

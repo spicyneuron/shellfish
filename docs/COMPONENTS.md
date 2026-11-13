@@ -75,9 +75,9 @@ A tool manifest describes its model-facing interface and execution policy:
 }
 ```
 
-`description`, an object `input_schema`, and the boolean `sandbox` are required. `allow_sandbox_bypass` defaults to `false` and is valid only for sandboxed tools. `environment` lists the variable names the tool needs. Sandboxed tools receive the filtered environment described above and access to platform temporary storage. Tools own their temporary-file cleanup. See [Sandbox](PROFILE.md#sandbox) for session grants and bypass approval.
+`description`, an object `input_schema`, and the boolean `sandbox` are required. `allow_sandbox_bypass` defaults to `false` and is valid only for sandboxed tools. `environment` lists the variable names the tool needs. Sandboxed tools receive the filtered environment described above and access to platform temporary storage. Tools own their temporary-file cleanup. See [Sandbox](PROFILE.md#sandbox) for session grants and request approval.
 
-Shellfish calls `run` without arguments, passing one input object on stdin with bypass fields removed. The tool validates input before using it. A nonzero exit is a normal tool result, not a failed turn. Tools cannot take lifecycle actions.
+Shellfish calls `run` without arguments, passing one input object on stdin with sandbox request fields removed. The tool validates input before using it. A nonzero exit is a normal tool result, not a failed turn. Tools cannot take lifecycle actions.
 
 Tools can return images through `content` control lines, such as `{"content":[{"type":"image","url":"data:image/png;base64,..."}]}`. Parts can be text or base64 PNG, JPEG, GIF, or WebP images. Content follows stdout and is subject to `SHELLFISH_MAX_CONTENT_KB` rather than the capture limit.
 
@@ -90,17 +90,19 @@ A hook manifest declares its lifecycle with `on`, such as `{"on":"stop"}`. An op
 | `session_start` | Add context once when creating a session | None | Empty | None |
 | `user_prompt_submit` | Add context or handle a prompt before submission | None | Exact prompt | `deny`, `handoff`, `session_update` |
 | `pre_tool_use` | Gate a tool call | `NAME ID` | Tool request JSON | `deny` |
-| `permission_request` | Review a supported sandbox bypass | `NAME ID` | Tool request JSON | `allow`, `deny` |
+| `permission_request` | Review requested sandbox access | `NAME ID` | Tool request JSON | `allow`, `deny` |
 | `post_tool_use` | Add context after a durable tool result | `NAME ID` | Tool response JSON | None |
 | `stop` | Check whether a turn may finish | `REQUEST_COUNT` | Final assistant text | `deny` |
 
 `NAME` and `ID` are the tool name and call ID. A tool request contains `turn_id`, `tool_name`, `tool_use_id`, and `tool_input`. A tool response adds `tool_response` with `stdout`, `stderr`, and `exit_code`. `REQUEST_COUNT` is the number of provider requests made in the turn.
 
-Hooks run in profile order. Without an action, the next hook runs. A successful action ends the list. Hook output settles on exit 0, and a nonzero exit fails the operation. Context reaches the model grouped by lifecycle and script name.
+Hooks run in profile order. Without an action, the next hook runs. A successful action ends the list. Hook output settles on exit 0, and a nonzero exit fails the operation, except that permission review failures defer to the user. Context reaches the model grouped by lifecycle and script name.
 
-Hook actions are JSON lines on fd 3, such as `{"action":"deny","reason":"Run the tests first"}`. The last action from a hook applies after exit 0. `deny` prevents the lifecycle's default step. At submission it withholds the prompt, at a tool gate it refuses the call, and at `stop` it continues inference after settled model text.
+Hook actions are JSON lines on fd 3, such as `{"action":"deny","reason":"Run the tests first"}`. The last action from a hook applies after exit 0. At submission, `deny` withholds the prompt; at `pre_tool_use`, it refuses the call; and at `stop`, it continues inference after settled model text.
 
-`allow` approves only a supported bypass. `handoff` supplies an `argv` array for a capable client to run after the turn exits cleanly. `session_update` supplies a complete session `profile` to replace atomically. Tool hooks cannot rewrite inputs or results. See the bundled hooks for input and action examples.
+Permission review hooks may attach a `reason` to either `allow` or `deny`. Their decisions apply automatically after a grace period unless the user takes control or answers first. An `allow` approves specific access or unrestricted execution for one call, never for the session. `pre_tool_use` denials remain binding.
+
+`handoff` supplies an `argv` array for a capable client to run after the turn exits cleanly. `session_update` supplies a complete session `profile` to replace atomically. Tool hooks cannot rewrite inputs or results. See the bundled hooks for input and action examples.
 
 ## Commands
 

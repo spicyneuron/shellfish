@@ -11,7 +11,7 @@
   "sandbox": {
     // Setting false runs every tool with user permissions.
     "enabled": true,
-    // Seconds to wait for user approval of a sandbox bypass.
+    // Seconds to wait for user approval of a sandbox access request.
     "user_approval_timeout": 120,
     // Extra grants keyed by selected tool name.
     "tools": {
@@ -36,7 +36,7 @@
   "hooks": [
     "project/environment", "git/environment", "project/instructions", "skills/list",
     "autocompact", "git/identity", "skills/mention",
-    // Have a model review sandbox bypass requests.
+    // Have a model review sandbox access requests.
     // "sandbox/approver",
   ],
 

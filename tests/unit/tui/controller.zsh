@@ -67,15 +67,40 @@ sf_tui_transcript 79 20
   fail 'the durable record repeated the streamed text'
 
 # Hold the turn for a permission decision.
-pump '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"pwd"}},"reason":"host access","timeout":30}'
+pump '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"pwd"}},"access":{"unrestricted":true},"reason":"host access","timeout":30,"reviewing":true}'
 assert_equal $(( SECONDS + 30 )) "$SF_PRESENT_PERMISSION_DEADLINE"
 assert_equal permission "$SF_PRESENT_STATE"
 assert_equal permission_1 "$SF_PRESENT_PERMISSION_ID"
 assert_equal shell "$SF_PRESENT_PERMISSION_TOOL"
-assert_equal $'{"command":"pwd"}\n\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
+assert_equal $'Operation:\n{"command":"pwd"}\nAccess:\nUnrestricted (this call only)\nReason: host access' "$SF_PRESENT_PERMISSION_TEXT"
+assert_equal bypass "$SF_PRESENT_PERMISSION_KIND"
+if sf_tui_answer_permission approve_session; then
+  fail 'the TUI accepted unrestricted session approval'
+fi
+assert_equal 'checking…' "$SF_PRESENT_PERMISSION_REVIEW"
+pump '{"type":"hook_result","lifecycle":"permission_request","id":"review_1","user_text":"Review completed."}'
+assert_equal permission "$SF_PRESENT_STATE"
+pump '{"type":"_tool_permission_review","id":"expired","decision":"deny","reason":"stale","timeout":10}'
+assert_equal 'checking…' "$SF_PRESENT_PERMISSION_REVIEW"
+pump '{"type":"_tool_permission_review","id":"permission_1","decision":"approve","reason":"authorized","timeout":10}'
+assert_equal 'approve: authorized' "$SF_PRESENT_PERMISSION_REVIEW"
+assert_equal $(( SECONDS + 10 )) "$SF_PRESENT_PERMISSION_AUTO"
+functions[sf_tui_transport_reply_saved]=$functions[sf_tui_transport_reply]
+typeset held_reply=''
+sf_tui_transport_reply() { held_reply="$*"; }
+sf_tui_hold_permission
+assert_equal 'permission_1 hold' "$held_reply"
+assert_equal 1 "$SF_PRESENT_PERMISSION_HELD"
+assert_equal 0 "$SF_PRESENT_PERMISSION_AUTO"
+pump '{"type":"_tool_permission_review","id":"permission_1","decision":"approve","reason":"authorized","timeout":10}'
+assert_equal 0 "$SF_PRESENT_PERMISSION_AUTO"
+pump '{"type":"_tool_permission_end","id":"expired"}'
+assert_equal permission "$SF_PRESENT_STATE"
+functions[sf_tui_transport_reply]=$functions[sf_tui_transport_reply_saved]
+unfunction sf_tui_transport_reply_saved
 
 # Later activity closes an expired request.
-pump '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"pwd"},"exit_code":126,"model_text":"sandbox bypass approval timed out","user_text":"Shell pwd\nsandbox bypass approval timed out"}'
+pump '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"pwd"},"exit_code":126,"model_text":"sandbox access approval timed out","user_text":"Shell pwd\nsandbox access approval timed out"}'
 assert_equal working "$SF_PRESENT_STATE"
 assert_equal '' "$SF_PRESENT_PERMISSION_ID"
 assert_equal 0 "$SF_PRESENT_PERMISSION_DEADLINE"

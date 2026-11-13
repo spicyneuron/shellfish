@@ -158,4 +158,138 @@ jq -eRn '[inputs | fromjson | select(.type == "assistant") | .content[0].text] =
   fail 'provider did not receive layered environment values'
 unset EXPORTED_SECRET
 
+# The client races review hooks. Only the turn owner persists their output.
+sf_test_frozen_profile
+SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
+typeset review_hook="$tmp/reviewer"
+sf_test_hook "$review_hook" '{"on":"permission_request"}' <<'ZSH'
+#!/usr/bin/env zsh
+cat >/dev/null
+jq -cn --argjson pid $$ '{state_update:[{name:"review/started",value:$pid}]}' >&3
+sleep "${REVIEW_DELAY:-0}"
+[[ ${REVIEW_FAIL:-0} != 1 ]] || exit 3
+[[ -n $REVIEW_ACTION ]] || exit 0
+jq -cn --arg action "$REVIEW_ACTION" '{action:$action,reason:"review verdict"}' >&3
+ZSH
+sf_test_bind_hooks permission_request "$review_hook"
+sf_test_shell_tool '.sandbox=true | .allow_sandbox_bypass=true'
+sf_test_session "$tmp/review-header.jsonl"
+python3 - "$ROOT" "$tmp" <<'PY'
+import json
+import os
+import select
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+root, tmp = map(Path, sys.argv[1:])
+header = (tmp / "review-header.jsonl").read_bytes()
+runs = []
+
+
+class Review:
+    def __init__(self, name, action="allow", delay=0, fail=False):
+        session = tmp / (name + ".jsonl")
+        session.write_bytes(header)
+        self.process = subprocess.Popen(
+            [str(root / "bin/shellfish"), "run", "--jsonl", "--session", str(session)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=dict(os.environ, REVIEW_ACTION=action, REVIEW_DELAY=str(delay),
+                     REVIEW_FAIL=str(int(fail)), SF_TEST_PROVIDER_TOOL_CALL="1",
+                     SF_TEST_PROVIDER_TOOL_BYPASS="true",
+                     SF_TEST_PROVIDER_TOOL_COMMAND="print -rn -- executed"),
+        )
+        runs.append(self)
+        self.buffer = b""
+        self.events = []
+        self.send({"type": "user", "content": [{"type": "text", "text": name}]})
+        self.request = self.until("_tool_permission_request")
+        assert not any(e.get("name") == "review/started" for e in self.events)
+
+    def send(self, value):
+        self.process.stdin.write(json.dumps(value).encode() + b"\n")
+        self.process.stdin.flush()
+
+    def answer(self, decision):
+        self.send({"type": "_tool_permission_response", "id": self.request["id"],
+                   "decision": decision})
+
+    def until(self, kind, timeout=15):
+        deadline = time.monotonic() + timeout
+        while True:
+            while b"\n" not in self.buffer:
+                remaining = deadline - time.monotonic()
+                assert remaining > 0 and select.select([self.process.stdout], [], [], remaining)[0], kind
+                data = os.read(self.process.stdout.fileno(), 65536)
+                assert data, (kind, self.process.poll(), self.process.stderr.read())
+                self.buffer += data
+            line, self.buffer = self.buffer.split(b"\n", 1)
+            event = json.loads(line)
+            self.events.append(event)
+            if event["type"] == kind:
+                return event
+
+    def finish(self, exit_code):
+        result = self.until("tool_result")
+        assert result["exit_code"] == exit_code, result
+        self.process.stdin.close()
+        assert self.process.wait(timeout=5) == 0, self.process.stderr.read()
+        return result
+
+
+try:
+    early = Review("user-first", action="deny", delay=30)
+    started = early.until("state_update")
+    early.answer("approve")
+    start = time.monotonic()
+    early.finish(0)
+    assert time.monotonic() - start < 3
+    assert not any(e["type"] == "hook_result" for e in early.events)
+    try:
+        os.kill(started["value"], 0)
+    except ProcessLookupError:
+        pass
+    else:
+        raise AssertionError("cancelled reviewer is still alive")
+
+    override = Review("override-denial", action="deny")
+    verdict = override.until("_tool_permission_review")
+    assert verdict["decision"] == "deny" and verdict["timeout"] == 10, verdict
+    override.answer("approve")
+    override.finish(0)
+
+    for name, action, fail in [("defer", "", False), ("failure", "allow", True)]:
+        review = Review(name, action=action, fail=fail)
+        verdict = review.until("_tool_permission_review")
+        assert verdict["decision"] == "" and verdict["timeout"] == 0, verdict
+        review.answer("deny")
+        review.finish(126)
+
+    held = Review("held")
+    held.until("_tool_permission_review")
+    held.answer("hold")
+    held_at = time.monotonic()
+    automatic = []
+    for action, exit_code in [("allow", 0), ("deny", 126)]:
+        review = Review("auto-" + action, action=action)
+        verdict = review.until("_tool_permission_review")
+        assert verdict["timeout"] == 10, verdict
+        automatic.append((review, exit_code, time.monotonic()))
+    for review, exit_code, start in automatic:
+        review.finish(exit_code)
+        assert time.monotonic() - start >= 9.8, "review applied without its grace period"
+    while time.monotonic() - held_at < 10.5:
+        time.sleep(0.05)
+    assert held.process.poll() is None, "taking control did not disable automatic approval"
+    held.answer("deny")
+    held.finish(126)
+finally:
+    for review in runs:
+        if review.process.poll() is None:
+            review.process.send_signal(signal.SIGUSR1)
+            review.process.wait(timeout=5)
+PY
+
 print -r -- ok

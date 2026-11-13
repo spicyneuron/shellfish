@@ -94,19 +94,31 @@ assert_equal 'execution_update | call_1 | tool | shell · make test | 2 |
 execution_end | call_1 | tool | shell · make test
 ok | full |  |  |' "$REPLY"
 
-# No template can hide a sandbox bypass request or its outcome.
+# No template can hide a sandbox request or its outcome.
 project live \
-  '{"type":"_draft","id":"call_2","name":"shell","sandbox_bypass":"requested"}' \
-  '{"type":"_draft","id":"call_2","name":"shell","sandbox_bypass":"approved"}' \
-  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_bypass":"approved"}'
+  '{"type":"_draft","id":"call_2","name":"shell","sandbox_access":"requested"}' \
+  '{"type":"_draft","id":"call_2","name":"shell","sandbox_access":"approved"}' \
+  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_access":"approved"}'
 assert_equal 'execution_update | call_2 | tool | shell | default | requested
 execution_update | call_2 | tool | shell | default | approved
 execution_end | call_2 | tool | shell | default |  | approved |' "$REPLY"
 project load \
-  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":126,"sandbox_bypass":"denied"}'
+  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":126,"sandbox_access":"denied"}'
 assert_equal 'execution_end | call_2 | tool | shell | default |  | denied | 1' "$REPLY"
+project load \
+  '{"type":"tool_result","id":"call_2","name":"shell","input":{},"exit_code":0,"sandbox_access":"session"}'
+assert_equal 'execution_end | call_2 | tool | shell | default |  | approved for session |' "$REPLY"
 
-# Normal tool execution carries no bypass badge.
+# A request shows its operation separately from the requested access.
+project live \
+  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"ls","request_sandbox_access":{"read":["/a"],"reason":"look"}}},"reason":"look","timeout":120,"access":{"read":["/a"],"write":[],"domains":["example.com"]}}'
+assert_equal 'permission | permission_1 | shell | Operation:
+{"command":"ls"}
+Access:
+read /a
+domains example.com | look | 120 | listed' "$REPLY"
+
+# Normal tool execution carries no sandbox badge.
 project live \
   '{"type":"_draft","id":"call_3","name":"skill","user_text":"Skill code-principles"}' \
   '{"type":"tool_result","id":"call_3","name":"skill","input":{"name":"code-principles"},"exit_code":0,"user_text":"Skill code-principles"}'
@@ -146,10 +158,20 @@ assert_equal 'execution_end | 6 | notice | **Shell** pwd | default | user' "$REP
 
 # Permissions show the tool name, raw input, and configured timeout.
 project live \
-  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"git status"}},"reason":"writes outside the sandbox","timeout":30}'
+  '{"type":"_tool_permission_request","id":"permission_1","tool":{"name":"shell","input":{"command":"git status"}},"access":{"unrestricted":true},"reason":"writes outside the sandbox","timeout":30}'
 assert_equal \
-  'permission | permission_1 | shell | {"command":"git status"} | writes outside the sandbox | 30' \
+  'permission | permission_1 | shell | Operation:
+{"command":"git status"}
+Access:
+Unrestricted (this call only) | writes outside the sandbox | 30 | bypass' \
   "$REPLY"
+
+# Review status and closure are transient actions for the matching prompt.
+project live \
+  '{"type":"_tool_permission_review","id":"p1","decision":"approve","reason":"authorized","timeout":10}' \
+  '{"type":"_tool_permission_end","id":"p1"}'
+assert_equal 'permission_review | p1 | approve | authorized | 10
+permission_end | p1' "$REPLY"
 
 # Errors split their heading from the detail below it.
 project live '{"type":"error","user_text":"Cancelled.\nstopped by the user"}'

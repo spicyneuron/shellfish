@@ -69,7 +69,7 @@ The profile's `sandbox` object holds standing settings:
 | Field | Meaning |
 | --- | --- |
 | `enabled` | Defaults to `true`. `false` runs every tool with user permissions |
-| `user_approval_timeout` | Seconds to wait for user approval of a sandbox bypass, default `120` |
+| `user_approval_timeout` | Seconds to wait for user approval of a sandbox request, default `120` |
 | `tools.NAME.read` | Extra read grants for the selected tool `NAME` |
 | `tools.NAME.write` | Extra read-write grants for that tool |
 | `tools.NAME.domains` | Extra allowed hostnames or `*.hostname` patterns for that tool |
@@ -84,17 +84,21 @@ Domain grants extend the tool's network allowlist, not other tools' access. Supp
 
 `/sandbox` lists additional grants grouped by selected tool, and `/sandbox shell` inspects one tool. `/sandbox shell +read ~/reference` adds a directory grant, and `/sandbox shell +domain github.com` adds a domain grant. Use `-read` or `-domain` to remove a session addition. These commands update the frozen profile, not the source configuration or the tool's baseline policy.
 
-### Bypass approval
+### Sandbox access approval
 
-A sandboxed tool can opt into requesting a bypass with `allow_sandbox_bypass: true`. Shellfish then exposes `request_sandbox_bypass` and `sandbox_bypass_reason` to the model. Both must be supplied together. The tool runs unsandboxed only after a `permission_request` hook or an interactive client approves it.
+Every sandboxed tool lets the model request specific access with `request_sandbox_access`, naming `read` or `write` directories or `domains` and a `reason`. Relative paths resolve against the session directory. Approved access keeps the call sandboxed. Omitted, null, false, empty-string, and empty-object requests need no approval. Empty lists and a reason alone also request nothing.
 
-If every permission hook defers, Shellfish asks the client. Without a client, or after `user_approval_timeout`, it denies the request without invoking the tool. The approval prompt shows the tool's name and raw input. Bypass requests receive a pending, approved, denied, or cancelled badge independently of component display templates.
+A tool with `allow_sandbox_bypass: true` also permits `unrestricted: true` in that same object, with a reason and no listed access. Approval runs only that call outside the sandbox. Unrestricted access cannot be approved for the session.
+
+The approval prompt appears immediately and shows the operation alongside the requested access, with paths resolved against the session directory. Permission review hooks run alongside it. Your answer takes priority and cancels an unfinished review. Otherwise, a reviewer's verdict applies ten seconds after it arrives. Pressing another key takes control and disables automatic application for that request. If reviewers defer or fail, the prompt waits for your decision. Unanswered prompts are denied after `user_approval_timeout`, with time allowed for a verdict's grace period. Without an interactive client, reviewer decisions apply immediately; without a decision, access is denied.
+
+The user can approve specific access for the rest of the session, which adds it to the session's grants as `/sandbox` would and tells the model it can reuse that access. Later requests ask only for access not already granted to that tool. Unrestricted execution always requires a fresh approval, and reviewers approve only one call. Requests receive a pending, approved, denied, or cancelled badge independently of component display templates.
 
 ## Starter agent
 
 The bundled default profile supplies a complete agent without `init`, once you select a model. `shellfish init` copies that profile for customization, plus an editable read-only profile and its paired prompt. The general, tools, and sandbox prompts stay bundled unless you override them with your own files.
 
-Both starter profiles enable sandboxing with no extra grants. The default profile includes commented examples for enabling subagents and model-reviewed sandbox bypasses.
+Both starter profiles enable sandboxing with no extra grants. The default profile includes commented examples for enabling subagents and model-reviewed sandbox access requests.
 
 | Profile | Selects |
 | --- | --- |
@@ -178,8 +182,8 @@ Background work returns control after launch. Inspection distinguishes running w
 
 ### Sandbox approver
 
-Add `"sandbox/approver"` to a profile's `hooks` to have a model review bypass requests against the user's instructions. It approves or denies each request. Review failures fall back to asking the user.
+Add `"sandbox/approver"` to a profile's `hooks` to have a model review sandbox access requests against the user's instructions. It approves or denies each request. Review failures fall back to asking the user.
 
-The reviewer uses the session's model by default. Set `"config": {"sandbox": {"approver": {"model": "review"}}}` to select another model by name. The name freezes, but the model file is read on each review and replaces the complete model configuration, including the provider. Review requests impose their own structured output, output limit, and fixed input budget. The reviewer sees the system prompt, startup context, latest user message, and as much of the current turn as fits, with older tool output shortened. Set `"max_input_kb": 48` to raise the default 24 KB budget for larger or faster review models. Invalid settings, unavailable models, and provider failures ask the user instead. Set `http_timeout` in the review model's `config` to bound how long a review can wait before asking the user.
+The reviewer uses the session's model by default. Set `"config": {"sandbox": {"approver": {"model": "review"}}}` to select another model by name. The name freezes, but the model file is read on each review and replaces the complete model configuration, including the provider. Review requests impose their own structured output, output limit, and fixed input budget. The reviewer sees the system prompt, startup context, latest user message, and as much of the current turn as fits, with older tool output shortened. Set `"max_input_kb": 48` to raise the default 24 KB budget for larger or faster review models. Invalid settings, unavailable models, and provider failures leave the decision to the user. Set `http_timeout` in the review model's `config` to limit the duration of its request.
 
 Set `decision_model` instead of `model` to use a [decision provider](MODELS.md#decisions), such as `{"decision_model": "d3"}`. It approves when authorization is at least 80% likely to cover the risk, and denies otherwise. Set `"allow_threshold": 0.5` to lower that bar. It also denies requests at least 50% likely to be driven by untrusted instructions. Denial reasons include these likelihoods. A refusal asks the user. Run `./tests/run decisions MODEL` to evaluate a model on sample requests.

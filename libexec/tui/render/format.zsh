@@ -278,11 +278,11 @@ sf_tui_format_execution() {
   fi
   [[ -z $SF_LIVE_FAILED || -z ${SF_PRESENT_STYLE[error]-} ]] ||
     glyph_style=${SF_PRESENT_STYLE[error]},bold
-  if [[ -n $SF_LIVE_BYPASS ]]; then
-    badge="[sandbox bypass $SF_LIVE_BYPASS]"
-    case $SF_LIVE_BYPASS in
+  if [[ -n $SF_LIVE_BADGE ]]; then
+    badge="[sandbox access $SF_LIVE_BADGE]"
+    case $SF_LIVE_BADGE in
       requested) badge_style=${SF_PRESENT_STYLE[permission]-} ;;
-      approved) badge_style=${SF_PRESENT_STYLE[muted]-} ;;
+      approved*) badge_style=${SF_PRESENT_STYLE[muted]-} ;;
       *) badge_style=${SF_PRESENT_STYLE[error]-} ;;
     esac
     [[ -z $badge_style ]] || badge_style+=,bold

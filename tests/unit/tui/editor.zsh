@@ -73,6 +73,8 @@ assert_equal accept-line "$ZLE_CALLS[-1]"
 
 # Map permission keys and their numbers.
 typeset -a permission_decisions=()
+integer permission_holds=0
+sf_tui_transport_reply() { [[ $2 == hold ]] && (( ++permission_holds )); }
 sf_tui_answer_permission() { permission_decisions+=( "$1" ); SF_PRESENT_STATE=working; }
 for KEYS in a d x 1 2; do
   SF_PRESENT_STATE=permission
@@ -80,6 +82,7 @@ for KEYS in a d x 1 2; do
   sf_tui_input
 done
 assert_equal 'approve,deny,approve,deny' "${(j:,:)permission_decisions}"
+assert_equal 1 "$permission_holds"
 assert_equal -R "$ZLE_CALL"
 
 # Stop cancels the turn and restores the draft.

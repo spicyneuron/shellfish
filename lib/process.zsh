@@ -133,12 +133,16 @@ sf_process_bytes() {
   REPLY=${#1}
 }
 
+# With --poll CALLBACK, poll between control reads and stop when it returns
+# nonzero. The callback runs in the owner, never in a background writer.
 # Stream fd 3 to HANDLER one nonempty line at a time while the command runs. A
 # final line without a newline arrives at exit. control_bytes is the longest
 # line; lines stop once one exceeds MAX_CONTROL bytes. interrupted is the
 # signal exit status, or 0.
 sf_process_run() {
   setopt local_options local_traps no_err_exit no_monitor
+  local poll=''
+  if [[ $1 == --poll ]]; then poll=$2; shift 2; fi
   local capture=${1:A} working=$2 input=$3
   integer max_capture=$4 max_control=$5
   local handler=$6
@@ -149,7 +153,7 @@ sf_process_run() {
   local chunk buffer='' line
   local -a command=( "$@" ) process_command readers
   integer limit stdout_bytes stderr_bytes control_bytes=0 pending=0 control_fd=-1 guard_fd
-  integer process_pid=0 process_status=1 reader reader_status=0 signal_status=0 complete=0
+  integer process_pid=0 process_status=1 reader reader_status=0 signal_status=0 complete=0 cancelled=0
 
   SF_PROCESS_ERROR=''
   REPLY=''
@@ -201,7 +205,16 @@ sf_process_run() {
     trap 'signal_status=129; sf_process_stop "$process_pid" "$group_file"' HUP
     trap 'signal_status=143; sf_process_stop "$process_pid" "$group_file"' TERM
     # Only a chunk with a newline rescans the buffer, so long lines stay linear.
-    while sysread -i $control_fd -s 65536 chunk; do
+    while true; do
+      if [[ -n $poll ]]; then
+        if ! "$poll"; then
+          cancelled=1
+          sf_process_stop "$process_pid" "$group_file"
+          break
+        fi
+        zselect -r $control_fd -t 10 >/dev/null 2>&1 || continue
+      fi
+      sysread -i $control_fd -s 65536 chunk || break
       (( control_bytes > max_control )) && continue
       buffer+=$chunk
       sf_process_bytes "$chunk"
@@ -220,10 +233,10 @@ sf_process_run() {
       fi
       (( control_bytes = pending > control_bytes ? pending : control_bytes ))
     done
-    (( control_bytes > max_control )) || [[ -z $buffer ]] || "$handler" "$buffer"
+    (( cancelled || control_bytes > max_control )) || [[ -z $buffer ]] || "$handler" "$buffer"
     if sf_process_wait "$process_pid" "$group_file" "$status_file"; then
       process_status=$REPLY
-    elif (( signal_status )); then
+    elif (( signal_status || cancelled )); then
       process_status=$signal_status
     else
       sf_process_fail 'cannot read process status'
@@ -240,7 +253,7 @@ sf_process_run() {
       sf_process_fail 'cannot inspect process capture'
       return
     }
-    reply=( exit_code $process_status interrupted $signal_status
+    reply=( exit_code $process_status interrupted $signal_status cancelled $cancelled
       stdout_bytes $stdout_bytes stderr_bytes $stderr_bytes control_bytes $control_bytes )
     REPLY=''
     complete=1

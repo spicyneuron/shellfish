@@ -44,10 +44,10 @@ sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell"
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"3","model_text":"inspection constraint","user_text":"display only"}'
 sf_session_append "$session" '{"type":"state_update","name":"inspection","value":"hidden state"}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"4","user_text":"display only"}'
-sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}]}'
+sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}}}]}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"5","model_text":"permission context"}'
 assert_canonical_session "$session"
-request='{"tool_input":{"command":"setup","request_sandbox_bypass":true,"sandbox_bypass_reason":"needed"}}'
+request='{"tool_input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}}}'
 
 # The decision goes to fd 3 and its reason to the user on stderr.
 run_review() {
@@ -68,7 +68,7 @@ run_review valid
 (( hook_status == 0 )) || fail 'permission review did not resolve the request'
 jq -e . "$control" >/dev/null || { cat "$control" >&2; fail 'permission review returned invalid control'; }
 jq -e '
-  .action == "allow" and (has("reason") | not) and
+  .action == "allow" and .reason == "Explicitly authorized." and
   .state_update[0].name == "permissions/6/call_7" and
   .state_update[0].value.reason == "Explicitly authorized." and
   (.state_update[0].value.content | fromjson) ==
@@ -323,7 +323,7 @@ run_review '{"risk":"high","authorization":"unknown","reason":"Not authorized."}
 (( hook_status == 0 )) || fail 'unknown authorization did not resolve'
 jq -e '.state_update[0].value.reason as $reason |
   .action == "deny" and
-  (.reason | startswith("<sandbox_notice>") and endswith("</sandbox_notice>") and contains($reason)) and
+  .reason == $reason and
   $reason == "Not authorized." and
   (.state_update[0].value.content | fromjson).authorization == "unknown"
 ' "$control" >/dev/null || fail 'unknown authorization was not denied'
@@ -377,7 +377,7 @@ jq -e --slurpfile policy "$hook/policy.json" --slurpfile context "$tmp/context.j
 run_review "$(decision '[0.1,0.6,0.3]' '[0.1,0.2,0.5,0.2]' 0.1)"
 jq -e '.state_update[0].value.reason as $reason |
   .action == "deny" and
-  (.reason | startswith("<sandbox_notice>") and endswith("</sandbox_notice>") and contains($reason)) and
+  .reason == $reason and
   ($reason | contains("57%"))
 ' "$control" >/dev/null || fail 'decision review allowed an uncertain call'
 
@@ -393,7 +393,7 @@ jq -c 'if .type == "session" then .profile.config.sandbox.approver.decision_mode
 run_review "$(decision '[1,0,0]' '[0,0,0,1]' 0.62)"
 jq -e '.state_update[0].value.reason as $reason |
   .action == "deny" and
-  (.reason | startswith("<sandbox_notice>") and endswith("</sandbox_notice>") and contains($reason)) and
+  .reason == $reason and
   ($reason | contains("62%"))
 ' "$control" >/dev/null || fail 'decision review allowed an injected call'
 

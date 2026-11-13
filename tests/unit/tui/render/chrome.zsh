@@ -53,8 +53,20 @@ typeset -gi SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + 120 ))
 COLUMNS=80
 LINES=10
 sf_tui_repaint
-typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────────────────────────────────────────────\n\npwd\n\nReason: host access\n\n1. [a]pprove\n2. [d]eny and continue (120s)\n3. [s]top and discuss\n'
+typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────────────────────────────────────────────\npwd\n\nReason: host access\n1. [a]pprove\n2. [d]eny and continue (120s)\n3. [s]top and discuss\n'
 [[ $PREDISPLAY == *$permission_prompt ]] || fail 'permission prompt was not rendered'
+SF_PRESENT_PERMISSION_REVIEW='approve: authorized'
+SF_PRESENT_PERMISSION_AUTO=$(( SECONDS + 10 ))
+sf_tui_repaint
+[[ $PREDISPLAY == *'Reviewer: approve: authorized (applying in 10s)'* ]] ||
+  fail 'review verdict and grace countdown were not rendered'
+SF_PRESENT_PERMISSION_HELD=1
+SF_PRESENT_PERMISSION_AUTO=0
+sf_tui_repaint
+[[ $PREDISPLAY == *'Reviewer: approve: authorized (waiting for your decision)'* ]] ||
+  fail 'held reviewer verdict was not rendered'
+SF_PRESENT_PERMISSION_REVIEW=''
+SF_PRESENT_PERMISSION_HELD=0
 [[ $POSTDISPLAY == $'\n─'* ]] || fail 'permission prompt omitted its trailing blank line'
 SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + 119 ))
 sf_tui_repaint

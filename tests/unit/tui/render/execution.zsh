@@ -104,9 +104,9 @@ assert_tail $'⛭ shell · pwd\n│ waiting'
 sf_tui_activity_start
 view
 assert_tail $'⛭ shell · pwd\n│ waiting\n╰ ⠃'
-sf_tui_action execution_end permission tool 'shell · sandbox bypass denied'
+sf_tui_action execution_end permission tool 'shell · sandbox denied'
 view
-assert_tail $'⛭ shell · sandbox bypass denied\n\n⠃'
+assert_tail $'⛭ shell · sandbox denied\n\n⠃'
 sf_tui_activity_stop
 
 # Hook notices carry their own glyph and style.
@@ -221,13 +221,13 @@ SF_PRESENT_STYLE=()
 # A sandbox bypass badge leads the identity row in its outcome's style.
 sf_tui_reset
 SF_PRESENT_STYLE=( permission fg=blue error fg=red )
-sf_tui_action execution_update call_1 tool 'shell · pwd' '' requested
+sf_tui_action execution_update call_1 tool 'shell · pwd' '' 'requested'
 view
-assert_tail $'⛭ [sandbox bypass requested] shell · pwd\n╰ ⠃'
+assert_tail $'⛭ [sandbox access requested] shell · pwd\n╰ ⠃'
 has_style 'fg=blue,bold' || fail 'requested bypass badge was not styled'
-sf_tui_action execution_end call_1 tool 'shell · pwd' '' '' denied
+sf_tui_action execution_end call_1 tool 'shell · pwd' '' '' 'denied'
 view
-assert_tail $'⛭ [sandbox bypass denied] shell · pwd'
+assert_tail $'⛭ [sandbox access denied] shell · pwd'
 typeset badge='fg=red,bold'
 at=${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$badge]}
 (( at )) || fail 'denied bypass badge was not styled'

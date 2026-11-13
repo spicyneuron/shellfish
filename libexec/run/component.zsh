@@ -48,16 +48,20 @@ sf_run_component_line() {
 
 # Run a prepared command into CAPTURE, streaming fd 3 lines of at most
 # MAX_CONTROL bytes to the supplied handler. reply is (status exit_code) with
-# status ok, interrupted, invalid, or overflow; ok leaves the bounded outcome in
+# status ok, interrupted, cancelled, invalid, or overflow; ok leaves the outcome in
 # REPLY. Failure leaves a message in REPLY.
 sf_run_component_execute() {
+  local -a watch=()
+  if [[ $1 == --poll ]]; then watch=( "$1" "$2" ); shift 2; fi
   local capture=$1 limit=$4 max_control=$5 state=ok
   local -A process
-  sf_process_run "$@" ||
+  sf_process_run "${watch[@]}" "$@" ||
     { REPLY=$SF_PROCESS_ERROR; return 1; }
   process=( "${reply[@]}" )
   if (( process[interrupted] )); then
     state=interrupted
+  elif (( process[cancelled] )); then
+    state=cancelled
   elif [[ $SF_COMPONENT[error] == invalid ]]; then
     state=invalid
   elif [[ -n $SF_COMPONENT[error] ]]; then

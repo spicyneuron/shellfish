@@ -8,41 +8,63 @@ include "lib/profile";
 include "lib/session";
 include "lib/provider";
 
+# The access a call requests, as {access, reason}, {problem}, or null for none.
+# Models that fill every schema field send empty requests, so null, false, "",
+# and an object listing nothing all mean none, whatever its reason. Domains are
+# case-insensitive.
+def requested_access($bypass_allowed):
+  if . == null or . == false or . == "" then null
+  elif type != "object" then {problem:"request_sandbox_access must be an object"}
+  elif (keys - ["read", "write", "domains", "unrestricted", "reason"]) != [] then
+    {problem:"request_sandbox_access only takes read, write, domains, unrestricted, and reason"}
+  elif any(.read, .write, .domains; . != null and
+      (type != "array" or any(.[]; type != "string" or length == 0))) then
+    {problem:"request_sandbox_access read, write, and domains must be arrays of nonempty strings"}
+  elif (.unrestricted // false | type) != "boolean" then
+    {problem:"request_sandbox_access unrestricted must be true or false"}
+  else
+    ([.read, .write, .domains | .[]?] | length > 0) as $listed |
+    if ($listed or .unrestricted) | not then null
+    elif (.reason | type == "string" and test("\\S")) | not then
+      {problem:"request_sandbox_access requires a reason"}
+    elif .unrestricted then
+      if $listed then {problem:"request_sandbox_access unrestricted takes no read, write, or domains"}
+      elif $bypass_allowed | not then {problem:"sandbox bypass is not allowed"}
+      else {access:{unrestricted:true},reason} end
+    elif any(.domains[]?; sandbox_domain | not) then
+      {problem:"request_sandbox_access domains must be hostnames or *.hostname"}
+    else {access:{read:(.read // []),write:(.write // []),
+      domains:(.domains // [] | map(ascii_downcase))},reason} end
+  end;
+
 # Everything execution and settlement need for one call.
 def tool_plan($profile; $tools; $call; $turn; $max_capture):
   $call.id as $id | $call.name as $name | $call.input as $input |
   [$tools[] | select(.name == $name)][0] as $tool |
   ($tool.manifest // {}) as $manifest |
-  ($input.request_sandbox_bypass // false) as $requested |
-  ($input.sandbox_bypass_reason // "") as $reason |
-  # A blank reason counts as absent, since some models fill every field.
-  ($reason | type == "string" and test("\\S")) as $explained |
-  (if $tool == null or ($profile.sandbox.enabled | not) then {decision:"none"}
-   elif ($requested | type) != "boolean" then
-     {decision:"deny",reason:"request_sandbox_bypass must be true or false"}
-   elif ($requested | not) and $explained then
-     {decision:"deny",reason:"sandbox_bypass_reason requires request_sandbox_bypass: true. Omit it to run in the sandbox."}
-   elif ($requested | not) then {decision:"none"}
-   elif ($manifest.allow_sandbox_bypass // false) != true then
-     {decision:"deny",reason:"sandbox bypass is not allowed"}
-   elif $explained | not then
-     {decision:"deny",reason:"request_sandbox_bypass requires a sandbox_bypass_reason"}
-   else {decision:"request",reason:$reason} end) as $permission |
-  ($profile.sandbox.enabled and ($manifest.sandbox // false) and $requested != true) as $sandboxed |
+  ($profile.sandbox.enabled and ($manifest.sandbox // false)) as $sandboxable |
+  (if $tool == null or ($sandboxable | not) then {decision:"none"}
+   else $input.request_sandbox_access |
+     requested_access($manifest.allow_sandbox_bypass // false) |
+     if . == null then {decision:"none"}
+     elif .problem then {decision:"deny",reason:.problem}
+     else {decision:"request",reason,access} end
+   end) as $permission |
   {id:$id, name:$name, input:$input,
    request:{turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$input},
    component:{template:$manifest.user_text, input:$input,
      draft:({type:"_draft",id:$id,name:$name,
        user_text:render_template($manifest.user_text; {input:$input})} +
        ($manifest | with_entries(select(.key == "user_preview_lines"))) +
-       if $permission.decision == "request" then {sandbox_bypass:"requested"} else {} end)},
+       if $permission.decision == "request" then {sandbox_access:"requested"} else {} end)},
    decision:$permission.decision,
    permission_reason:($permission.reason // ""),
+   access:($permission.access // null),
    executable:($tool.command // ""),
    environment:(($tool.manifest.environment // []) | join(" ")),
    max_capture:(if $manifest.max_capture_kb then $manifest.max_capture_kb * 1024 else $max_capture end),
-   execution_input:($input | del(.request_sandbox_bypass,.sandbox_bypass_reason)),
-   sandbox:$sandboxed,
+   execution_input:($input | del(.request_sandbox_access)),
+   sandbox:($sandboxable and ($permission.access.unrestricted // false | not)),
    read_paths:($profile.sandbox.tools[$name].read // [] | join("\n")),
    write_paths:($profile.sandbox.tools[$name].write // [] | join("\n")),
    domains:($profile.sandbox.tools[$name].domains // [])};
@@ -51,7 +73,7 @@ def tool_refusal($reason; $exit_code):
   {output:{stdout:$reason,stderr:$reason,exit_code:$exit_code},ran:false};
 
 # Model text is stdout, which leads any content parts as model content. A
-# bypass request that was never answered keeps no badge unless the tool ran,
+# sandbox request that was never answered keeps no badge unless the tool ran,
 # which implies approval.
 def tool_result($component; $outcome):
   ($component.draft | del(.user_text)) + {type:"tool_result",input:$component.input,
@@ -60,15 +82,15 @@ def tool_result($component; $outcome):
   (if ($outcome.content // []) == [] then {model_text:$outcome.output.stdout}
    else {model_content:([$outcome.output.stdout | select(. != "") |
      {type:"text",text:.}] + $outcome.content)} end) |
-  if .sandbox_bypass != "requested" then .
-  elif $outcome.ran then .sandbox_bypass = "approved"
-  else del(.sandbox_bypass) end |
+  if .sandbox_access != "requested" then .
+  elif $outcome.ran then .sandbox_access = "approved"
+  else del(.sandbox_access) end |
   with_entries(select(.value != "")) |
   if canonical_tool_result then . else error("invalid tool result") end;
 
 # Results for every pending call. The call that was running when the turn
 # ended, if ACTIVE, settles as interrupted; later calls settle with REASON,
-# and their bypass requests as cancelled.
+# and their sandbox requests as cancelled.
 def settled_calls($state; $profile; $tools; $turn; $max_capture; $active; $reason):
   $state.calls | to_entries[] |
   tool_plan($profile; $tools; .value; $turn; $max_capture) as $plan |
@@ -76,7 +98,7 @@ def settled_calls($state; $profile; $tools; $turn; $max_capture; $active; $reaso
     tool_result($plan.component; tool_refusal("tool call interrupted"; 126) | .ran = true)
   else
     tool_result($plan.component |
-      if .draft.sandbox_bypass == "requested" then .draft.sandbox_bypass = "cancelled"
+      if .draft.sandbox_access == "requested" then .draft.sandbox_access = "cancelled"
       else . end; tool_refusal($reason; 126))
   end;
 

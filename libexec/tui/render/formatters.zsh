@@ -9,7 +9,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -g SF_LIVE_KIND='' SF_LIVE_TEXT=''
 typeset -g SF_LIVE_ROLE='' SF_LIVE_PRIOR='' SF_LIVE_SECTION=''
 typeset -g SF_LIVE_ID='' SF_LIVE_CLASS=''
-typeset -g SF_LIVE_PREVIEW='' SF_LIVE_BYPASS='' SF_LIVE_FAILED=''
+typeset -g SF_LIVE_PREVIEW='' SF_LIVE_BADGE='' SF_LIVE_FAILED=''
 # SHOWN: the block has committed rows. HIDDEN: its preview budget ran out.
 typeset -gi SF_LIVE_SHOWN=0 SF_LIVE_HIDDEN=0 SF_LIVE_HELD=0 SF_LIVE_WORK=0
 # Streamed text keeps its own estimate because commits consume the source.
@@ -33,7 +33,7 @@ sf_tui_live_clear() {
   SF_LIVE_ID=''
   SF_LIVE_CLASS=''
   SF_LIVE_PREVIEW=''
-  SF_LIVE_BYPASS=''
+  SF_LIVE_BADGE=''
   SF_LIVE_FAILED=''
   SF_LIVE_SHOWN=0
   SF_LIVE_HIDDEN=0
@@ -175,7 +175,7 @@ sf_tui_reasoning_tokens() {
 # One mutable block covers an execution. Hook activity may replace a running
 # tool view; the latest visible event owns empty-result settlement.
 sf_tui_execution_update() {
-  local id=$1 class=${2:-tool} text=${3-} preview=${4-} bypass=${5-}
+  local id=$1 class=${2:-tool} text=${3-} preview=${4-} badge=${5-}
   if [[ $SF_LIVE_KIND != execution ]]; then
     sf_tui_live_close || return 1
     SF_LIVE_KIND=execution
@@ -185,13 +185,13 @@ sf_tui_execution_update() {
   fi
   SF_LIVE_ID=$id
   SF_LIVE_PREVIEW=$preview
-  SF_LIVE_BYPASS=$bypass
+  SF_LIVE_BADGE=$badge
   sf_tui_safe "$text"
   SF_LIVE_TEXT=$REPLY
 }
 
 sf_tui_execution_end() {
-  local id=$1 class=${2:-tool} text=${3-} preview=${4-} role=${5-} bypass=${6-}
+  local id=$1 class=${2:-tool} text=${3-} preview=${4-} role=${5-} badge=${6-}
   local failed=${7-}
   # A result with nothing to show leaves no trace, live or settled.
   if [[ -z $text ]]; then
@@ -199,7 +199,7 @@ sf_tui_execution_end() {
     sf_tui_activity_resume
     return 0
   fi
-  sf_tui_execution_update "$id" "$class" "$text" "$preview" "$bypass" || return 1
+  sf_tui_execution_update "$id" "$class" "$text" "$preview" "$badge" || return 1
   [[ -z $role ]] || sf_tui_claim_role "$role"
   # A result owns the identity and class of the block it settles.
   SF_LIVE_ID=$id

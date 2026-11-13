@@ -117,10 +117,10 @@ assert_equal "$(jq -Sc . "$tmp/turn-request.json")" \
   "$(jq -Sc . "$tmp/standalone-request.json")"
 jq -e '
   [.tools[].name] == ["beta","alpha"] and
-  (.tools[0].input_schema.properties | has("request_sandbox_bypass") | not) and
-  .tools[1].input_schema.properties.request_sandbox_bypass.type == "boolean" and
-  .tools[1].input_schema.properties.sandbox_bypass_reason.type == "string"
-' "$tmp/standalone-request.json" >/dev/null || fail 'request changed tool order or bypass fields'
+  (.tools[0].input_schema.properties | has("request_sandbox_access") | not) and
+  .tools[1].input_schema.properties.request_sandbox_access.properties.unrestricted.type ==
+    "boolean"
+' "$tmp/standalone-request.json" >/dev/null || fail 'request changed tool order or access fields'
 assert_equal "$tool_digest" "$(shasum <"$tool_request")"
 
 # Manifests remain live, without loading the current profile or its system files.
