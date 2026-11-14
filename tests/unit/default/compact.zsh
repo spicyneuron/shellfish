@@ -25,7 +25,8 @@ case $1 in
         {type:"tool_call",id:"unexpected",name:"shell",input:{command:"true"}}]}'
       exit
     fi
-    jq -cn '{type:"assistant",stop:"end",content:[{type:"text",text:"Older decisions and exact error E42"}]}'
+    jq -cn --arg text "${SF_TEST_COMPACT_SUMMARY:-Older decisions and exact error E42}" \
+      '{type:"assistant",stop:"end",content:[{type:"text",text:$text}]}'
     ;;
   *) exit 2 ;;
 esac
@@ -103,22 +104,16 @@ jq -es --slurpfile source "$compact_source" \
 
 # Model-visible suffix and ordered state updates survive, without stale usage.
 jq -es --slurpfile source "$compact_source" '
-  ([to_entries[] | select(.value.type == "user") | .key][0]) as $first |
-  (.[($first - 1)].model_text == "Recent submission context") and
-  (.[($first - 2)].type == "error") and
-  (.[($first - 3)].model_text == "Pending stop instruction") and
-  (.[($first - 4)].lifecycle == "user_prompt_submit") and
-  (.[($first - 4)].model_text | contains("Older decisions and exact error E42")) and
+  ([to_entries[] | select(.value.type == "user") | .key]) as $users |
+  (.[$users[0]].content[0].text |
+    contains($source[3].content[0].text) and contains("Older decisions and exact error E42")) and
   ([.[] | select(.lifecycle? == "session_start")] ==
     [$source[] | select(.lifecycle? == "session_start")]) and
   ([.[] | select(.type == "state_update" and .name != "compact/first_user")] ==
     [$source[] | select(.type == "state_update")]) and
   ([.[] | select(.type == "state_update" and .name == "compact/first_user")] |
     length == 1 and .[0].value == $source[3].content[0].text) and
-  (.[($first - 4)].model_text | contains($source[3].content[0].text)) and
-  (.[($first - 4)].user_text | contains("Older decisions") and
-    (contains($source[3].content[0].text) | not)) and
-  (.[($first - 3):] ==
+  (.[($users[1] - 3):] ==
     ($source[10:] | map(if .type == "assistant" then del(.usage) else . end))) and
   all(.[] | select(.type == "assistant"); has("usage") | not)
 ' "$compact_child" >/dev/null || fail 'child changed recent content or lost startup/state records'
@@ -150,6 +145,47 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_child" \
 [[ ! -s $compact_control && ! -e $compact_request ]] ||
   fail 'already-small child requested another summary'
 
+# A large original request and startup context never consume the recent budget.
+jq -c '
+  if .type == "user" then
+    .content[0].text |= if startswith("First request") then "Original " + ("o" * 60000)
+      elif startswith("Recent task") then "a" * 30000
+      elif startswith("Newest task") then "b" * 30000 else . end
+  elif .lifecycle? == "session_start" then .model_text = "Startup " + ("s" * 90000)
+  else . end
+' "$compact_source" >"$tmp/large-original.jsonl"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/large-original.jsonl" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+typeset large_child=$(actions | jq -r '.argv[2]')
+assert_canonical_session "$large_child"
+jq -es --slurpfile source "$tmp/large-original.jsonl" '
+  ([.[] | select(.type == "user")]) as $users |
+  ($users | length) == 3 and
+  ($users[0].content[0].text | contains($source[3].content[0].text)) and
+  ($users[1:] == [$source[] | select(.type == "user")][2:]) and
+  ([.[] | select(.lifecycle? == "session_start")] ==
+    [$source[] | select(.lifecycle? == "session_start")])
+' "$large_child" >/dev/null || fail 'large original displaced recent turns'
+rm "$compact_request"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$large_child" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+[[ ! -s $compact_control && ! -e $compact_request ]] ||
+  fail 'repeated compaction counted the protected first message or startup context'
+
+# The same first-message rule applies before any compaction has happened.
+jq -c '
+  if .type == "tool_result" and .id == "old" then
+    del(.model_content) | .model_text = "Small old result"
+  else . end
+' "$tmp/large-original.jsonl" >"$tmp/large-first.jsonl"
+SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/large-first.jsonl" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+  3>"$compact_control" 2>"$compact_display" </dev/null
+[[ ! -s $compact_control && ! -e $compact_request ]] ||
+  fail 'first compaction counted the protected first message or startup context'
+
 # A new oversized turn keeps that whole turn and resummarizes the earlier handoff.
 jq -cn '
   {type:"hook_result",lifecycle:"user_prompt_submit",id:"9",model_text:"Oversized task context"},
@@ -157,18 +193,21 @@ jq -cn '
   {type:"assistant",stop:"end",content:[{type:"text",text:"Latest reply"}]}
 ' >>"$compact_child"
 assert_canonical_session "$compact_child"
-SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_child" \
+SF_TEST_COMPACT_SUMMARY='Updated decisions' \
+  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_child" \
   SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
   3>"$compact_control" 2>"$compact_display" </dev/null
 typeset repeated_child=$(actions | jq -r '.argv[2]')
 assert_canonical_session "$repeated_child"
 jq -es --slurpfile source "$compact_source" '
-  ([.[] | select(.type == "user")] | length) == 1 and
-  ([.[] | select(.type == "user")][0].content[0].text | length) == 90000 and
-  ([.[] | select(.model_text? | strings | contains("Older decisions"))] | length) == 1 and
+  ([.[] | select(.type == "user")]) as $users |
+  ($users | length) == 2 and
+  ($users[1].content[0].text | length) == 90000 and
+  ($users[0].content[0].text | contains($source[3].content[0].text) and
+    contains("Updated decisions") and (contains("Older decisions") | not)) and
+  ([$users[0].content[0].text | scan("<summary>")] | length) == 1 and
   ([.[] | select(.type == "state_update" and .name == "compact/first_user")] |
     length == 1 and .[0].value == $source[3].content[0].text) and
-  any(.[]; .model_text? | strings | contains($source[3].content[0].text)) and
   any(.[]; .model_text? == "Oversized task context")
 ' "$repeated_child" >/dev/null || fail 'repeated compaction accumulated handoffs or split the latest turn'
 

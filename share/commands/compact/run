@@ -54,9 +54,6 @@ transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
 # Keep prefix state updates once, then retain the suffix in its original order.
 if ! jq -ce -s --argjson split "$split" --arg summary "$summary" '
     . as $records |
-    # The suffix keeps hook IDs, so allocate beyond every source hook.
-    (([$records[] | select(.type == "hook_result") | .id | tonumber] | max // 0) + 1 |
-      tostring) as $id |
     ([$records[] | select(.type == "state_update" and .name == "compact/first_user")] |
       last) as $saved |
     ($saved.value // ([$records[] | select(.type == "user")][0].content[0].text)) as $first |
@@ -68,9 +65,8 @@ if ! jq -ce -s --argjson split "$split" --arg summary "$summary" '
     ($records[$split.start:$split.cut][] | select(.type == "state_update")),
     (if $saved == null then
       {type:"state_update",name:"compact/first_user",value:$first} else empty end),
-    {type:"hook_result",lifecycle:"user_prompt_submit",id:$id,
-      user_text:("**Compacted conversation**\n" + $summary),
-      model_text:("<context script=\"compact\">\n" + $context + "\n</context>")},
+    {type:"user",content:[{type:"text",text:$context}]},
+    {type:"assistant",stop:"end",content:[]},
     $records[$split.cut:][]
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   sf_compact_fail 'Could not create compacted session. Original session kept.'

@@ -6,7 +6,7 @@ sf_compact_fail() {
   exit 0
 }
 
-# {start, cut}: the first turn's index and the first recent turn's index.
+# {start, cut}: the first user message and the first recent turn.
 sf_compact_split() {
   jq -ces '
     . as $records |
@@ -25,14 +25,17 @@ sf_compact_split() {
          else [.model_text // ""] end
        elif .type == "hook_result" then [.model_text // ""]
        else [] end) | map(utf8bytelength) | add // 0;
-    [to_entries[] | select(.value.type == "user") | .key | turn_start(.)] as $turns |
+    [to_entries[] | select(.value.type == "user") | .key] as $users |
+    ($users | map(turn_start(.))) as $turns |
     select(($turns | length) > 0 and any(.[]; .type == "assistant")) |
     [range($turns | length) as $index |
-      $records[$turns[$index]:$turns[$index + 1]] | map(text_bytes) | add // 0] as $sizes |
+      # Startup context and the first user message are outside the tail budget.
+      $records[([$turns[$index], $users[0] + 1] | max):$turns[$index + 1]] |
+      map(text_bytes) | add // 0] as $sizes |
     # Keep the newest turns that fit the budget, and always the latest turn.
     (first(range(($sizes | length) - 1; 0; -1) as $index |
       select(($sizes[$index - 1:] | add) > 81920) | $index) // 0) as $keep |
-    {start:$turns[0],cut:$turns[$keep]}
+    {start:$users[0],cut:$turns[$keep]}
   ' "$SHELLFISH_SESSION"
 }
 
