@@ -406,26 +406,25 @@ sf_tui_down() {
   sf_tui_move_vertical 1
 }
 
-# Offsets are zero-based characters, with an exclusive end like CURSOR.
+# MATCHES replace the range: one outright, several by their shared prefix
+# when it extends the typed text. Offsets are zero-based characters, with an
+# exclusive end like CURSOR.
 sf_tui_complete_range() {
   integer start=$1 end=$2
   shift 2
-  local token=${BUFFER:$start:$(( end - start ))} candidate prefix=''
-  local -a matches=()
+  local token=${BUFFER:$start:$(( end - start ))} match prefix=''
   SF_PRESENT_COMPLETIONS=()
   SF_PRESENT_COMPLETION_NO=0
   SF_PRESENT_COMPLETION_START=$start
-  for candidate in "$@"; do
-    [[ $candidate == "$token"* ]] && matches+=( "$candidate" )
+  (( $# )) || return 0
+  prefix=$1
+  for match in "$@"; do
+    while [[ $match != "$prefix"* ]]; do prefix=${prefix%?}; done
   done
-  (( ${#matches} )) || return 0
-  prefix=$matches[1]
-  for candidate in "${matches[@]}"; do
-    while [[ $candidate != "$prefix"* ]]; do prefix=${prefix%?}; done
-  done
+  (( $# == 1 )) || [[ $prefix == "$token"* ]] || prefix=$token
   BUFFER="${BUFFER:0:$start}$prefix${BUFFER:$end}"
   CURSOR=$(( start + ${#prefix} ))
-  (( ${#matches} < 2 )) || SF_PRESENT_COMPLETIONS=( "${matches[@]}" )
+  (( $# < 2 )) || SF_PRESENT_COMPLETIONS=( "$@" )
 }
 
 # An open list cycles in STEP's direction, replacing the text inserted so far.
@@ -447,11 +446,17 @@ sf_tui_complete_back() {
 }
 
 # Paths complete one folder at a time under the session's working directory.
+# A name without a folder also matches deeper file names in a Git work tree.
 sf_tui_complete_files() {
-  local word=$1 cwd=$SF_PRESENT_CWD
-  local -a paths=( "$cwd/${word#@}"*(NM) )
+  setopt local_options extended_glob
+  local word=$1 query=${1#@} cwd=$SF_PRESENT_CWD listed
+  local -a paths=( "$cwd/$query"*(NM) )
   paths=( "${(@)paths#"$cwd/"}" )
-  sf_tui_complete_range $(( CURSOR - ${#word} )) $CURSOR "${(@)paths/#/@}"
+  if [[ -n $query && $query != */* ]] &&
+      listed=$(git -C "$cwd" ls-files -co --exclude-standard 2>/dev/null); then
+    paths+=( ${(M)${(f)listed}:#*/${(b)query}[^/]#} )
+  fi
+  sf_tui_complete_range $(( CURSOR - ${#word} )) $CURSOR "${(@u)paths/#/@}"
 }
 
 # Completes the word ending at the cursor: a leading slash command or an @path.
@@ -464,7 +469,7 @@ sf_tui_complete() {
   [[ ${BUFFER:$CURSOR:1} == ([[:space:]]|) ]] || return 0
   word=${${BUFFER:0:$CURSOR}##*[[:space:]]}
   if [[ $word == /* ]] && (( ${#word} == CURSOR )); then
-    sf_tui_complete_range 0 $CURSOR "${SF_PRESENT_COMMANDS[@]}"
+    sf_tui_complete_range 0 $CURSOR ${(M)SF_PRESENT_COMMANDS:#${(b)word}*}
   elif [[ $word == @* ]]; then
     sf_tui_complete_files "$word"
   fi

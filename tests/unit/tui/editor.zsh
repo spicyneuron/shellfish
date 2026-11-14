@@ -225,19 +225,25 @@ assert_equal $'前文\nUse $code-review later' "$BUFFER"
 assert_equal 19 "$CURSOR"
 assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
 
-# Shared prefixes, exact matches, and missing candidates use the same range.
+# Shared prefixes extend the typed text, a single match replaces it, and other
+# matches leave it for the list.
 BUFFER='Read @sr then'
 CURSOR=8
-sf_tui_complete_range 5 8 @src/editor.zsh @src/controller.zsh @tests/editor.zsh
+sf_tui_complete_range 5 8 @src/editor.zsh @src/controller.zsh
 assert_equal 'Read @src/ then' "$BUFFER"
 assert_equal 10 "$CURSOR"
 assert_equal '@src/editor.zsh,@src/controller.zsh' "${(j:,:)SF_PRESENT_COMPLETIONS}"
-BUFFER='Read @src/editor.zsh then'
-CURSOR=20
-sf_tui_complete_range 5 20 @src/editor.zsh
+BUFFER='Read @edi then'
+CURSOR=9
+sf_tui_complete_range 5 9 @src/editor.zsh @tests/editor.zsh
+assert_equal 'Read @edi then' "$BUFFER"
+assert_equal 9 "$CURSOR"
+assert_equal '@src/editor.zsh,@tests/editor.zsh' "${(j:,:)SF_PRESENT_COMPLETIONS}"
+sf_tui_complete_range 5 9 @src/editor.zsh
 assert_equal 'Read @src/editor.zsh then' "$BUFFER"
 assert_equal 20 "$CURSOR"
-sf_tui_complete_range 5 20 @tests/editor.zsh
+assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+sf_tui_complete_range 5 20
 assert_equal 'Read @src/editor.zsh then' "$BUFFER"
 assert_equal 20 "$CURSOR"
 assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
@@ -297,10 +303,15 @@ assert_equal 2 "$SF_PRESENT_COMPLETION_NO"
 SF_PRESENT_COMPLETIONS=()
 
 # An @path completes one folder at a time under the session's directory, marking
-# folders and showing hidden files only after a typed dot.
+# folders and showing hidden files only after a typed dot. A bare name also
+# matches deeper file names that Git does not ignore.
 sf_test_tmp editor
-mkdir -p "$tmp/project/lib" "$tmp/project/libexec"
-touch "$tmp/project/"{README.md,.hidden} "$tmp/project/lib/"{cli.zsh,session.zsh}
+mkdir -p "$tmp/project/"{lib,libexec/tui,build} "$tmp/plain/sub"
+touch "$tmp/project/"{README.md,.hidden} "$tmp/project/lib/"{cli.zsh,session.zsh} \
+  "$tmp/project/libexec/tui/"{controller.zsh,editor.zsh} "$tmp/project/build/ignored.txt" \
+  "$tmp/plain/sub/editor.zsh"
+print -r -- 'build/' >"$tmp/project/.gitignore"
+git -C "$tmp/project" init -q
 SF_PRESENT_CWD=$tmp/project
 WIDGET=sf_tui_complete
 for before after matches in \
@@ -308,8 +319,11 @@ for before after matches in \
   'Read @lib/' 'Read @lib/' '@lib/cli.zsh,@lib/session.zsh' \
   'Read @lib/c' 'Read @lib/cli.zsh' '' \
   '@R' '@README.md' '' \
-  '@' '@' '@README.md,@lib/,@libexec/' \
-  '@.' '@.hidden' '' \
+  '@' '@' '@README.md,@build/,@lib/,@libexec/' \
+  '@.h' '@.hidden' '' \
+  '@edi' '@libexec/tui/editor.zsh' '' \
+  '@c' '@c' '@lib/cli.zsh,@libexec/tui/controller.zsh' \
+  '@ign' '@ign' '' \
   '@missing' '@missing' '' \
   'a@li' 'a@li' '' \
   'say /qu' 'say /qu' ''; do
@@ -321,6 +335,15 @@ for before after matches in \
   assert_equal ${#after} "$CURSOR"
   assert_equal "$matches" "${(j:,:)${(@o)SF_PRESENT_COMPLETIONS}}"
 done
+
+# Outside Git, only the current folder level matches.
+SF_PRESENT_CWD=$tmp/plain
+BUFFER='@edi'
+CURSOR=4
+sf_tui_input
+assert_equal '@edi' "$BUFFER"
+assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+SF_PRESENT_CWD=$tmp/project
 
 # Completion needs the cursor at the end of a word.
 BUFFER='@li then'

@@ -125,9 +125,12 @@ def test_slash_command_completion():
         session.send(b"\x15")
         (session.project_dir / "notes.md").write_text("")
         (session.project_dir / "src").mkdir()
+        (session.project_dir / "src" / "deep.md").write_text("")
+        subprocess.run(["git", "init", "-q"], cwd=session.project_dir, check=True)
         cases = [
             (b"Read @no\tX", "Read @notes.mdX"),
             (b"@sr\tX", "@src/X"),
+            (b"@dee\tX", "@src/deep.mdX"),
             (b"/hel\tX", "/helpX"),
             (b"/help\tX", "/helpX"),
             (b"/h\tX", "/helpX"),
