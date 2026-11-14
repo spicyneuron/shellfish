@@ -9,7 +9,8 @@ typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
 # Listed access may be approved for the session; a bypass only once.
 typeset -g SF_PRESENT_PERMISSION_KIND=''
 typeset -g SF_PRESENT_PERMISSION_REVIEW=''
-typeset -gi SF_PRESENT_PERMISSION_AUTO=0 SF_PRESENT_PERMISSION_HELD=0
+# The choice that applies when the deadline passes.
+typeset -g SF_PRESENT_PERMISSION_DEFAULT=''
 typeset -gi SF_PRESENT_PERMISSION_DEADLINE=0
 typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
@@ -22,8 +23,7 @@ sf_tui_permission_reset() {
   SF_PRESENT_PERMISSION_TEXT=''
   SF_PRESENT_PERMISSION_KIND=''
   SF_PRESENT_PERMISSION_REVIEW=''
-  SF_PRESENT_PERMISSION_AUTO=0
-  SF_PRESENT_PERMISSION_HELD=0
+  SF_PRESENT_PERMISSION_DEFAULT=''
   SF_PRESENT_PERMISSION_DEADLINE=0
 }
 
@@ -134,6 +134,7 @@ sf_tui_apply() {
     permission)
       [[ $SF_PRESENT_STATE == working && -z $SF_PRESENT_PERMISSION_ID ]] || return 1
       SF_PRESENT_PERMISSION_ID=$2
+      SF_PRESENT_PERMISSION_DEFAULT=deny
       SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + $6 ))
       sf_tui_safe "$3"
       SF_PRESENT_PERMISSION_TOOL=$REPLY
@@ -152,10 +153,11 @@ sf_tui_apply() {
       [[ $SF_PRESENT_STATE == permission && $2 == $SF_PRESENT_PERMISSION_ID ]] || return 0
       sf_tui_safe "$4"
       SF_PRESENT_PERMISSION_REVIEW="${3:-deferred}${REPLY:+: $REPLY}"
-      (( SF_PRESENT_PERMISSION_HELD || $5 == 0 )) ||
-        SF_PRESENT_PERMISSION_AUTO=$(( SECONDS + $5 ))
-      (( SF_PRESENT_PERMISSION_AUTO <= SF_PRESENT_PERMISSION_DEADLINE )) ||
-        SF_PRESENT_PERMISSION_DEADLINE=$SF_PRESENT_PERMISSION_AUTO
+      ;;
+    permission_update)
+      [[ $SF_PRESENT_STATE == permission && $2 == $SF_PRESENT_PERMISSION_ID ]] || return 0
+      SF_PRESENT_PERMISSION_DEFAULT=$3
+      SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + $4 ))
       ;;
     permission_end)
       [[ $SF_PRESENT_STATE != permission || $2 != $SF_PRESENT_PERMISSION_ID ]] ||
@@ -319,11 +321,9 @@ sf_tui_answer_permission() {
   sf_tui_permission_close
 }
 
+# Any other key takes control, and the core restarts the countdown on deny.
 sf_tui_hold_permission() {
-  (( ! SF_PRESENT_PERMISSION_HELD )) || return 0
-  sf_tui_permission_reply hold || return 1
-  SF_PRESENT_PERMISSION_HELD=1
-  SF_PRESENT_PERMISSION_AUTO=0
+  sf_tui_permission_reply hold
 }
 
 sf_tui_permission_close() {

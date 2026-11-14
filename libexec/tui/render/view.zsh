@@ -299,20 +299,13 @@ sf_tui_repaint() {
     PREDISPLAY+=$'\n'
     PREDISPLAY+="$SF_PRESENT_PERMISSION_TEXT"$'\n'
     if [[ -n $SF_PRESENT_PERMISSION_REVIEW ]]; then
-      PREDISPLAY+="Reviewer: $SF_PRESENT_PERMISSION_REVIEW"
-      if (( SF_PRESENT_PERMISSION_AUTO )); then
-        remaining=$(( SF_PRESENT_PERMISSION_AUTO - SECONDS ))
-        (( remaining >= 0 )) || remaining=0
-        PREDISPLAY+=" (applying in ${remaining}s)"
-      elif (( SF_PRESENT_PERMISSION_HELD )); then
-        PREDISPLAY+=' (waiting for your decision)'
-      fi
-      PREDISPLAY+=$'\n'
+      PREDISPLAY+="Reviewer: $SF_PRESENT_PERMISSION_REVIEW"$'\n'
     fi
     remaining=$(( SF_PRESENT_PERMISSION_DEADLINE - SECONDS ))
     (( remaining >= 0 )) || remaining=0
     labels=( approve '[a]pprove' approve_session 'approve for [t]his session'
-      deny "[d]eny and continue (${remaining}s)" stop '[s]top and discuss' )
+      deny '[d]eny and continue' stop '[s]top and discuss' )
+    labels[$SF_PRESENT_PERMISSION_DEFAULT]+=" (${remaining}s)"
     sf_tui_permission_choices
     for index in {1..${#reply}}; do
       reply[index]="$index. $labels[$reply[index]]"

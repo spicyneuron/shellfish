@@ -168,9 +168,11 @@ Unrestricted (this call only) | writes outside the sandbox | 30 | bypass' \
 
 # Review status and closure are transient actions for the matching prompt.
 project live \
-  '{"type":"_tool_permission_review","id":"p1","decision":"approve","reason":"authorized","timeout":10}' \
+  '{"type":"_tool_permission_review","id":"p1","decision":"approve","reason":"authorized"}' \
+  '{"type":"_tool_permission_update","id":"p1","decision":"approve","timeout":10}' \
   '{"type":"_tool_permission_end","id":"p1"}'
-assert_equal 'permission_review | p1 | approve | authorized | 10
+assert_equal 'permission_review | p1 | approve | authorized
+permission_update | p1 | approve | 10
 permission_end | p1' "$REPLY"
 
 # Errors split their heading from the detail below it.

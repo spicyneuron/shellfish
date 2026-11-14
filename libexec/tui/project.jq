@@ -49,6 +49,7 @@ def details_actions:
 
 # A result or draft carries its own preview hint.
 def preview: .user_preview_lines // "default" | tostring;
+def clip: if length > 300 then .[0:300] + "…" else . end;
 
 # Context and notice select presentation styling.
 def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
@@ -133,18 +134,19 @@ def event_actions($window; $drawn):
   # Bound operation and access separately so neither hides the other.
   elif .type == "_tool_permission_request" then
     (.access.unrestricted // false) as $bypass |
-    (.tool.input | tojson |
-      if length > 300 then .[0:300] + "…" else . end) as $operation |
+    (.tool.input | tojson | clip) as $operation |
     (if $bypass then "Unrestricted (this call only)"
      else [.access | to_entries[] | .key as $kind | .value[] | $kind + " " + .] |
-       join("\n") | if length > 300 then .[0:300] + "…" else . end
+       join("\n") | clip
      end) as $preview |
     [["permission", .id, .tool.name,
       ("Operation:\n" + $operation + "\nAccess:\n" + $preview),
       (.reason // ""), (.timeout | tostring), (if $bypass then "bypass" else "listed" end)] +
       if .reviewing then ["checking"] else [] end]
   elif .type == "_tool_permission_review" then
-    [["permission_review", .id, .decision, .reason, (.timeout | tostring)]]
+    [["permission_review", .id, .decision, .reason]]
+  elif .type == "_tool_permission_update" then
+    [["permission_update", .id, .decision, (.timeout | tostring)]]
   elif .type == "_tool_permission_end" then [["permission_end", .id]]
   elif .type == "_handoff" then [["handoff"] + .argv]
   elif .type == "_session_update" then model_actions

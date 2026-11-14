@@ -80,20 +80,21 @@ fi
 assert_equal 'checking…' "$SF_PRESENT_PERMISSION_REVIEW"
 pump '{"type":"hook_result","lifecycle":"permission_request","id":"review_1","user_text":"Review completed."}'
 assert_equal permission "$SF_PRESENT_STATE"
-pump '{"type":"_tool_permission_review","id":"expired","decision":"deny","reason":"stale","timeout":10}'
+pump '{"type":"_tool_permission_review","id":"expired","decision":"deny","reason":"stale"}'
 assert_equal 'checking…' "$SF_PRESENT_PERMISSION_REVIEW"
-pump '{"type":"_tool_permission_review","id":"permission_1","decision":"approve","reason":"authorized","timeout":10}'
+assert_equal deny "$SF_PRESENT_PERMISSION_DEFAULT"
+pump '{"type":"_tool_permission_review","id":"permission_1","decision":"approve","reason":"authorized"}'
 assert_equal 'approve: authorized' "$SF_PRESENT_PERMISSION_REVIEW"
-assert_equal $(( SECONDS + 10 )) "$SF_PRESENT_PERMISSION_AUTO"
+pump '{"type":"_tool_permission_update","id":"expired","decision":"approve","timeout":10}'
+assert_equal deny "$SF_PRESENT_PERMISSION_DEFAULT"
+pump '{"type":"_tool_permission_update","id":"permission_1","decision":"approve","timeout":10}'
+assert_equal approve "$SF_PRESENT_PERMISSION_DEFAULT"
+assert_equal $(( SECONDS + 10 )) "$SF_PRESENT_PERMISSION_DEADLINE"
 functions[sf_tui_transport_reply_saved]=$functions[sf_tui_transport_reply]
 typeset held_reply=''
 sf_tui_transport_reply() { held_reply="$*"; }
 sf_tui_hold_permission
 assert_equal 'permission_1 hold' "$held_reply"
-assert_equal 1 "$SF_PRESENT_PERMISSION_HELD"
-assert_equal 0 "$SF_PRESENT_PERMISSION_AUTO"
-pump '{"type":"_tool_permission_review","id":"permission_1","decision":"approve","reason":"authorized","timeout":10}'
-assert_equal 0 "$SF_PRESENT_PERMISSION_AUTO"
 pump '{"type":"_tool_permission_end","id":"expired"}'
 assert_equal permission "$SF_PRESENT_STATE"
 functions[sf_tui_transport_reply]=$functions[sf_tui_transport_reply_saved]

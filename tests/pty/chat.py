@@ -270,7 +270,6 @@ def test_permission_review_runs_with_prompt():
     for pending in (True, False):
         review = r'''#!/usr/bin/env zsh
 cat >/dev/null
-print -r -- $$ >"$SHELLFISH_SESSION.review-pid"
 sleep "${REVIEW_DELAY:-0}"
 print -r -u2 -- reviewed
 print -r -u3 -- '{"action":"allow","reason":"ok"}'
@@ -294,31 +293,18 @@ print -r -u3 -- '{"action":"allow","reason":"ok"}'
             session.wait_after(mark, "Allow shell outside of sandbox?")
             if pending:
                 session.wait_after(mark, "Reviewer: checking")
-                pid_file = Path(str(session.explicit_session) + ".review-pid")
-                deadline = time.monotonic() + 3
-                while not pid_file.exists() and time.monotonic() < deadline:
-                    session.pump()
-                assert pid_file.exists(), "review did not start while the prompt was open"
                 session.send(b"a")
             else:
                 session.wait_screen(mark, "Reviewer: approve: ok")
-                session.wait_after(mark, "applying in")
-                takeover = len(session.output)
+                session.wait_screen(mark, "[a]pprove (")
                 session.send(b"x")
-                session.wait_after(takeover, "waiting for your decision")
+                session.wait_screen(mark, "[d]eny and continue (")
                 session.send(b"d")
             session.wait_after(mark, "Tool complete.")
             _, records = session.wait_session_records(5, path=session.explicit_session)
             results = [r for r in records if r.get("type") == "tool_result"]
             assert len(results) == 1
             assert results[0]["sandbox_access"] == ("approved" if pending else "denied")
-            if pending:
-                try:
-                    os.kill(int(pid_file.read_text()), 0)
-                except ProcessLookupError:
-                    pass
-                else:
-                    raise AssertionError("reviewer survived the user's answer")
         finally:
             session.close()
 

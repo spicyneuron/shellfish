@@ -254,37 +254,37 @@ try:
     else:
         raise AssertionError("cancelled reviewer is still alive")
 
+    # A verdict starts a short countdown, and without a client it applies at once.
+    for action, decision, exit_code in [("allow", "approve", 0), ("deny", "deny", 126)]:
+        review = Review("verdict-" + action, action=action)
+        update = review.until("_tool_permission_update")
+        assert update["decision"] == decision and update["timeout"] == 10, update
+        review.process.stdin.close()
+        review.finish(exit_code)
+
     override = Review("override-denial", action="deny")
-    verdict = override.until("_tool_permission_review")
-    assert verdict["decision"] == "deny" and verdict["timeout"] == 10, verdict
+    override.until("_tool_permission_update")
     override.answer("approve")
     override.finish(0)
 
     for name, action, fail in [("defer", "", False), ("failure", "allow", True)]:
         review = Review(name, action=action, fail=fail)
         verdict = review.until("_tool_permission_review")
-        assert verdict["decision"] == "" and verdict["timeout"] == 0, verdict
+        assert verdict["decision"] == "", verdict
         review.answer("deny")
         review.finish(126)
+        assert not any(e["type"] == "_tool_permission_update" for e in review.events)
 
-    held = Review("held")
-    held.until("_tool_permission_review")
-    held.answer("hold")
-    held_at = time.monotonic()
-    automatic = []
-    for action, exit_code in [("allow", 0), ("deny", 126)]:
-        review = Review("auto-" + action, action=action)
-        verdict = review.until("_tool_permission_review")
-        assert verdict["timeout"] == 10, verdict
-        automatic.append((review, exit_code, time.monotonic()))
-    for review, exit_code, start in automatic:
-        review.finish(exit_code)
-        assert time.monotonic() - start >= 9.8, "review applied without its grace period"
-    while time.monotonic() - held_at < 10.5:
-        time.sleep(0.05)
-    assert held.process.poll() is None, "taking control did not disable automatic approval"
-    held.answer("deny")
-    held.finish(126)
+    # Taking control, before or after a verdict, restarts the countdown on deny.
+    for name, delay in [("held-before", 1), ("held-after", 0)]:
+        held = Review(name, delay=delay)
+        if not delay:
+            held.until("_tool_permission_update")
+        held.answer("hold")
+        held.process.stdin.close()
+        held.finish(126)
+        updates = [e for e in held.events if e["type"] == "_tool_permission_update"]
+        assert updates[-1]["decision"] == "deny" and updates[-1]["timeout"] == 120, updates
 finally:
     for review in runs:
         if review.process.poll() is None:

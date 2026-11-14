@@ -134,8 +134,8 @@ sf_run_interrupt() {
   [[ -z $SF_PROVIDER[pid] ]] || sf_process_stop "$SF_PROVIDER[pid]" "$SF_PROVIDER[group_file]"
 }
 
-# Poll client input before applying any reviewer verdict or deadline. These
-# locals belong to sf_run_permission; process polling keeps the same owner.
+# Poll client input, then apply the default once its countdown ends. These
+# locals belong to sf_run_permission, and review hooks poll through it too.
 sf_run_permission_poll() {
   local response choice
   (( ! SF_RUN[write_failed] )) || { permission_error='session writing has stopped'; return 1; }
@@ -150,7 +150,9 @@ sf_run_permission_poll() {
       else error end
     ' <<<"$response" 2>/dev/null) || { permission_error='invalid permission response'; return 1; }
     case $choice in
-      (hold) permission_hold=1 ;;
+      (hold)
+        permission_held=1
+        sf_run_permission_countdown deny '' "$SF_RUN[user_approval_timeout]" || return 1 ;;
       (approve|approve_session|deny)
         permission_decision=$choice
         [[ $choice != deny ]] || permission_reason='sandbox access denied by user'
@@ -158,30 +160,31 @@ sf_run_permission_poll() {
     esac
   done
   (( ! SF_RUN[signal_status] )) || { permission_error='permission request interrupted'; return 1; }
-  if [[ -n $permission_auto ]] && (( ! permission_hold &&
-      (permission_closed || EPOCHREALTIME >= permission_auto_deadline) )); then
-    permission_decision=$permission_auto
-    permission_reason=$permission_auto_reason
-    return 1
-  fi
-  if (( EPOCHREALTIME >= permission_deadline )); then
-    permission_decision=deny permission_reason='sandbox access approval timed out'
-    return 1
-  fi
-  return 0
+  (( EPOCHREALTIME >= permission_deadline )) || return 0
+  permission_decision=$permission_default
+  permission_reason=${permission_default_reason:-sandbox access approval timed out}
+  return 1
 }
 
-# The prompt and hooks run together. An explicit client decision cancels an
-# active hook; an untouched reviewer verdict applies ten seconds after arrival.
+# Apply DEFAULT with REASON after SECONDS unless the client answers first.
+sf_run_permission_countdown() {
+  permission_default=$1 permission_default_reason=$2
+  (( permission_deadline = EPOCHREALTIME + $3 ))
+  sf_run_emit "$(jq -cn --arg id "$permission_id" --arg decision "$1" --argjson timeout "$3" '
+    {type:"_tool_permission_update",id:$id,decision:$decision,timeout:$timeout}')" ||
+    { permission_error='cannot emit permission update'; return 1; }
+}
+
+# The client and review hooks race under one countdown. It starts on deny,
+# switches to a reviewer verdict for ten seconds, and returns to deny for the
+# full timeout once the user takes control. A client answer always applies at
+# once and cancels unfinished hooks.
 sf_run_permission() {
   local session=$1 turn_state=$2 permission_id='' permission_decision=''
-  local permission_reason='' permission_error='' permission_auto='' permission_auto_reason=''
-  float permission_deadline=0 permission_auto_deadline=0
-  (( permission_deadline = EPOCHREALTIME + SF_RUN[user_approval_timeout] ))
-  integer permission_closed=$(( ! SF_RUN[jsonl] )) permission_hold=0 reviewing=0
-  # Seconds an untouched reviewer verdict waits; the client counts down the same.
-  integer grace=10
-  local request
+  local permission_reason='' permission_error='' permission_default=deny
+  local permission_default_reason='' request
+  float permission_deadline=$(( EPOCHREALTIME + SF_RUN[user_approval_timeout] ))
+  integer permission_closed=$(( ! SF_RUN[jsonl] )) permission_held=0 reviewing=0
   local -A review
   (( SF_RUN[permission_count] += 1 ))
   permission_id="permission_$SF_RUN[permission_count]"
@@ -198,7 +201,7 @@ sf_run_permission() {
       {type:"_tool_permission_request",id:$id,tool:{name:$name,input:$input},
        access:$access,reason:$reason,timeout:$timeout,reviewing:($reviewing == 1)}')" || return 1
   {
-    if sf_run_permission_poll; then
+    if (( reviewing )) && sf_run_permission_poll; then
       if sf_run_hooks --poll sf_run_permission_poll "$session" permission_request \
           "$request" "$turn_state" "$SF_TOOL_PLAN[name]" "$SF_TOOL_PLAN[id]"; then
         review=( "${reply[@]}" )
@@ -206,29 +209,25 @@ sf_run_permission() {
         (( ! SF_RUN[signal_status] && ! SF_RUN[write_failed] )) || permission_error=$SF_RUN_HOOK_ERROR
         review=( action '' reason 'Review failed; waiting for your decision.' )
       fi
-      if [[ -z $permission_decision && -z $permission_error ]]; then
-        permission_auto=$review[action]
-        [[ $permission_auto != allow ]] || permission_auto=approve
-        permission_auto_reason=$review[reason]
-        [[ $permission_auto != deny || -n $permission_auto_reason ]] ||
-          permission_auto_reason='sandbox access denied by permission_request hook'
-        (( permission_auto_deadline = EPOCHREALTIME + grace ))
-        [[ -z $permission_auto ]] || (( permission_deadline =
-          permission_deadline > permission_auto_deadline ? permission_deadline : permission_auto_deadline ))
-        sf_run_permission_poll || true
-        if (( reviewing )) && [[ -z $permission_decision && -z $permission_error ]]; then
-          sf_run_emit "$(jq -cn --arg id "$permission_id" --arg decision "$permission_auto" \
-            --arg reason "$permission_auto_reason" --argjson held $permission_hold --argjson grace $grace '
-              {type:"_tool_permission_review",id:$id,decision:$decision,reason:$reason,
-               timeout:(if $decision == "" or $held == 1 then 0 else $grace end)}')" ||
-            permission_error='cannot emit permission review'
+      # An answer that arrived with the verdict still wins.
+      if [[ -z $permission_decision && -z $permission_error ]] && sf_run_permission_poll; then
+        [[ $review[action] != allow ]] || review[action]=approve
+        [[ $review[action] != deny || -n $review[reason] ]] ||
+          review[reason]='sandbox access denied by permission_request hook'
+        sf_run_emit "$(jq -cn --arg id "$permission_id" --arg decision "$review[action]" \
+          --arg reason "$review[reason]" '
+            {type:"_tool_permission_review",id:$id,decision:$decision,reason:$reason}')" ||
+          permission_error='cannot emit permission review'
+        if [[ -n $review[action] && -z $permission_error ]] && (( ! permission_held )); then
+          sf_run_permission_countdown "$review[action]" "$review[reason]" 10
         fi
       fi
     fi
     while [[ -z $permission_decision && -z $permission_error ]]; do
       sf_run_permission_poll || break
       if (( permission_closed )); then
-        permission_decision=deny permission_reason='no client to approve sandbox access'
+        permission_decision=$permission_default
+        permission_reason=${permission_default_reason:-no client to approve sandbox access}
         break
       fi
       zselect -t 10 2>/dev/null || true

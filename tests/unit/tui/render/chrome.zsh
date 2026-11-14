@@ -49,24 +49,24 @@ banner=$(sf_tui_chat_end /tmp/session.jsonl)
 SF_PRESENT_STATE=permission
 SF_PRESENT_PERMISSION_TOOL=shell
 SF_PRESENT_PERMISSION_TEXT=$'pwd\n\nReason: host access'
+SF_PRESENT_PERMISSION_DEFAULT=deny
 typeset -gi SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + 120 ))
 COLUMNS=80
 LINES=10
 sf_tui_repaint
 typeset permission_prompt=$'─ Allow shell outside of sandbox? ─────────────────────────────────────────────\npwd\n\nReason: host access\n1. [a]pprove\n2. [d]eny and continue (120s)\n3. [s]top and discuss\n'
 [[ $PREDISPLAY == *$permission_prompt ]] || fail 'permission prompt was not rendered'
+# The countdown follows the choice that will apply.
 SF_PRESENT_PERMISSION_REVIEW='approve: authorized'
-SF_PRESENT_PERMISSION_AUTO=$(( SECONDS + 10 ))
+SF_PRESENT_PERMISSION_DEFAULT=approve
+SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + 10 ))
 sf_tui_repaint
-[[ $PREDISPLAY == *'Reviewer: approve: authorized (applying in 10s)'* ]] ||
-  fail 'review verdict and grace countdown were not rendered'
-SF_PRESENT_PERMISSION_HELD=1
-SF_PRESENT_PERMISSION_AUTO=0
-sf_tui_repaint
-[[ $PREDISPLAY == *'Reviewer: approve: authorized (waiting for your decision)'* ]] ||
-  fail 'held reviewer verdict was not rendered'
+[[ $PREDISPLAY == *$'Reviewer: approve: authorized\n1. [a]pprove (10s)\n2. [d]eny and continue\n'* ]] ||
+  fail 'review verdict and its countdown were not rendered'
 SF_PRESENT_PERMISSION_REVIEW=''
-SF_PRESENT_PERMISSION_HELD=0
+SF_PRESENT_PERMISSION_DEFAULT=deny
+SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + 120 ))
+sf_tui_repaint
 [[ $POSTDISPLAY == $'\n─'* ]] || fail 'permission prompt omitted its trailing blank line'
 SF_PRESENT_PERMISSION_DEADLINE=$(( SECONDS + 119 ))
 sf_tui_repaint
