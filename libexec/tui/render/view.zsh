@@ -264,7 +264,7 @@ sf_tui_drawer() {
 sf_tui_repaint() {
   local mode=${1-}
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
-  integer index start head history_item=0 history_label=0
+  integer index start head size history_item=0 history_label=0
   local prompt_divider_top prompt_divider_bottom label text line
   local prompt_style=prompt
   local choices
@@ -299,7 +299,7 @@ sf_tui_repaint() {
       fi
       sf_tui_drawer $columns 3 "$label" "${items[@]}"
       (( ${#reply} )) || continue
-      drawers+=( "${(F)reply}" )
+      drawers+=( ${#label} "${(F)reply}" )
       reserve=$(( reserve + ${#reply} + 1 ))
     done
   fi
@@ -347,12 +347,12 @@ sf_tui_repaint() {
     PREDISPLAY+="$choices"$'\n'
     sf_tui_chrome $start ${#choices} permission
   else
-    for text in "${drawers[@]}"; do
+    for size text in "${drawers[@]}"; do
       head=${#${text%%$'\n'*}}
       start=${#PREDISPLAY}
       PREDISPLAY+="$text"$'\n\n'
       sf_tui_chrome $start $head divider
-      sf_tui_chrome $(( start + 2 )) $(( head > 3 ? head - 3 : 0 )) muted
+      sf_tui_chrome $(( start + 2 )) $(( head - 2 < size ? head - 2 : size )) muted
       sf_tui_chrome $(( start + head + 1 )) $(( ${#text} - head - 1 )) muted
     done
     if (( SF_PRESENT_HISTORY_NO )); then

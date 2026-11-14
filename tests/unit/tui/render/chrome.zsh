@@ -144,6 +144,21 @@ sf_tui_repaint
 [[ $PREDISPLAY != *completions* ]] || fail 'dismissed drawer remained visible'
 assert_equal test/model "${POSTDISPLAY##*$'\n'}"
 
+# Drawer headings mute only the label, so the dashes keep the divider color.
+SF_PRESENT_STYLE=( divider fg=D muted fg=M )
+typeset -i at
+for COLUMNS label in 30 completions 6 co…; do
+  sf_tui_reset
+  SF_PRESENT_COMPLETIONS=( /queue /quit )
+  sf_tui_repaint
+  at=${#${PREDISPLAY%%─ co*}}
+  assert_equal "$at $(( at + COLUMNS - 1 )) fg=D $(( at + 2 )) $(( at + 2 + ${#label} )) fg=M" \
+    "${SF_PRESENT_CHROME_HIGHLIGHTS[1,6]}"
+done
+SF_PRESENT_STYLE=()
+SF_PRESENT_COMPLETIONS=()
+COLUMNS=80
+
 # The viewport and staging budget use the actual heights of both drawers.
 sf_tui_reset
 LINES=20
