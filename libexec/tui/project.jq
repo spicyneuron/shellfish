@@ -116,7 +116,8 @@ def record_actions($mode; $window; $drawn):
     [["execution_end", .id, hook_class, result_text, preview,
       ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]
   elif .type == "session" then
-    [["commands"] + (.profile.commands // [])] + details_actions + model_actions +
+    [.cwd // empty | ["cwd", .]] + [["commands"] + (.profile.commands // [])] +
+    details_actions + model_actions +
     if $mode == "load" then message_actions("system"; .profile.system[0].text // "") else [] end
   elif .type == "state_update" then []
   else error("unsupported record: " + (.type | tostring))

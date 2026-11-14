@@ -296,6 +296,39 @@ assert_equal '/quit' "$BUFFER"
 assert_equal 2 "$SF_PRESENT_COMPLETION_NO"
 SF_PRESENT_COMPLETIONS=()
 
+# An @path completes one folder at a time under the session's directory, marking
+# folders and showing hidden files only after a typed dot.
+sf_test_tmp editor
+mkdir -p "$tmp/project/lib" "$tmp/project/libexec"
+touch "$tmp/project/"{README.md,.hidden} "$tmp/project/lib/"{cli.zsh,session.zsh}
+SF_PRESENT_CWD=$tmp/project
+WIDGET=sf_tui_complete
+for before after matches in \
+  'Read @li' 'Read @lib' '@lib/,@libexec/' \
+  'Read @lib/' 'Read @lib/' '@lib/cli.zsh,@lib/session.zsh' \
+  'Read @lib/c' 'Read @lib/cli.zsh' '' \
+  '@R' '@README.md' '' \
+  '@' '@' '@README.md,@lib/,@libexec/' \
+  '@.' '@.hidden' '' \
+  '@missing' '@missing' '' \
+  'a@li' 'a@li' '' \
+  'say /qu' 'say /qu' ''; do
+  BUFFER="$before then"
+  CURSOR=${#before}
+  SF_PRESENT_COMPLETIONS=()
+  sf_tui_input
+  assert_equal "$after then" "$BUFFER"
+  assert_equal ${#after} "$CURSOR"
+  assert_equal "$matches" "${(j:,:)${(@o)SF_PRESENT_COMPLETIONS}}"
+done
+
+# Completion needs the cursor at the end of a word.
+BUFFER='@li then'
+CURSOR=2
+sf_tui_input
+assert_equal '@li then' "$BUFFER"
+SF_PRESENT_COMPLETIONS=()
+
 # Bind documented editor keys.
 bindkey -e
 ZLE_CALLS=()

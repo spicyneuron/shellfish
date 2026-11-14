@@ -4,7 +4,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 source "$SF_ROOT/lib/profile.zsh"
 
 typeset -ga SF_PRESENT_HANDOFF=() SF_PRESENT_QUEUE=()
-typeset -g SF_PRESENT_SESSION=''
+typeset -g SF_PRESENT_SESSION='' SF_PRESENT_CWD=$PWD
 typeset -g SF_PRESENT_ACTION='' SF_PRESENT_SUBMITTED=''
 typeset -g SF_PRESENT_STATE=idle SF_PRESENT_PERMISSION_ID=''
 typeset -g SF_PRESENT_PERMISSION_TOOL='' SF_PRESENT_PERMISSION_TEXT=''
@@ -168,6 +168,7 @@ sf_tui_apply() {
   fi
   case $type in
     commands) sf_tui_commands "${@:2}" ;;
+    cwd) ! sf_cli_path "$2" || SF_PRESENT_CWD=$REPLY ;;
     session)
       [[ -n $SF_PRESENT_SESSION ]] || SF_TUI_TRANSPORT_COMMAND=(
         "$SF_ENTRY" run --jsonl --session "$2" )

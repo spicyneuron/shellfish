@@ -70,7 +70,8 @@ usage | 2 ↑ 1 ↓ | 40' "$REPLY"
 # history only on replay.
 typeset briefed=$(jq -c '.profile.system = [{text:"be brief"}]' <<<"$header")
 project load "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
-assert_equal 'commands
+assert_equal 'cwd | /fixture
+commands
 details |  |  |  |  |  |
 profile | test/fake-model |
 message_start | system
@@ -81,7 +82,8 @@ message_delta | 0 | text | Hello |
 message_end
 prompt | Hello' "$REPLY"
 project live "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
-assert_equal 'commands
+assert_equal 'cwd | /fixture
+commands
 details |  |  |  |  |  |
 profile | test/fake-model |
 message_start | user
@@ -183,7 +185,8 @@ assert_equal 'error | Cancelled. | stopped by the user' "$REPLY"
 
 # The header and later updates carry model identity; usage reads its window.
 project load "$header"
-assert_equal 'commands
+assert_equal 'cwd | /fixture
+commands
 details |  |  |  |  |  |
 profile | test/fake-model |' "$REPLY"
 project live "$update"
@@ -202,7 +205,8 @@ typeset equipped=$(jq -c '.profile += {tools:["@tools/read_file","/x/tools/shell
     shell:{read:["~/b"],write:["~/c"],domains:["github.com"]}}}}' \
   <<<"$header")
 project live "$equipped"
-assert_equal 'commands
+assert_equal 'cwd | /fixture
+commands
 details | read_file, shell |  | project/environment | 2 | 1 | 1
 profile | test/fake-model |' "$REPLY"
 

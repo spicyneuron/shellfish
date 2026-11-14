@@ -14,7 +14,7 @@ listed=$(jq -nr --argjson commands "$SHELLFISH_COMMANDS" '
 cat >&2 <<HELP
 Help:
 shift+enter        Add a line instead of sending the message
-tab, shift+tab     Complete slash commands, then cycle through the matches
+tab, shift+tab     Complete slash commands and @paths, then cycle through the matches
 ctrl+x             Send draft or first queued prompt now, interrupting an active request
 ctrl+enter, cmd+enter
                    Send now, if supported by the terminal

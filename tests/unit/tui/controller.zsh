@@ -33,6 +33,10 @@ sf_tui_commands
 assert_equal '/queue,/quit,/refresh' "${(j:,:)SF_PRESENT_COMMANDS}"
 assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
 
+# File completion follows the header's stored working directory.
+HOME=$tmp sf_tui_apply cwd '~/project'
+assert_equal "${tmp:A}/project" "$SF_PRESENT_CWD"
+
 # Client aliases share the catalog used by completion.
 SF_PRESENT_SESSION=example.jsonl
 for input in /quit /q; do

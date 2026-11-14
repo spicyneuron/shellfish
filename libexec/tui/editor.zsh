@@ -446,16 +446,28 @@ sf_tui_complete_back() {
   (( ! ${#SF_PRESENT_COMPLETIONS} )) || sf_tui_complete_cycle -1
 }
 
+# Paths complete one folder at a time under the session's working directory.
+sf_tui_complete_files() {
+  local word=$1 cwd=$SF_PRESENT_CWD
+  local -a paths=( "$cwd/${word#@}"*(NM) )
+  paths=( "${(@)paths#"$cwd/"}" )
+  sf_tui_complete_range $(( CURSOR - ${#word} )) $CURSOR "${(@)paths/#/@}"
+}
+
+# Completes the word ending at the cursor: a leading slash command or an @path.
 sf_tui_complete() {
-  local token
+  local word
   if (( ${#SF_PRESENT_COMPLETIONS} )); then
     sf_tui_complete_cycle 1
     return
   fi
-  [[ $BUFFER == /* ]] || return 0
-  token=${BUFFER%%[[:space:]]*}
-  (( CURSOR == ${#token} )) || return 0
-  sf_tui_complete_range 0 ${#token} "${SF_PRESENT_COMMANDS[@]}"
+  [[ ${BUFFER:$CURSOR:1} == ([[:space:]]|) ]] || return 0
+  word=${${BUFFER:0:$CURSOR}##*[[:space:]]}
+  if [[ $word == /* ]] && (( ${#word} == CURSOR )); then
+    sf_tui_complete_range 0 $CURSOR "${SF_PRESENT_COMMANDS[@]}"
+  elif [[ $word == @* ]]; then
+    sf_tui_complete_files "$word"
+  fi
 }
 
 # A key may finish decoding after an asynchronous permission request arrives.
