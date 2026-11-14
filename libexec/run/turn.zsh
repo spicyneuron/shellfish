@@ -301,12 +301,12 @@ sf_run_access_grant() {
 }
 
 # Settle authorization before changing execution mode. reply is (authorization,
-# refusal outcome), with authorization not_required, allowed, allowed_session,
-# or denied. Badges describe that result, never control execution.
+# refusal outcome), with authorization allowed, allowed_session, or denied.
+# Badges describe that result, never control execution.
 sf_run_authorize() {
   local session=$1 turn_state=$2 authorization action keep outcome=''
   case $SF_TOOL_PLAN[access_status] in
-    (none) reply=( not_required ); return 0 ;;
+    (none) reply=( allowed ); return 0 ;;
     (invalid)
       sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
       reply=( denied "$REPLY" )
