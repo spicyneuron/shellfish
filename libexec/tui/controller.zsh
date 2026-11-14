@@ -22,13 +22,14 @@ typeset -grA SF_PRESENT_CLIENT_COMMANDS=(
   /quit /quit /q /quit /refresh /refresh /r /refresh /queue /queue )
 typeset -ga SF_PRESENT_COMMANDS=( ${(ovu)SF_PRESENT_CLIENT_COMMANDS} )
 
+# Arguments are the session header's stored command paths.
 sf_tui_commands() {
   local reference profile names
   local -a directories=()
   SF_PRESENT_COMPLETIONS=()
   SF_PRESENT_COMMANDS=( ${(ovu)SF_PRESENT_CLIENT_COMMANDS} )
   for reference in "$@"; do
-    sf_profile_lookup '' commands "$reference" || return 0
+    sf_cli_path "$reference" || return 0
     directories+=( "$REPLY" )
   done
   profile=$(jq -cn --args '{tools:[],hooks:[],commands:$ARGS.positional}' \
