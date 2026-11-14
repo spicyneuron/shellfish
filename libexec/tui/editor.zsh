@@ -14,6 +14,7 @@ typeset -g SF_PRESENT_HISTORY_DRAFT=''
 typeset -gi SF_PRESENT_HISTORY_CURSOR=0 SF_PRESENT_HISTORY_NO=0
 typeset -gi SF_PRESENT_HISTORY_LIMIT=100
 typeset -ga SF_PRESENT_HISTORY=()
+typeset -gi SF_PRESENT_COMPLETION_START=0
 KEYTIMEOUT=5
 
 # Keep the editor alive for /refresh and /quit after renderer failure.
@@ -412,6 +413,8 @@ sf_tui_complete_range() {
   local token=${BUFFER:$start:$(( end - start ))} candidate prefix=''
   local -a matches=()
   SF_PRESENT_COMPLETIONS=()
+  SF_PRESENT_COMPLETION_NO=0
+  SF_PRESENT_COMPLETION_START=$start
   for candidate in "$@"; do
     [[ $candidate == "$token"* ]] && matches+=( "$candidate" )
   done
@@ -425,8 +428,30 @@ sf_tui_complete_range() {
   (( ${#matches} < 2 )) || SF_PRESENT_COMPLETIONS=( "${matches[@]}" )
 }
 
+# An open list cycles in STEP's direction, replacing the text inserted so far.
+sf_tui_complete_cycle() {
+  integer step=$1 count=${#SF_PRESENT_COMPLETIONS} start=$SF_PRESENT_COMPLETION_START
+  local match
+  if (( SF_PRESENT_COMPLETION_NO )); then
+    SF_PRESENT_COMPLETION_NO=$(( (SF_PRESENT_COMPLETION_NO - 1 + step + count) % count + 1 ))
+  else
+    SF_PRESENT_COMPLETION_NO=$(( step > 0 ? 1 : count ))
+  fi
+  match=$SF_PRESENT_COMPLETIONS[SF_PRESENT_COMPLETION_NO]
+  BUFFER="${BUFFER:0:$start}$match${BUFFER:$CURSOR}"
+  CURSOR=$(( start + ${#match} ))
+}
+
+sf_tui_complete_back() {
+  (( ! ${#SF_PRESENT_COMPLETIONS} )) || sf_tui_complete_cycle -1
+}
+
 sf_tui_complete() {
   local token
+  if (( ${#SF_PRESENT_COMPLETIONS} )); then
+    sf_tui_complete_cycle 1
+    return
+  fi
   [[ $BUFFER == /* ]] || return 0
   token=${BUFFER%%[[:space:]]*}
   (( CURSOR == ${#token} )) || return 0
@@ -436,7 +461,7 @@ sf_tui_complete() {
 # A key may finish decoding after an asynchronous permission request arrives.
 sf_tui_input() {
   local widget=$WIDGET paste
-  SF_PRESENT_COMPLETIONS=()
+  [[ $widget == (sf_tui_complete|sf_tui_complete_back) ]] || SF_PRESENT_COMPLETIONS=()
   if [[ $SF_PRESENT_STATE == permission ]]; then
     case $widget in
       self-insert) sf_tui_permission_choice ;;
@@ -448,7 +473,7 @@ sf_tui_input() {
     return 0
   fi
   case $widget in
-    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete)
+    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete|sf_tui_complete_back)
       "$widget" "$@"
       ;;
     *)
@@ -548,6 +573,7 @@ sf_tui_bind() {
     '^M' sf_tui_accept
     '^J' sf_tui_accept
     '^I' sf_tui_complete
+    '^[[Z' sf_tui_complete_back
     '^[^M' sf_tui_insert_newline
     '^[[13;2u' sf_tui_insert_newline
     '^X' sf_tui_send

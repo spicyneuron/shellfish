@@ -4,6 +4,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 typeset -g SF_PRESENT_ERROR=''
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
 typeset -ga SF_PRESENT_COMPLETIONS=()
+typeset -gi SF_PRESENT_COMPLETION_NO=0
 
 # Chrome spans cover the full display; viewport spans start at PREDISPLAY.
 typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
@@ -240,31 +241,39 @@ sf_tui_divider() {
   REPLY+=${(l:$(( columns - ${#REPLY} ))::─:)""}
 }
 
-# The returned rows include the heading and a bounded list with overflow.
+# The returned rows are a heading and up to LIMIT items. The heading notes the
+# overflow count, then HINT, and drops them in reverse when they do not fit.
+# REPLY is the length of the heading's label.
 sf_tui_drawer() {
   integer columns=$1 limit=$2 index shown
-  local label=$3
-  shift 3
+  local label=$3 hint=$4 text
+  local -a notes=()
+  shift 4
   reply=()
   (( $# )) || return 0
-  sf_tui_divider $columns "$label"
+  shown=$(( $# < limit ? $# : limit ))
+  (( shown == $# )) || notes+=( "$(( $# - shown )) more" )
+  [[ -z $hint ]] || notes+=( "$hint" )
+  text=$label
+  while (( ${#notes} )); do
+    text="$label (${(j:, :)notes})"
+    (( ${#text} + 3 > columns )) || break
+    notes[-1]=()
+    text=$label
+  done
+  sf_tui_divider $columns "$text"
   reply+=( "$REPLY" )
-  shown=$#
-  (( shown <= limit )) || shown=$(( limit - 1 ))
   for (( index = 1; index <= shown; index++ )); do
     sf_tui_clip $columns "$argv[index]"
     reply+=( "$REPLY" )
   done
-  if (( shown < $# )); then
-    sf_tui_clip $columns "… $(( $# - shown )) more"
-    reply+=( "$REPLY" )
-  fi
+  REPLY=${#text}
 }
 
 sf_tui_repaint() {
   local mode=${1-}
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
-  integer index start head size history_item=0 history_label=0
+  integer index start head size row first selected limit=3 history_item=0 history_label=0
   local prompt_divider_top prompt_divider_bottom label text line
   local prompt_style=prompt
   local choices
@@ -287,20 +296,32 @@ sf_tui_repaint() {
   fi
   if [[ $SF_PRESENT_STATE != permission ]]; then
     for label in queue completions; do
+      row=0
       if [[ $label == queue ]]; then
         items=( "${SF_PRESENT_QUEUE[@]}" )
         for (( index = 1; index <= ${#items}; index++ )); do
           items[index]="$index. $items[index]"
         done
-        label='queue (ctrl+x to send now)'
-        (( columns >= ${#label} + 3 )) || label=queue
+        sf_tui_drawer $columns $limit queue 'ctrl+x to send now' "${items[@]}"
       else
-        items=( "${SF_PRESENT_COMPLETIONS[@]}" )
+        # The heading shows the total, then the selection's position within it.
+        # The list scrolls to keep a selection in view.
+        (( ${#SF_PRESENT_COMPLETIONS} )) || continue
+        selected=$SF_PRESENT_COMPLETION_NO
+        first=$(( selected > limit ? selected - limit + 1 : 1 ))
+        items=( "${(@)SF_PRESENT_COMPLETIONS[first,first + limit - 1]}" )
+        text=${#SF_PRESENT_COMPLETIONS}
+        if (( selected )); then
+          row=$(( selected - first + 1 ))
+          text="$selected/$text"
+        fi
+        items=( "${(@)items/#/  }" )
+        (( ! row )) || items[row]="▸ ${items[row]:2}"
+        sf_tui_drawer $columns $limit completions "$text" "${items[@]}"
       fi
-      sf_tui_drawer $columns 3 "$label" "${items[@]}"
       (( ${#reply} )) || continue
-      drawers+=( ${#label} "${(F)reply}" )
-      reserve=$(( reserve + ${#reply} + 1 ))
+      drawers+=( $REPLY $row "${(F)reply}" )
+      reserve=$(( reserve + ${#reply} ))
     done
   fi
   (( rows > reserve )) || rows=$(( reserve + 1 ))
@@ -347,19 +368,23 @@ sf_tui_repaint() {
     PREDISPLAY+="$choices"$'\n'
     sf_tui_chrome $start ${#choices} permission
   else
-    for size text in "${drawers[@]}"; do
+    for size row text in "${drawers[@]}"; do
       head=${#${text%%$'\n'*}}
       start=${#PREDISPLAY}
-      PREDISPLAY+="$text"$'\n\n'
+      PREDISPLAY+="$text"$'\n'
       sf_tui_chrome $start $head divider
       sf_tui_chrome $(( start + 2 )) $(( head - 2 < size ? head - 2 : size )) muted
       sf_tui_chrome $(( start + head + 1 )) $(( ${#text} - head - 1 )) muted
+      (( row )) || continue
+      items=( "${(@f)text}" )
+      line=${(pj:\n:)items[1,row]}
+      sf_tui_chrome $(( start + ${#line} + 1 )) ${#items[row + 1]} selected
     done
     if (( SF_PRESENT_HISTORY_NO )); then
       history_item=$(( ${#SF_PRESENT_HISTORY} - SF_PRESENT_HISTORY_NO + 1 ))
     fi
     if (( history_item )); then
-      label="history $history_item/${#SF_PRESENT_HISTORY}"
+      label="history ($history_item/${#SF_PRESENT_HISTORY})"
       if (( ${#label} + 4 <= columns )); then
         sf_tui_divider $columns "$label"
         prompt_divider_top=$REPLY

@@ -89,7 +89,7 @@ def test_slash_command_completion():
         session.wait_screen(mark, "─ completions ")
         if session.screen() is not None:
             lines = session.screen().splitlines()
-            assert lines.index("/queue".ljust(COLUMNS)) < lines.index("/quit".ljust(COLUMNS))
+            assert lines.index("  /queue".ljust(COLUMNS)) < lines.index("  /quit".ljust(COLUMNS))
             assert "provider/fake-model" in session.screen()
         for key in (b"\x1b", b"\x02", b"X"):
             mark = len(session.output)
@@ -103,7 +103,7 @@ def test_slash_command_completion():
         session.send(b"\x15")
         mark = len(session.output)
         session.send(b"/\t")
-        session.wait_screen(mark, "… 4 more")
+        session.wait_screen(mark, "─ completions (6) ")
         if session.screen() is not None:
             assert "/fork" in session.screen() and "/help" in session.screen()
             assert "provider/fake-model" in session.screen()
@@ -111,7 +111,17 @@ def test_slash_command_completion():
             fcntl.ioctl(session.fd, termios.TIOCSWINSZ,
                         struct.pack("HHHH", rows, COLUMNS, 0, 0))
             session.settle()
-            session.wait_screen(mark, "… 4 more")
+            session.wait_screen(mark, "─ completions (6) ")
+        mark = len(session.output)
+        session.send(b"\t")
+        session.wait_screen(mark, "─ completions (1/6) ")
+        if session.screen() is not None:
+            assert "▸ /fork" in session.screen() and "❯ /fork" in session.screen()
+        mark = len(session.output)
+        session.send(b"\x1b[Z\x1b[Z")
+        session.wait_screen(mark, "─ completions (5/6) ")
+        if session.screen() is not None:
+            assert "▸ /refresh" in session.screen() and "❯ /refresh" in session.screen()
         session.send(b"\x15")
         cases = [
             (b"/hel\tX", "/helpX"),

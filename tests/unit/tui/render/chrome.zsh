@@ -102,34 +102,46 @@ SF_PRESENT_HISTORY=( one two )
 SF_PRESENT_HISTORY_NO=2
 SF_PRESENT_QUEUE=()
 sf_tui_repaint
-[[ $PREDISPLAY == *'─ history 1/2 '*$'\n❯ ' ]] ||
+[[ $PREDISPLAY == *'─ history (1/2) '*$'\n❯ ' ]] ||
   fail 'history depth was not rendered in the prompt divider'
 SF_PRESENT_HISTORY=()
 SF_PRESENT_HISTORY_NO=0
 
 # Queue and completion drawers use the same bounded, safe line layout.
 typeset -a reply
-sf_tui_drawer 20 3 queue one two three four five
-assert_equal '─ queue ────────────|one|two|… 3 more' "${(j:|:)reply}"
-sf_tui_drawer 20 3 completions one two three
+sf_tui_drawer 20 3 queue '' one two three four five
+assert_equal '─ queue (2 more) ───|one|two|three' "${(j:|:)reply}"
+assert_equal 14 "$REPLY"
+sf_tui_drawer 20 3 completions '' one two three
 assert_equal '─ completions ──────|one|two|three' "${(j:|:)reply}"
-sf_tui_drawer 20 3 queue
+sf_tui_drawer 20 3 queue hint
 assert_equal 0 "${#reply}"
-sf_tui_drawer 5 3 completions $'ab\n\tcd\e' '界界界' $'abcde\u0301X'
+sf_tui_drawer 5 3 completions '' $'ab\n\tcd\e' '界界界' $'abcde\u0301X'
 assert_equal '─ co…|ab  …|界界…|abcd…' "${(j:|:)reply}"
-sf_tui_drawer 1 3 completions abc 界
+sf_tui_drawer 1 3 completions '' abc 界
 assert_equal '…|…|…' "${(j:|:)reply}"
+
+# Narrow headings drop the hint, then the overflow count.
+sf_tui_drawer 40 3 queue 'ctrl+x to send now' 1 2 3 4
+assert_equal '─ queue (1 more, ctrl+x to send now) ───' "$reply[1]"
+sf_tui_drawer 30 3 queue 'ctrl+x to send now' 1 2 3 4
+assert_equal '─ queue (1 more) ─────────────' "$reply[1]"
+sf_tui_drawer 30 3 queue 'ctrl+x to send now' 1
+assert_equal '─ queue (ctrl+x to send now) ─' "$reply[1]"
+sf_tui_drawer 10 3 queue 'ctrl+x to send now' 1 2 3 4
+assert_equal '─ queue ──' "$reply[1]"
+assert_equal 5 "$REPLY"
 
 # Drawers appear above the editor and leave the model footer intact.
 SF_PRESENT_COMPLETIONS=( /queue /quit )
 sf_tui_repaint
-[[ $PREDISPLAY == *$'─ completions '*$'\n/queue\n/quit\n\n─'*$'\n❯ ' ]] ||
+[[ $PREDISPLAY == *$'─ completions '*$'\n  /queue\n  /quit\n─'*$'\n❯ ' ]] ||
   fail 'completion candidates did not render above the editor'
 assert_equal test/model "${POSTDISPLAY##*$'\n'}"
 assert_equal test/model "$SF_PRESENT_FOOTER"
 COLUMNS=10
 sf_tui_repaint
-[[ $PREDISPLAY == *$'─ comple…\n/queue\n/quit\n'* ]] || fail 'narrow drawer was not clipped'
+[[ $PREDISPLAY == *$'─ comple…\n  /queue\n  /quit\n'* ]] || fail 'narrow drawer was not clipped'
 COLUMNS=2
 sf_tui_repaint
 [[ $PREDISPLAY == *$'…\n…\n…\n'* ]] || fail 'one-column drawer was not clipped'
@@ -147,7 +159,7 @@ assert_equal test/model "${POSTDISPLAY##*$'\n'}"
 # Drawer headings mute only the label, so the dashes keep the divider color.
 SF_PRESENT_STYLE=( divider fg=D muted fg=M )
 typeset -i at
-for COLUMNS label in 30 completions 6 co…; do
+for COLUMNS label in 30 'completions (2)' 6 co…; do
   sf_tui_reset
   SF_PRESENT_COMPLETIONS=( /queue /quit )
   sf_tui_repaint
@@ -156,6 +168,28 @@ for COLUMNS label in 30 completions 6 co…; do
     "${SF_PRESENT_CHROME_HIGHLIGHTS[1,6]}"
 done
 SF_PRESENT_STYLE=()
+
+# A selection marks and emboldens its line, shows its position, and stays in view.
+SF_PRESENT_STYLE=( selected fg=B )
+SF_PRESENT_COMPLETIONS=( a b c d e f )
+COLUMNS=30
+for SF_PRESENT_COMPLETION_NO heading list in \
+  0 '(6)' $'  a\n  b\n  c' 1 '(1/6)' $'▸ a\n  b\n  c' 5 '(5/6)' $'  c\n  d\n▸ e'; do
+  sf_tui_reset
+  SF_PRESENT_COMPLETIONS=( a b c d e f )
+  sf_tui_repaint
+  [[ $PREDISPLAY == *"─ completions $heading "*$'─\n'"$list"$'\n─'* ]] ||
+    fail "selection $SF_PRESENT_COMPLETION_NO was not rendered"
+  if (( SF_PRESENT_COMPLETION_NO )); then
+    at=${#${PREDISPLAY%%▸*}}
+    [[ " ${SF_PRESENT_CHROME_HIGHLIGHTS[*]} " == *" $at $(( at + 3 )) fg=B "* ]] ||
+      fail "selection $SF_PRESENT_COMPLETION_NO was not emboldened"
+  else
+    [[ ${SF_PRESENT_CHROME_HIGHLIGHTS[*]} != *fg=B* ]] || fail 'an unselected list was emboldened'
+  fi
+done
+SF_PRESENT_STYLE=()
+SF_PRESENT_COMPLETION_NO=0
 SF_PRESENT_COMPLETIONS=()
 COLUMNS=80
 
@@ -170,16 +204,16 @@ sf_tui_repaint
 assert_equal 14 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_QUEUE=( queued )
 sf_tui_repaint
-assert_equal 11 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 12 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_COMPLETIONS=( /queue /quit )
 sf_tui_repaint
-assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
-[[ $PREDISPLAY == *'─ queue '*'─ completions '* ]] || fail 'drawers did not coexist'
+assert_equal 9 "$SF_PRESENT_SAFE_ROWS"
+[[ $PREDISPLAY == *$'\n1. queued\n─ completions '* ]] || fail 'drawers did not stack without a gap'
 sf_tui_repaint stage
-assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 9 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_QUEUE=()
 sf_tui_repaint
-assert_equal 10 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 11 "$SF_PRESENT_SAFE_ROWS"
 SF_PRESENT_COMPLETIONS=()
 sf_tui_repaint
 assert_equal 14 "$SF_PRESENT_SAFE_ROWS"

@@ -265,12 +265,44 @@ sf_tui_editor_permission open
 assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
 sf_tui_editor_permission restore
 
+# Tab cycles an open list and shift+tab reverses, wrapping and keeping later text.
+SF_PRESENT_COMMANDS=( /queue /quit /refresh )
+BUFFER='/q tail'
+CURSOR=2
+for WIDGET match number in sf_tui_complete /qu 0 sf_tui_complete /queue 1 \
+    sf_tui_complete /quit 2 sf_tui_complete /queue 1 sf_tui_complete_back /quit 2; do
+  sf_tui_input
+  assert_equal "$match tail" "$BUFFER"
+  assert_equal ${#match} "$CURSOR"
+  assert_equal $number "$SF_PRESENT_COMPLETION_NO"
+  assert_equal '/queue,/quit' "${(j:,:)SF_PRESENT_COMPLETIONS}"
+done
+WIDGET=self-insert
+sf_tui_input
+assert_equal '/quit tail' "$BUFFER"
+assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+
+# Shift+tab starts at the last match, and does nothing without a list.
+BUFFER='/q'
+CURSOR=2
+WIDGET=sf_tui_complete_back
+sf_tui_input
+assert_equal '/q' "$BUFFER"
+WIDGET=sf_tui_complete
+sf_tui_input
+WIDGET=sf_tui_complete_back
+sf_tui_input
+assert_equal '/quit' "$BUFFER"
+assert_equal 2 "$SF_PRESENT_COMPLETION_NO"
+SF_PRESENT_COMPLETIONS=()
+
 # Bind documented editor keys.
 bindkey -e
 ZLE_CALLS=()
 sf_tui_bind
 [[ $(bindkey -M sf-present '^M') == *sf_tui_accept ]]
 [[ $(bindkey -M sf-present '^I') == *sf_tui_complete ]]
+[[ $(bindkey -M sf-present $'\e[Z') == *sf_tui_complete_back ]]
 [[ $(bindkey -M sf-present $'\e[13;2u') == *sf_tui_insert_newline ]]
 [[ $(bindkey -M sf-present $'\e[A') == *sf_tui_up ]]
 [[ $(bindkey -M sf-present $'\e[B') == *sf_tui_down ]]
