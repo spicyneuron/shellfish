@@ -3,6 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 typeset -g SF_PRESENT_ERROR=''
 typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
+typeset -ga SF_PRESENT_COMPLETIONS=()
 
 # Chrome spans cover the full display; viewport spans start at PREDISPLAY.
 typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
@@ -17,6 +18,7 @@ typeset -ga SF_PRESENT_LIVE_ROW_TEXT=() SF_PRESENT_LIVE_ROW_SPANS=()
 typeset -g SF_PRESENT_WIDTH=''
 
 sf_tui_reset() {
+  SF_PRESENT_COMPLETIONS=()
   SF_PRESENT_ROW_TEXT=()
   SF_PRESENT_ROW_SPANS=()
   SF_PRESENT_ROW_READY=()
@@ -236,7 +238,7 @@ sf_tui_repaint() {
   local mode=${1-}
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
   integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
-  local prompt_divider_top prompt_divider_bottom label
+  local prompt_divider_top prompt_divider_bottom label footer=$SF_PRESENT_FOOTER
   local queue_item queue_line queue_text='' line
   local prompt_style=prompt
   local choices
@@ -370,10 +372,17 @@ sf_tui_repaint() {
   POSTDISPLAY=$'\n'"$prompt_divider_bottom"
   sf_tui_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) \
     ${#prompt_divider_bottom} $prompt_style
-  if [[ -n $SF_PRESENT_FOOTER ]]; then
+  if [[ $SF_PRESENT_STATE != permission ]] && (( ${#SF_PRESENT_COMPLETIONS} )); then
+    footer="${(j:  :)SF_PRESENT_COMPLETIONS}"
+    if (( ${#footer} > columns )); then
+      footer="${footer[1,columns - 1]}…"
+      (( columns > 1 )) || footer='…'
+    fi
+  fi
+  if [[ -n $footer ]]; then
     start=$(( ${#PREDISPLAY} + ${#BUFFER} + ${#POSTDISPLAY} + 1 ))
-    POSTDISPLAY+=$'\n'"$SF_PRESENT_FOOTER"
-    sf_tui_chrome $start ${#SF_PRESENT_FOOTER} footer
+    POSTDISPLAY+=$'\n'"$footer"
+    sf_tui_chrome $start ${#footer} footer
   fi
   sf_tui_update_highlights view || return 1
 }

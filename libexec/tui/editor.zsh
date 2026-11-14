@@ -234,6 +234,7 @@ sf_tui_record_prompt() {
 sf_tui_editor_permission() {
   local mode=$1
   if [[ $mode == open ]]; then
+    SF_PRESENT_COMPLETIONS=()
     SF_PRESENT_PERMISSION_DRAFT=${BUFFER-}
     SF_PRESENT_PERMISSION_CURSOR=${CURSOR:-0}
     BUFFER=''
@@ -404,13 +405,14 @@ sf_tui_down() {
   sf_tui_move_vertical 1
 }
 
-sf_tui_complete() {
-  local token candidate prefix=''
+# Offsets are zero-based characters, with an exclusive end like CURSOR.
+sf_tui_complete_range() {
+  integer start=$1 end=$2
+  shift 2
+  local token=${BUFFER:$start:$(( end - start ))} candidate prefix=''
   local -a matches=()
-  [[ $BUFFER == /* ]] || return 0
-  token=${BUFFER%%[[:space:]]*}
-  (( CURSOR == ${#token} )) || return 0
-  for candidate in "${SF_PRESENT_COMMANDS[@]}"; do
+  SF_PRESENT_COMPLETIONS=()
+  for candidate in "$@"; do
     [[ $candidate == "$token"* ]] && matches+=( "$candidate" )
   done
   (( ${#matches} )) || return 0
@@ -418,12 +420,23 @@ sf_tui_complete() {
   for candidate in "${matches[@]}"; do
     while [[ $candidate != "$prefix"* ]]; do prefix=${prefix%?}; done
   done
-  LBUFFER=$prefix
+  BUFFER="${BUFFER:0:$start}$prefix${BUFFER:$end}"
+  CURSOR=$(( start + ${#prefix} ))
+  (( ${#matches} < 2 )) || SF_PRESENT_COMPLETIONS=( "${matches[@]}" )
+}
+
+sf_tui_complete() {
+  local token
+  [[ $BUFFER == /* ]] || return 0
+  token=${BUFFER%%[[:space:]]*}
+  (( CURSOR == ${#token} )) || return 0
+  sf_tui_complete_range 0 ${#token} "${SF_PRESENT_COMMANDS[@]}"
 }
 
 # A key may finish decoding after an asynchronous permission request arrives.
 sf_tui_input() {
   local widget=$WIDGET paste
+  SF_PRESENT_COMPLETIONS=()
   if [[ $SF_PRESENT_STATE == permission ]]; then
     case $widget in
       self-insert) sf_tui_permission_choice ;;

@@ -217,6 +217,54 @@ WIDGET=backward-kill-word
 sf_tui_input
 assert_equal '-f kill,.backward-kill-word --' "${(j:,:)ZLE_CALLS}"
 
+# Range completion preserves surrounding text and places the cursor after insertion.
+BUFFER=$'前文\nUse $co later'
+CURSOR=10
+sf_tui_complete_range 7 10 '$code-review'
+assert_equal $'前文\nUse $code-review later' "$BUFFER"
+assert_equal 19 "$CURSOR"
+assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+
+# Shared prefixes, exact matches, and missing candidates use the same range.
+BUFFER='Read @sr then'
+CURSOR=8
+sf_tui_complete_range 5 8 @src/editor.zsh @src/controller.zsh @tests/editor.zsh
+assert_equal 'Read @src/ then' "$BUFFER"
+assert_equal 10 "$CURSOR"
+assert_equal '@src/editor.zsh,@src/controller.zsh' "${(j:,:)SF_PRESENT_COMPLETIONS}"
+BUFFER='Read @src/editor.zsh then'
+CURSOR=20
+sf_tui_complete_range 5 20 @src/editor.zsh
+assert_equal 'Read @src/editor.zsh then' "$BUFFER"
+assert_equal 20 "$CURSOR"
+sf_tui_complete_range 5 20 @tests/editor.zsh
+assert_equal 'Read @src/editor.zsh then' "$BUFFER"
+assert_equal 20 "$CURSOR"
+assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+
+# Empty ranges support insertion, including at either buffer edge.
+BUFFER='tail'
+CURSOR=0
+sf_tui_complete_range 0 0 'prefix '
+assert_equal 'prefix tail' "$BUFFER"
+assert_equal 7 "$CURSOR"
+CURSOR=${#BUFFER}
+sf_tui_complete_range $CURSOR $CURSOR ' end'
+assert_equal 'prefix tail end' "$BUFFER"
+assert_equal 15 "$CURSOR"
+
+# Any input dismisses completion candidates before handling the key.
+for WIDGET in self-insert backward-char sf_tui_escape sf_tui_accept; do
+  SF_PRESENT_COMPLETIONS=( /queue /quit )
+  BUFFER=''
+  sf_tui_input
+  assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+done
+SF_PRESENT_COMPLETIONS=( /queue /quit )
+sf_tui_editor_permission open
+assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+sf_tui_editor_permission restore
+
 # Bind documented editor keys.
 bindkey -e
 ZLE_CALLS=()

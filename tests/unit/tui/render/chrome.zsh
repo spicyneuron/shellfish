@@ -106,3 +106,23 @@ sf_tui_repaint
   fail 'history depth was not rendered in the prompt divider'
 SF_PRESENT_HISTORY=()
 SF_PRESENT_HISTORY_NO=0
+
+# Ambiguous completions replace the footer without changing its stored identity.
+SF_PRESENT_COMPLETIONS=( /queue /quit )
+sf_tui_repaint
+assert_equal '/queue  /quit' "${POSTDISPLAY##*$'\n'}"
+assert_equal test/model "$SF_PRESENT_FOOTER"
+COLUMNS=10
+sf_tui_repaint
+assert_equal '/queue  …' "${POSTDISPLAY##*$'\n'}"
+COLUMNS=2
+sf_tui_repaint
+assert_equal '…' "${POSTDISPLAY##*$'\n'}"
+COLUMNS=80
+SF_PRESENT_STATE=permission
+sf_tui_repaint
+assert_equal test/model "${POSTDISPLAY##*$'\n'}"
+SF_PRESENT_STATE=idle
+SF_PRESENT_COMPLETIONS=()
+sf_tui_repaint
+assert_equal test/model "${POSTDISPLAY##*$'\n'}"

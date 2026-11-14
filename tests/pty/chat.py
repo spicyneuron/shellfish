@@ -84,10 +84,23 @@ def test_slash_command_completion():
         path, _ = session.wait_session_records(1)
         submitted = path.parent / "submitted"
         session.settle()
+        mark = len(session.output)
+        session.send(b"/qu\t")
+        session.wait_screen(mark, "/queue  /quit")
+        for key in (b"\x1b", b"\x02", b"X"):
+            mark = len(session.output)
+            session.send(key)
+            session.wait_screen(mark, "provider/fake-model")
+            session.settle()
+            if session.screen() is not None:
+                assert "/queue  /quit" not in session.screen()
+            session.send(b"\x15/qu\t")
+            session.wait_screen(mark, "/queue  /quit")
+        session.send(b"\x15")
         cases = [
             (b"/hel\tX", "/helpX"),
             (b"/help\tX", "/helpX"),
-            (b"/h\tX", "/hX"),
+            (b"/h\tX", "/helpX"),
             (b"/qu\tX", "/quX"),
             (b"/qui\tX", "/quitX"),
             (b"/ref\tX", "/refreshX"),

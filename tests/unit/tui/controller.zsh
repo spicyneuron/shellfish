@@ -19,6 +19,20 @@ pump() {
   sf_tui_pending_next || fail 'draining core output failed'
 }
 
+# Completion keeps command names and longer aliases, not single-letter aliases.
+mkdir -p "$tmp/commands/example"
+print -r -- '#!/bin/sh' >"$tmp/commands/example/run"
+chmod +x "$tmp/commands/example/run"
+print -r -- '{"description":"Example command","aliases":["e","example-alias"]}' \
+  >"$tmp/commands/example/manifest.json"
+sf_tui_commands "$tmp/commands/example" @commands/help
+assert_equal '/example,/example-alias,/help,/queue,/quit,/refresh' \
+  "${(j:,:)SF_PRESENT_COMMANDS}"
+SF_PRESENT_COMPLETIONS=( /example /example-alias )
+sf_tui_commands
+assert_equal '/queue,/quit,/refresh' "${(j:,:)SF_PRESENT_COMMANDS}"
+assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+
 # Replay complete session lines directly and reject invalid physical input.
 typeset replay="$tmp/replay.jsonl" malformed="$tmp/malformed.jsonl" torn="$tmp/torn.jsonl"
 cp "$SF_TEST_SESSIONS/complete.jsonl" "$replay"

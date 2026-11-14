@@ -18,12 +18,13 @@ typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
 typeset -gi SF_PRESENT_CREATING=0 SF_PRESENT_STEER=0
 typeset -g SF_PRESENT_TTY=''
-typeset -ga SF_PRESENT_COMMANDS=( /quit /q /refresh /r /queue )
+typeset -ga SF_PRESENT_COMMANDS=( /quit /refresh /queue )
 
 sf_tui_commands() {
   local reference profile names
   local -a directories=()
-  SF_PRESENT_COMMANDS=( /quit /q /refresh /r /queue )
+  SF_PRESENT_COMPLETIONS=()
+  SF_PRESENT_COMMANDS=( /quit /refresh /queue )
   for reference in "$@"; do
     sf_profile_lookup '' commands "$reference" || return 0
     directories+=( "$REPLY" )
@@ -31,8 +32,9 @@ sf_tui_commands() {
   profile=$(jq -cn --args '{tools:[],hooks:[],commands:$ARGS.positional}' \
     "${directories[@]}") || return 0
   sf_profile_components "$profile" || return 0
-  names=$(jq -r '.commands[] | .name, .manifest.aliases[]?' <<<"$REPLY") || return 0
-  SF_PRESENT_COMMANDS+=( ${${(f)names}/#//} )
+  names=$(jq -r '.commands[] | .name, (.manifest.aliases[]? | select(length > 1))' \
+    <<<"$REPLY") || return 0
+  [[ -z $names ]] || SF_PRESENT_COMMANDS+=( ${${(f)names}/#//} )
   SF_PRESENT_COMMANDS=( ${(ou)SF_PRESENT_COMMANDS} )
 }
 
