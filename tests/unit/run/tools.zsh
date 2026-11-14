@@ -292,9 +292,12 @@ print -rn -u3 -- '{"action":"deny","reason":"review denied"}'
 ZSH
 session="$tmp/permission-deny.jsonl"
 sf_test_session "$session"
+rm -f "$tool_marker"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
+  SF_TEST_PROVIDER_TOOL_COMMAND="print -r -- ran >${(q)tool_marker}" \
   sf_test_run permission "$session" >"$stream" || fail 'permission hook deny failed'
-jq -eRn '
+[[ ! -e $tool_marker ]] || fail 'denied unrestricted access executed the tool'
+jq -eRn --arg command "print -r -- ran >${(q)tool_marker}" '
   [inputs | fromjson] as $events |
   ([$events[] | select(.type == "_draft") | .sandbox_access] == ["requested"]) and
   ($events | map(select(.type == "hook_result"))[0] ==
@@ -302,7 +305,7 @@ jq -eRn '
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .sandbox_access == "denied" and
     .model_text == "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: review denied\n</sandbox_notice>" and
-    .user_text == "**Shell** true\n" + .model_text)
+    .user_text == "**Shell** " + $command + "\n" + .model_text)
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
 # The client may answer before the review hooks finish.

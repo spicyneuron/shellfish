@@ -243,7 +243,7 @@ sf_run_permission() {
 # Resolve requested paths before review and ask only for access not already
 # granted to this tool. Unrestricted execution always needs a fresh decision.
 sf_run_access_prepare() {
-  [[ $SF_TOOL_PLAN[sandbox] == true ]] || return 0
+  [[ $(jq -r '.unrestricted // false' <<<"$SF_TOOL_PLAN[access]") != true ]] || return 0
   local access=$SF_TOOL_PLAN[access] kind entry
   local -a paths
   for kind in read write; do
@@ -272,9 +272,7 @@ sf_run_access_prepare() {
       . == $target or (startswith("*.") and ($target | endswith($grant[1:])))) | not))
   ' <<<"$access") || { REPLY='cannot inspect sandbox access'; return 1; }
   if jq -e 'all(.[]; length == 0)' <<<"$SF_TOOL_PLAN[access]" >/dev/null; then
-    SF_TOOL_PLAN[decision]=session
-    SF_TOOL_PLAN[component]=$(jq -c '.draft.sandbox_access = "session"' \
-      <<<"$SF_TOOL_PLAN[component]") || { REPLY='cannot prepare sandbox access'; return 1; }
+    SF_TOOL_PLAN[access_status]=covered
   fi
 }
 
@@ -302,6 +300,50 @@ sf_run_access_grant() {
     { REPLY='cannot emit session update'; return 1; }
 }
 
+# Settle authorization before changing execution mode. reply is (authorization,
+# refusal outcome), with authorization not_required, allowed, allowed_session,
+# or denied. Badges describe that result, never control execution.
+sf_run_authorize() {
+  local session=$1 turn_state=$2 authorization action keep outcome=''
+  case $SF_TOOL_PLAN[access_status] in
+    (none) reply=( not_required ); return 0 ;;
+    (invalid)
+      sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
+      reply=( denied "$REPLY" )
+      return 0 ;;
+  esac
+  sf_run_access_prepare || return 1
+  if [[ $SF_TOOL_PLAN[access_status] == covered ]]; then
+    authorization=allowed_session
+  else
+    sf_run_component_draft "$SF_TOOL_PLAN[component]" ||
+      { REPLY='cannot emit tool draft'; return 1; }
+    sf_run_permission "$session" "$turn_state" || return 1
+    action=$reply[1]
+    if [[ $action == deny ]]; then
+      authorization=denied
+      sf_run_tool_refused "$reply[2]" 126
+      outcome=$(jq -c '.output.stdout |= "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: \(.)\n</sandbox_notice>"' <<<"$REPLY") ||
+        { REPLY='cannot decode tool result'; return 1; }
+    else
+      authorization=allowed
+      if [[ $(jq -r '.unrestricted // false' <<<"$SF_TOOL_PLAN[access]") == true ]]; then
+        SF_TOOL_PLAN[sandbox]=false
+      else
+        keep=false
+        [[ $action != approve_session ]] || keep=true
+        sf_run_access_grant "$session" $keep || return 1
+        [[ $keep == false ]] || authorization=allowed_session
+      fi
+    fi
+  fi
+  SF_TOOL_PLAN[component]=$(jq -c --arg authorization "$authorization" '
+    .draft.sandbox_access = ({allowed:"approved",allowed_session:"session",denied:"denied"}[$authorization])
+  ' <<<"$SF_TOOL_PLAN[component]") ||
+    { REPLY='cannot settle sandbox access request'; return 1; }
+  reply=( "$authorization" "$outcome" )
+}
+
 # A signal status, or a failure message for anything else.
 sf_run_status() {
   integer code=$1
@@ -314,7 +356,7 @@ sf_run_status() {
 
 sf_run_turn() {
   local user_record=$1 session=$2 prompt=$3 config context_command
-  local id name decision outcome message failure='' turn_state keep
+  local id name authorization outcome message failure='' turn_state
   local -A hook_result completed
   integer begun=0 run_status catalog_ready=${4:-0}
 
@@ -398,7 +440,7 @@ sf_run_turn() {
           ;;
         tool)
           SF_TOOL_PLAN=( "${(@kv)SF_RUN_STEP}" )
-          id=$SF_TOOL_PLAN[id] name=$SF_TOOL_PLAN[name] decision=$SF_TOOL_PLAN[decision]
+          id=$SF_TOOL_PLAN[id] name=$SF_TOOL_PLAN[name]
           outcome=''
           if (( SF_TOOL_PLAN[call_index] > SF_RUN[max_tool_calls] )); then
             sf_run_tool_refused "tool call denied: per-response limit is $SF_RUN[max_tool_calls]" 126
@@ -414,36 +456,10 @@ sf_run_turn() {
               sf_run_tool_refused "tool is not allowed: $name" 127
               outcome=$REPLY
             else
-              if [[ $decision == request ]]; then
-                sf_run_access_prepare || { failure=$REPLY; break; }
-                decision=$SF_TOOL_PLAN[decision]
-              fi
-              if [[ $decision == deny ]]; then
-                sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
-                outcome=$REPLY
-              elif [[ $decision == request ]]; then
-                sf_run_component_draft "$SF_TOOL_PLAN[component]" ||
-                  { failure='cannot emit tool draft'; break; }
-                sf_run_permission "$session" "$turn_state" || { failure=$REPLY; break; }
-                decision=$reply[1]
-                if [[ $decision == deny ]]; then
-                  sf_run_tool_refused "$reply[2]" 126
-                  outcome=$(jq -c '.output.stdout |= "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: \(.)\n</sandbox_notice>"' <<<"$REPLY") ||
-                    { failure='cannot decode tool result'; break; }
-                  decision=denied
-                # A requested bypass leaves the call unsandboxed and is never kept.
-                elif [[ $SF_TOOL_PLAN[sandbox] == false ]]; then
-                  decision=approved
-                else
-                  keep=false
-                  [[ $decision != approve_session ]] || keep=true
-                  sf_run_access_grant "$session" $keep || { failure=$REPLY; break; }
-                  decision=approved
-                  [[ $keep == false ]] || decision=session
-                fi
-                SF_TOOL_PLAN[component]=$(jq -c --arg decision "$decision" \
-                  '.draft.sandbox_access = $decision' <<<"$SF_TOOL_PLAN[component]") ||
-                  { failure='cannot settle sandbox access request'; break; }
+              sf_run_authorize "$session" "$turn_state" || { failure=$REPLY; break; }
+              authorization=$reply[1]
+              if [[ $authorization == denied ]]; then
+                outcome=$reply[2]
               fi
               if [[ -z $outcome && $SF_TOOL_PLAN[sandbox] == true && -z ${commands[fence]-} ]]; then
                 sf_run_tool_refused 'sandboxing requires fence' 126
@@ -453,7 +469,7 @@ sf_run_turn() {
                 sf_run_tool_execute "$session" ||
                   { sf_run_status $? "${SF_RUN_TOOL_ERROR:-cannot execute tool}"; break; }
                 outcome=$REPLY
-                if [[ $decision == session ]]; then
+                if [[ $authorization == allowed_session ]]; then
                   outcome=$(jq -c '.output.stdout += "\n<sandbox_notice>This access is granted for the rest of this session. Later calls of this tool have it without asking. Do not request it again.</sandbox_notice>"' <<<"$outcome") ||
                     { failure='cannot decode tool result'; break; }
                 fi

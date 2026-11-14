@@ -45,12 +45,12 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
   # Hooks and the tool see the operation without the model's access request.
   ($input | del(.request_sandbox_access)) as $operation |
   ($profile.sandbox.enabled and ($manifest.sandbox // false)) as $sandboxable |
-  (if $tool == null or ($sandboxable | not) then {decision:"none"}
+  (if $tool == null or ($sandboxable | not) then {status:"none"}
    else $input.request_sandbox_access |
      requested_access($manifest.allow_sandbox_bypass // false) |
-     if . == null then {decision:"none"}
-     elif .problem then {decision:"deny",reason:.problem}
-     else {decision:"request",reason,access} end
+     if . == null then {status:"none"}
+     elif .problem then {status:"invalid",reason:.problem}
+     else {status:"pending",reason,access} end
    end) as $permission |
   {id:$id, name:$name, input:$input,
    request:{turn_id:$turn,tool_name:$name,tool_use_id:$id,tool_input:$operation},
@@ -58,15 +58,15 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
      draft:({type:"_draft",id:$id,name:$name,
        user_text:render_template($manifest.user_text; {input:$input})} +
        ($manifest | with_entries(select(.key == "user_preview_lines"))) +
-       if $permission.decision == "request" then {sandbox_access:"requested"} else {} end)},
-   decision:$permission.decision,
+       if $permission.status == "pending" then {sandbox_access:"requested"} else {} end)},
+   access_status:$permission.status,
    permission_reason:($permission.reason // ""),
    access:($permission.access // null),
    executable:($tool.command // ""),
    environment:(($tool.manifest.environment // []) | join(" ")),
    max_capture:(if $manifest.max_capture_kb then $manifest.max_capture_kb * 1024 else $max_capture end),
    execution_input:$operation,
-   sandbox:($sandboxable and ($permission.access.unrestricted // false | not)),
+   sandbox:$sandboxable,
    read_paths:($profile.sandbox.tools[$name].read // [] | join("\n")),
    write_paths:($profile.sandbox.tools[$name].write // [] | join("\n")),
    domains:($profile.sandbox.tools[$name].domains // [])};
