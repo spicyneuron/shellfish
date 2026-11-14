@@ -18,6 +18,7 @@ typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
 typeset -gi SF_PRESENT_CREATING=0 SF_PRESENT_STEER=0
 typeset -g SF_PRESENT_TTY=''
+# Client command names and aliases, also completed. /queue runs in sf_tui_submit.
 typeset -grA SF_PRESENT_CLIENT_COMMANDS=(
   /quit /quit /q /quit /refresh /refresh /r /refresh /queue /queue )
 typeset -ga SF_PRESENT_COMMANDS=( ${(ovu)SF_PRESENT_CLIENT_COMMANDS} )
