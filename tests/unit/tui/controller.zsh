@@ -33,6 +33,23 @@ sf_tui_commands
 assert_equal '/queue,/quit,/refresh' "${(j:,:)SF_PRESENT_COMMANDS}"
 assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
 
+# Client aliases share the catalog used by completion.
+SF_PRESENT_SESSION=example.jsonl
+for input in /quit /q; do
+  SF_PRESENT_ACTION=''
+  sf_tui_client_command "$input" || fail "client command failed: $input"
+  assert_equal quit "$SF_PRESENT_ACTION"
+done
+for input in /refresh /r; do
+  SF_PRESENT_ACTION=''
+  sf_tui_client_command "$input" || fail "client command failed: $input"
+  assert_equal handoff "$SF_PRESENT_ACTION"
+  assert_equal "$SF_ENTRY --clear --session example.jsonl" "${(j: :)SF_PRESENT_HANDOFF}"
+done
+SF_PRESENT_ACTION=''
+SF_PRESENT_HANDOFF=()
+sf_tui_client_command '/q extra' && fail 'client alias accepted arguments'
+
 # Replay complete session lines directly and reject invalid physical input.
 typeset replay="$tmp/replay.jsonl" malformed="$tmp/malformed.jsonl" torn="$tmp/torn.jsonl"
 cp "$SF_TEST_SESSIONS/complete.jsonl" "$replay"

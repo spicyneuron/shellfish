@@ -39,6 +39,33 @@ sf_tui_safe() {
   done
 }
 
+# One safe display line, clipped by terminal cells rather than characters.
+sf_tui_clip() {
+  integer columns=$1 column=0 width index
+  local text character clipped=''
+  sf_tui_safe "$2"
+  text=${REPLY//$'\n'/ }
+  text=${text//$'\t'/ }
+  for (( index = 1; index <= ${#text}; index++ )); do
+    character=$text[index]
+    sf_tui_cell_width "$character" $column
+    width=$REPLY
+    if (( column + width > columns )); then
+      while (( column >= columns )); do
+        character=${clipped[-1]}
+        clipped=${clipped%?}
+        sf_tui_cell_width "$character" 0
+        column=$(( column - REPLY ))
+      done
+      REPLY="$clipped…"
+      return 0
+    fi
+    clipped+=$character
+    column=$(( column + width ))
+  done
+  REPLY=$clipped
+}
+
 sf_tui_cell_width() {
   local character=$1
   integer column=$2 code

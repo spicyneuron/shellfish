@@ -234,15 +234,41 @@ sf_tui_permission_choices() {
   [[ $SF_PRESENT_PERMISSION_KIND != listed ]] || reply[2,1]=( approve_session )
 }
 
+sf_tui_divider() {
+  integer columns=$1
+  sf_tui_clip $columns "─ $2 "
+  REPLY+=${(l:$(( columns - ${#REPLY} ))::─:)""}
+}
+
+# The returned rows include the heading and a bounded list with overflow.
+sf_tui_drawer() {
+  integer columns=$1 limit=$2 index shown
+  local label=$3
+  shift 3
+  reply=()
+  (( $# )) || return 0
+  sf_tui_divider $columns "$label"
+  reply+=( "$REPLY" )
+  shown=$#
+  (( shown <= limit )) || shown=$(( limit - 1 ))
+  for (( index = 1; index <= shown; index++ )); do
+    sf_tui_clip $columns "$argv[index]"
+    reply+=( "$REPLY" )
+  done
+  if (( shown < $# )); then
+    sf_tui_clip $columns "… $(( $# - shown )) more"
+    reply+=( "$REPLY" )
+  fi
+}
+
 sf_tui_repaint() {
   local mode=${1-}
   integer columns=${COLUMNS:-0} rows=${LINES:-0} budget reserve=6
-  integer index queue_shown queue_limit start queue_head=0 history_item=0 history_label=0
-  local prompt_divider_top prompt_divider_bottom label footer=$SF_PRESENT_FOOTER
-  local queue_item queue_line queue_text='' line
+  integer index start head history_item=0 history_label=0
+  local prompt_divider_top prompt_divider_bottom label text line
   local prompt_style=prompt
   local choices
-  local -a reply
+  local -a reply drawers=() items=()
   local -A labels
   integer remaining
   if [[ $SF_PRESENT_STATE == idle && ${SF_PRESENT_ACTION-} != submit ]]; then
@@ -259,12 +285,23 @@ sf_tui_repaint() {
       reserve+=$(( ${#line} / columns ))
     done
   fi
-  queue_shown=0
   if [[ $SF_PRESENT_STATE != permission ]]; then
-    queue_shown=$(( ${#SF_PRESENT_QUEUE} < 3 ? ${#SF_PRESENT_QUEUE} : 3 ))
-  fi
-  if (( queue_shown )); then
-    reserve=$(( reserve + queue_shown + 2 + (queue_shown < ${#SF_PRESENT_QUEUE}) ))
+    for label in queue completions; do
+      if [[ $label == queue ]]; then
+        items=( "${SF_PRESENT_QUEUE[@]}" )
+        for (( index = 1; index <= ${#items}; index++ )); do
+          items[index]="$index. $items[index]"
+        done
+        label='queue (ctrl+x to send now)'
+        (( columns >= ${#label} + 3 )) || label=queue
+      else
+        items=( "${SF_PRESENT_COMPLETIONS[@]}" )
+      fi
+      sf_tui_drawer $columns 3 "$label" "${items[@]}"
+      (( ${#reply} )) || continue
+      drawers+=( "${(F)reply}" )
+      reserve=$(( reserve + ${#reply} + 1 ))
+    done
   fi
   (( rows > reserve )) || rows=$(( reserve + 1 ))
   budget=$(( rows - reserve ))
@@ -282,19 +319,12 @@ sf_tui_repaint() {
   if [[ $SF_PRESENT_STATE == permission ]]; then
     prompt_style=permission
     if [[ $SF_PRESENT_PERMISSION_KIND == listed ]]; then
-      prompt_divider_top="─ Grant $SF_PRESENT_PERMISSION_TOOL this sandbox access? "
+      label="Grant $SF_PRESENT_PERMISSION_TOOL this sandbox access?"
     else
-      prompt_divider_top="─ Allow $SF_PRESENT_PERMISSION_TOOL outside of sandbox? "
+      label="Allow $SF_PRESENT_PERMISSION_TOOL outside of sandbox?"
     fi
-    if (( ${#prompt_divider_top} < columns )); then
-      prompt_divider_top+=${(l:$(( columns - ${#prompt_divider_top} ))::─:)""}
-    elif (( ${#prompt_divider_top} > columns )); then
-      if (( columns > 1 )); then
-        prompt_divider_top="${prompt_divider_top[1,$(( columns - 1 ))]}…"
-      else
-        prompt_divider_top='…'
-      fi
-    fi
+    sf_tui_divider $columns "$label"
+    prompt_divider_top=$REPLY
     start=${#PREDISPLAY}
     PREDISPLAY+="$prompt_divider_top"
     sf_tui_chrome $start ${#prompt_divider_top} $prompt_style
@@ -317,45 +347,22 @@ sf_tui_repaint() {
     PREDISPLAY+="$choices"$'\n'
     sf_tui_chrome $start ${#choices} permission
   else
-    if (( queue_shown )); then
-      label='queue (ctrl+x to send now)'
-      (( columns >= ${#label} + 3 )) || label=queue
-      queue_text="─ $label "
-      (( ${#queue_text} >= columns )) ||
-        queue_text+=${(l:$(( columns - ${#queue_text} ))::─:)""}
-      queue_text=${queue_text[1,columns]}
-      queue_head=${#queue_text}
-      queue_limit=$(( columns > 7 ? columns - 7 : 0 ))
-      for (( index = 1; index <= queue_shown; index++ )); do
-        sf_tui_safe "$SF_PRESENT_QUEUE[index]"
-        queue_item=${REPLY//$'\n'/ }
-        queue_item=${queue_item//$'\t'/ }
-        if (( queue_limit && ${#queue_item} > queue_limit )); then
-          queue_item="${queue_item[1,queue_limit - 1]}…"
-        fi
-        queue_line="$index. $queue_item"
-        queue_text+=$'\n'"${queue_line[1,columns]}"
-      done
-      if (( queue_shown < ${#SF_PRESENT_QUEUE} )); then
-        queue_line="… $(( ${#SF_PRESENT_QUEUE} - queue_shown )) more"
-        queue_text+=$'\n'"${queue_line[1,columns]}"
-      fi
+    for text in "${drawers[@]}"; do
+      head=${#${text%%$'\n'*}}
       start=${#PREDISPLAY}
-      PREDISPLAY+="$queue_text"$'\n\n'
-      sf_tui_chrome $start $queue_head divider
-      sf_tui_chrome $(( start + 2 )) \
-        $(( queue_head - 2 < ${#label} ? queue_head - 2 : ${#label} )) muted
-      sf_tui_chrome $(( start + queue_head + 1 )) \
-        $(( ${#queue_text} - queue_head - 1 )) muted
-    fi
+      PREDISPLAY+="$text"$'\n\n'
+      sf_tui_chrome $start $head divider
+      sf_tui_chrome $(( start + 2 )) $(( head > 3 ? head - 3 : 0 )) muted
+      sf_tui_chrome $(( start + head + 1 )) $(( ${#text} - head - 1 )) muted
+    done
     if (( SF_PRESENT_HISTORY_NO )); then
       history_item=$(( ${#SF_PRESENT_HISTORY} - SF_PRESENT_HISTORY_NO + 1 ))
     fi
     if (( history_item )); then
       label="history $history_item/${#SF_PRESENT_HISTORY}"
       if (( ${#label} + 4 <= columns )); then
-        prompt_divider_top="─ $label "
-        prompt_divider_top+=${(l:$(( columns - ${#label} - 3 ))::─:)""}
+        sf_tui_divider $columns "$label"
+        prompt_divider_top=$REPLY
         history_label=1
       fi
     fi
@@ -372,17 +379,10 @@ sf_tui_repaint() {
   POSTDISPLAY=$'\n'"$prompt_divider_bottom"
   sf_tui_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) \
     ${#prompt_divider_bottom} $prompt_style
-  if [[ $SF_PRESENT_STATE != permission ]] && (( ${#SF_PRESENT_COMPLETIONS} )); then
-    footer="${(j:  :)SF_PRESENT_COMPLETIONS}"
-    if (( ${#footer} > columns )); then
-      footer="${footer[1,columns - 1]}…"
-      (( columns > 1 )) || footer='…'
-    fi
-  fi
-  if [[ -n $footer ]]; then
+  if [[ -n $SF_PRESENT_FOOTER ]]; then
     start=$(( ${#PREDISPLAY} + ${#BUFFER} + ${#POSTDISPLAY} + 1 ))
-    POSTDISPLAY+=$'\n'"$footer"
-    sf_tui_chrome $start ${#footer} footer
+    POSTDISPLAY+=$'\n'"$SF_PRESENT_FOOTER"
+    sf_tui_chrome $start ${#SF_PRESENT_FOOTER} footer
   fi
   sf_tui_update_highlights view || return 1
 }

@@ -86,16 +86,32 @@ def test_slash_command_completion():
         session.settle()
         mark = len(session.output)
         session.send(b"/qu\t")
-        session.wait_screen(mark, "/queue  /quit")
+        session.wait_screen(mark, "─ completions ")
+        if session.screen() is not None:
+            lines = session.screen().splitlines()
+            assert lines.index("/queue".ljust(COLUMNS)) < lines.index("/quit".ljust(COLUMNS))
+            assert "provider/fake-model" in session.screen()
         for key in (b"\x1b", b"\x02", b"X"):
             mark = len(session.output)
             session.send(key)
             session.wait_screen(mark, "provider/fake-model")
             session.settle()
             if session.screen() is not None:
-                assert "/queue  /quit" not in session.screen()
+                assert "─ completions " not in session.screen()
             session.send(b"\x15/qu\t")
-            session.wait_screen(mark, "/queue  /quit")
+            session.wait_screen(mark, "─ completions ")
+        session.send(b"\x15")
+        mark = len(session.output)
+        session.send(b"/\t")
+        session.wait_screen(mark, "… 4 more")
+        if session.screen() is not None:
+            assert "/fork" in session.screen() and "/help" in session.screen()
+            assert "provider/fake-model" in session.screen()
+        for rows in (ROWS + 4, ROWS):
+            fcntl.ioctl(session.fd, termios.TIOCSWINSZ,
+                        struct.pack("HHHH", rows, COLUMNS, 0, 0))
+            session.settle()
+            session.wait_screen(mark, "… 4 more")
         session.send(b"\x15")
         cases = [
             (b"/hel\tX", "/helpX"),
@@ -124,6 +140,34 @@ def test_slash_command_completion():
         session.wait("Help:")
         _, records = session.wait_session_records(2)
         assert not any(record["type"] == "user" for record in records), records
+    finally:
+        session.close()
+
+
+def test_completion_drawer_during_streaming():
+    session = Session(explicit_session=True, env={"SF_TEST_PROVIDER_DELAY": "0.04"})
+    try:
+        prompt = " ".join(f"stream{i}" for i in range(60))
+        mark = len(session.output)
+        session.send(prompt.encode() + b"\r")
+        session.wait_session_records(2, path=session.explicit_session)
+        session.wait_after(mark, "stream0")
+        session.send(b"queued\r/qu\t")
+        session.wait_screen(mark, "─ queue ")
+        session.wait_screen(mark, "─ completions ")
+        if session.screen() is not None:
+            assert "1. queued" in session.screen()
+            assert "/queue" in session.screen() and "/quit" in session.screen()
+            assert "provider/fake-model" in session.screen()
+        session.wait_session_records(5, timeout=8, path=session.explicit_session)
+        session.settle()
+        if session.screen() is not None:
+            assert "─ queue " not in session.screen()
+            assert "─ completions " in session.screen()
+            assert "❯ /qu" in session.screen()
+        session.send(b"X\r")
+        _, records = session.wait_session_records(6, path=session.explicit_session)
+        assert records[5]["content"][0]["text"] == "/quX"
     finally:
         session.close()
 
@@ -606,6 +650,7 @@ if __name__ == "__main__":
         test_permission_stop_cancels_pending_tools,
         test_chat_end,
         test_slash_command_completion,
+        test_completion_drawer_during_streaming,
         test_zle_multiline_editing,
         test_zle_wrapped_line_navigation,
         test_streaming_input_sequences_remain_atomic,

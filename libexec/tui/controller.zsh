@@ -18,13 +18,15 @@ typeset -gi SF_PRESENT_EXIT_STATUS=0
 typeset -gi SF_PRESENT_ERROR_SETTLED=0
 typeset -gi SF_PRESENT_CREATING=0 SF_PRESENT_STEER=0
 typeset -g SF_PRESENT_TTY=''
-typeset -ga SF_PRESENT_COMMANDS=( /quit /refresh /queue )
+typeset -grA SF_PRESENT_CLIENT_COMMANDS=(
+  /quit /quit /q /quit /refresh /refresh /r /refresh /queue /queue )
+typeset -ga SF_PRESENT_COMMANDS=( ${(ovu)SF_PRESENT_CLIENT_COMMANDS} )
 
 sf_tui_commands() {
   local reference profile names
   local -a directories=()
   SF_PRESENT_COMPLETIONS=()
-  SF_PRESENT_COMMANDS=( /quit /refresh /queue )
+  SF_PRESENT_COMMANDS=( ${(ovu)SF_PRESENT_CLIENT_COMMANDS} )
   for reference in "$@"; do
     sf_profile_lookup '' commands "$reference" || return 0
     directories+=( "$REPLY" )
@@ -65,11 +67,11 @@ sf_tui_discard_queue() {
 }
 
 sf_tui_client_command() {
-  case $1 in
-    /quit|/q)
+  case ${SF_PRESENT_CLIENT_COMMANDS[$1]-} in
+    /quit)
       SF_PRESENT_ACTION=quit
       ;;
-    /refresh|/r)
+    /refresh)
       [[ -n $SF_PRESENT_SESSION ]] || return 1
       SF_PRESENT_HANDOFF=( "$SF_ENTRY" --clear --session "$SF_PRESENT_SESSION" )
       SF_PRESENT_ACTION=handoff

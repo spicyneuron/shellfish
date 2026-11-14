@@ -107,22 +107,64 @@ sf_tui_repaint
 SF_PRESENT_HISTORY=()
 SF_PRESENT_HISTORY_NO=0
 
-# Ambiguous completions replace the footer without changing its stored identity.
+# Queue and completion drawers use the same bounded, safe line layout.
+typeset -a reply
+sf_tui_drawer 20 3 queue one two three four five
+assert_equal '─ queue ────────────|one|two|… 3 more' "${(j:|:)reply}"
+sf_tui_drawer 20 3 completions one two three
+assert_equal '─ completions ──────|one|two|three' "${(j:|:)reply}"
+sf_tui_drawer 20 3 queue
+assert_equal 0 "${#reply}"
+sf_tui_drawer 5 3 completions $'ab\n\tcd\e' '界界界' $'abcde\u0301X'
+assert_equal '─ co…|ab  …|界界…|abcd…' "${(j:|:)reply}"
+sf_tui_drawer 1 3 completions abc 界
+assert_equal '…|…|…' "${(j:|:)reply}"
+
+# Drawers appear above the editor and leave the model footer intact.
 SF_PRESENT_COMPLETIONS=( /queue /quit )
 sf_tui_repaint
-assert_equal '/queue  /quit' "${POSTDISPLAY##*$'\n'}"
+[[ $PREDISPLAY == *$'─ completions '*$'\n/queue\n/quit\n\n─'*$'\n❯ ' ]] ||
+  fail 'completion candidates did not render above the editor'
+assert_equal test/model "${POSTDISPLAY##*$'\n'}"
 assert_equal test/model "$SF_PRESENT_FOOTER"
 COLUMNS=10
 sf_tui_repaint
-assert_equal '/queue  …' "${POSTDISPLAY##*$'\n'}"
+[[ $PREDISPLAY == *$'─ comple…\n/queue\n/quit\n'* ]] || fail 'narrow drawer was not clipped'
 COLUMNS=2
 sf_tui_repaint
-assert_equal '…' "${POSTDISPLAY##*$'\n'}"
+[[ $PREDISPLAY == *$'…\n…\n…\n'* ]] || fail 'one-column drawer was not clipped'
 COLUMNS=80
 SF_PRESENT_STATE=permission
 sf_tui_repaint
+[[ $PREDISPLAY != *completions* ]] || fail 'permission prompt showed completion candidates'
 assert_equal test/model "${POSTDISPLAY##*$'\n'}"
 SF_PRESENT_STATE=idle
 SF_PRESENT_COMPLETIONS=()
 sf_tui_repaint
+[[ $PREDISPLAY != *completions* ]] || fail 'dismissed drawer remained visible'
 assert_equal test/model "${POSTDISPLAY##*$'\n'}"
+
+# The viewport and staging budget use the actual heights of both drawers.
+sf_tui_reset
+LINES=20
+sf_tui_action message_start user
+typeset -a transcript_lines=( {1..20} )
+sf_tui_action message_delta 0 text "${(F)transcript_lines}" ''
+sf_tui_action message_end
+sf_tui_repaint
+assert_equal 14 "$SF_PRESENT_SAFE_ROWS"
+SF_PRESENT_QUEUE=( queued )
+sf_tui_repaint
+assert_equal 11 "$SF_PRESENT_SAFE_ROWS"
+SF_PRESENT_COMPLETIONS=( /queue /quit )
+sf_tui_repaint
+assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
+[[ $PREDISPLAY == *'─ queue '*'─ completions '* ]] || fail 'drawers did not coexist'
+sf_tui_repaint stage
+assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
+SF_PRESENT_QUEUE=()
+sf_tui_repaint
+assert_equal 10 "$SF_PRESENT_SAFE_ROWS"
+SF_PRESENT_COMPLETIONS=()
+sf_tui_repaint
+assert_equal 14 "$SF_PRESENT_SAFE_ROWS"
