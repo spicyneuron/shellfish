@@ -18,7 +18,7 @@ sf_provider_request '.request | has("stream") | not' || sf_provider_die 'invalid
 sf_provider_credential 'x-api-key' "$api_key"
 unset api_key
 
-jq -ce '
+jq -ce "$SF_PROVIDER_JQ"'
   def flush_results:
     if (.pending | length) == 0 then .
     else .out += [{role:"user",content:.pending}] | .pending = []
@@ -66,10 +66,7 @@ jq -ce '
       .output_config = ((.output_config // {}) +
         {format:{type:"json_schema",schema:$schema}})
     else . end |
-    if has("reasoning_effort") then
-      .reasoning = ((.reasoning // {}) + {effort:.reasoning_effort}) |
-      del(.reasoning_effort)
-    else . end |
+    request_reasoning |
     if has("reasoning") then
       .reasoning as $reasoning | del(.reasoning) |
       .thinking={type:"adaptive"} |
@@ -77,10 +74,7 @@ jq -ce '
       else .output_config = ((.output_config // {}) + {effort:$reasoning.effort})
       end
     else . end |
-    (if has("max_output_tokens") then .max_output_tokens
-     elif has("max_completion_tokens") then .max_completion_tokens
-     elif has("max_tokens") then .max_tokens
-     else 16384 end) as $max_tokens |
+    output_limit(16384) as $max_tokens |
     del(.max_tokens,.max_output_tokens,.max_completion_tokens) |
     .max_tokens=$max_tokens) as $request |
   (reduce .messages[] as $message ({out:[],pending:[]};
@@ -109,8 +103,7 @@ jq -ce '
 
 sf_provider_curl_args
 SF_PROVIDER_CURL_ARGS+=(--header 'anthropic-version: 2023-06-01')
-sf_provider_stream '.error.message?' --arg control "$SF_PROVIDER_CONTROL_PATTERN" '
-  def delta($type;$text): {type:$type,text:$text};
+sf_provider_stream '.error.message?' --arg control "$SF_PROVIDER_CONTROL_PATTERN" "$SF_PROVIDER_JQ"'
   def usage:
     {input_tokens:((.input_tokens // 0) + (.cache_read_input_tokens // 0) +
        (.cache_creation_input_tokens // 0)),
@@ -120,8 +113,6 @@ sf_provider_stream '.error.message?' --arg control "$SF_PROVIDER_CONTROL_PATTERN
     (if (.output_tokens_details.thinking_tokens // null) == null then {}
      else {reasoning_tokens:.output_tokens_details.thinking_tokens} end);
 
-  # Blocks are rebuilt into the shapes a non-streaming response carries, so what
-  # follows is the normalization a buffered body would have gone through.
   def rebuilt:
     [.order[] as $index |
       .blocks[$index] |
@@ -151,32 +142,15 @@ sf_provider_stream '.error.message?' --arg control "$SF_PROVIDER_CONTROL_PATTERN
        else error("unsupported content block") end]} +
     (if .usage == null then {} else {usage:(.usage | usage)} end);
 
-  # A null line ends the stream. A body that never announced itself as a stream
-  # is taken whole there, so a provider that ignores the requested streaming mode
-  # still normalizes; anything else that reaches the end unfinished is caught.
   foreach (inputs, null) as $line (
-    {blocks:{}, order:[], usage:null, stop_reason:null, mode:null, body:"",
+    {blocks:{}, order:[], usage:null, stop_reason:null,
      done:false, out:[]};
     .out = [] |
     if $line == null then
       if .done then .
-      elif .mode != "json" then error("no completed response")
-      else (.body | try fromjson catch null) as $body |
-        if $body == null then error("no completed response")
-        else .done = true | .out += [$body | response(.content // [])]
-        end
-      end
+      else error("no completed response") end
     else
-      ($line | sub("\r$"; "")) as $clean |
-      (if .mode == null and ($clean | test("\\S")) then
-         .mode = (if ($clean | test("^(data|event|id|retry):|^:"))
-                  then "sse" else "json" end)
-       else . end) |
-      (if .mode == "json" then .body += ($line + "\n") else . end) |
-      (if ($clean | startswith("data:")) then
-         ($clean | sub("^data:[ ]?"; "") | fromjson? // {type:"ignore"})
-       else {type:"ignore"}
-       end) as $event |
+      ($line | sse_event) as $event |
       (($event.index // 0) | tostring) as $key |
       if $event.type == "error" then
         error(($event.error.message // "API error") | gsub($control; "�"))

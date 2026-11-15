@@ -50,9 +50,13 @@ assert_usage() {
   ' <<<"$REPLY" >/dev/null || fail 'anthropic lost text or usage'
 }
 
-# Parse buffered responses.
+# Translate common options and combine streamed usage events.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
+data: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":0}}}
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
+data: {"type":"message_stop"}
 EOF
 (builtin cd -- "$tmp" && ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
@@ -62,18 +66,6 @@ jq -e '
   .output_config == {foo:"keep",effort:"medium",format:{type:"json_schema",
     schema:{type:"object",required:["answer"],properties:{answer:{type:"string"}}}}}
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not normalize common request parameters'
-
-# Combine streamed usage events.
-cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-data: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":0}}}
-data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
-data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
-data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
-data: {"type":"message_stop"}
-
-EOF
-ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res"
-assert_usage
 
 # Preserve streamed reasoning and calls.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
@@ -135,7 +127,9 @@ cat >"$batch_request" <<'JSON'
 }
 JSON
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"ok"}}
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}
+data: {"type":"message_stop"}
 EOF
 ANTHROPIC_API_KEY=test zsh -f "$run" <"$batch_request" >"$res"
 jq -e '

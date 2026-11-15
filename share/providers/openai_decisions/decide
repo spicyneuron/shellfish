@@ -13,7 +13,7 @@ sf_provider_setup openai_decisions
 trap 'rm -rf -- "$SF_PROVIDER_TEMP_DIR"' EXIT
 cat >"$SF_PROVIDER_REQUEST_FILE"
 
-sf_provider_request '.request | all(keys[]; IN("input", "questions", "stream") | not)' ||
+sf_provider_request '.request | all(keys[]; IN("input", "questions") | not)' ||
   sf_provider_die 'invalid request'
 jq -e 'all(.input[]; .type != "video")' "$SF_PROVIDER_REQUEST_FILE" >/dev/null ||
   sf_provider_die 'video input is not supported'
@@ -47,7 +47,7 @@ jq -ce '
 ' "$SF_PROVIDER_REQUEST_FILE" >"$SF_PROVIDER_BODY_FILE" || sf_provider_die 'cannot translate request'
 
 sf_provider_curl_args
-sf_provider_stream '.error.message?' '
+sf_provider_stream '.error.message?' "$SF_PROVIDER_JQ"'
   [inputs] | join("\n") | fromjson |
   if .error? != null then error("API error")
   elif (.answers | type == "array") and (.model | type == "string") then .
@@ -64,10 +64,4 @@ sf_provider_stream '.error.message?' '
           probabilities:[.probabilities | sort_by(.value)[] | .probability]}
         elif .type == "refusal" then {type}
         else error("unsupported answer type") end)))
-  } + if .usage == null then {} else {
-    usage:{input_tokens:.usage.input_tokens, output_tokens:.usage.output_tokens} +
-      if (.usage.input_tokens_details.cached_tokens // null) == null then {}
-      else {cached_tokens:.usage.input_tokens_details.cached_tokens} end +
-      if (.usage.output_tokens_details.reasoning_tokens // null) == null then {}
-      else {reasoning_tokens:.usage.output_tokens_details.reasoning_tokens} end
-  } end'
+  } + if .usage == null then {} else {usage:(.usage | openai_usage)} end'

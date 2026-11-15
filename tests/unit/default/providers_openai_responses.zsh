@@ -57,9 +57,10 @@ assert_usage() {
   ' <<<"$REPLY" >/dev/null || fail 'responses lost text or usage'
 }
 
-# Parse buffered responses.
+# Translate common options and normalize streamed usage.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}
+data: {"type":"response.output_text.delta","delta":"ok"}
+data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}}
 EOF
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
@@ -100,7 +101,7 @@ grep -Fq -- 'HTTP 400: unsupported parameter' "$tmp/error" ||
   fail 'Responses HTTP error detail was lost'
 
 # Reject empty completions instead of completing an empty assistant.
-print -r -- '{"status":"completed","output":[]}' >"$PROVIDER_TEST_RESPONSE"
+print -r -- 'data: {"type":"response.completed","response":{"status":"completed","output":[]}}' >"$PROVIDER_TEST_RESPONSE"
 if OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
   fail 'empty completion was accepted'
 fi
@@ -110,7 +111,7 @@ grep -Fq -- 'empty completed response' "$tmp/error" ||
 
 # Discard incomplete call arguments.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}
+data: {"type":"response.incomplete","response":{"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}}
 EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 sf_test_provider_response "$res" || fail 'responses emitted an invalid incomplete stream'
@@ -177,6 +178,17 @@ if zsh -f "$codex_context_window" <"$tmp/insecure-codex.json" >"$res"; then
   fail 'Codex metadata accepted insecure TLS'
 fi
 
+# Codex credentials never go to a model-supplied endpoint.
+jq '.endpoint="https://other.test/responses"' "$tmp/codex-request.json" >"$tmp/other-codex.json"
+if CODEX_HOME="$tmp" zsh -f "$codex_run" <"$tmp/other-codex.json" \
+    >"$res" 2>"$tmp/other-codex.err"; then
+  fail 'Codex accepted another endpoint'
+fi
+grep -q 'Codex transport must use the built-in secure endpoint' "$tmp/other-codex.err"
+if zsh -f "$codex_context_window" <"$tmp/other-codex.json" >"$res"; then
+  fail 'Codex metadata accepted another endpoint'
+fi
+
 # Keep the streamed text, in the completed message's place.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
 data: {"type":"response.output_text.delta","delta":"ok"}
@@ -239,7 +251,8 @@ cat >"$batch_request" <<'JSON'
 }
 JSON
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1}}
+data: {"type":"response.output_text.delta","delta":"ok"}
+data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}
 EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$batch_request" >"$res"
 jq -e '

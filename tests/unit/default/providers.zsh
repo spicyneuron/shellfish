@@ -63,6 +63,16 @@ sf_provider_curl_args
 [[ "${SF_PROVIDER_CURL_ARGS[*]}" == *'--speed-time 10'* ]]
 [[ "${SF_PROVIDER_CURL_ARGS[*]}" == *'--insecure'* ]]
 
+# Metadata shares authentication and TLS settings, but not the POST body.
+sf_provider_context_curl_args https://api.example.com/models
+[[ "${SF_PROVIDER_CURL_ARGS[*]}" == *'--request GET --url https://api.example.com/models'* ]]
+[[ "${SF_PROVIDER_CURL_ARGS[*]}" == *'--max-time 10'* ]]
+[[ "${SF_PROVIDER_CURL_ARGS[*]}" == *'--speed-time 5'* ]]
+[[ "${SF_PROVIDER_CURL_ARGS[*]}" == *"--header @$SF_PROVIDER_HEADERS_FILE"* ]]
+[[ ${SF_PROVIDER_CURL_ARGS[(Ie)--insecure]} != 0 ]]
+[[ ${SF_PROVIDER_CURL_ARGS[(Ie)--data-binary]} == 0 ]]
+[[ ${SF_PROVIDER_CURL_ARGS[(Ie)--write-out]} == 0 ]]
+
 for config in null false 1 '[]' '"text"' '{"unknown":1}' '{"http_timeout":null}' \
     '{"http_timeout":0}' '{"http_timeout":-1}' '{"http_timeout":1.5}' \
     '{"http_timeout":"60"}' '{"http_stall":false}' '{"http_stall":0}' \
