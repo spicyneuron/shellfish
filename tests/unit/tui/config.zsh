@@ -58,6 +58,23 @@ if sf_tui_config_resolve; then
 fi
 [[ $SF_TUI_CONFIG_ERROR == *'invalid config at $["preview_lines"]: must be full or a non-negative integer'* ]]
 
+# Verbose does not hide invalid settings.
+SF_TUI_CONFIG_VERBOSE=1
+if sf_tui_config_resolve; then fail 'verbose hid an invalid preview limit'; fi
+[[ $SF_TUI_CONFIG_ERROR == *'invalid config at $["preview_lines"]'* ]]
+SF_TUI_CONFIG_VERBOSE=0
+
+for limit in 0 2147483647; do
+  print -r -- "{\"preview_lines\":$limit}" >"$config"
+  sf_tui_config_resolve
+  assert_equal "$limit" "$(jq -r .preview_lines <<<"$SF_TUI_CONFIG")"
+done
+for limit in 1.5 2147483648; do
+  print -r -- "{\"preview_lines\":$limit}" >"$config"
+  if sf_tui_config_resolve; then fail "invalid preview limit $limit was accepted"; fi
+  [[ $SF_TUI_CONFIG_ERROR == *'invalid config at $["preview_lines"]'* ]]
+done
+
 print -r -- '{"themes":{"light":{"text":"blue"}}}' >"$config"
 if sf_tui_config_resolve; then
   fail 'invalid theme color was accepted'
@@ -89,3 +106,20 @@ if sf_tui_config_resolve; then
   fail 'malformed TUI config was accepted'
 fi
 [[ $SF_TUI_CONFIG_ERROR == *'invalid TUI config: '*'tui.jsonc: parse error'* ]]
+
+# Runtime field names and limits come from the installed schema.
+(
+  mkdir "$tmp/share"
+  cp "$SF_SHARE/tui.jsonc" "$tmp/share/"
+  jq '."$defs".theme.properties.accent={"$ref":"#/$defs/color"} |
+    ."$defs".preview_lines.oneOf[0].maximum=3' \
+    "$SF_SHARE/tui.schema.json" >"$tmp/share/tui.schema.json"
+  SF_SHARE=$tmp/share
+  print -r -- '{"themes":{"light":{"accent":"#123456"}},"preview_lines":3}' >"$config"
+  sf_tui_config_resolve
+  jq -e '.themes.light.accent == "#123456" and .preview_lines == 3' \
+    <<<"$SF_TUI_CONFIG" >/dev/null
+  print -r -- '{"preview_lines":4}' >"$config"
+  if sf_tui_config_resolve; then fail 'runtime ignored the schema preview bound'; fi
+  [[ $SF_TUI_CONFIG_ERROR == *'invalid config at $["preview_lines"]'* ]]
+)

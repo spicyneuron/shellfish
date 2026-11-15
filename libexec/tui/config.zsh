@@ -39,6 +39,7 @@ sf_tui_config_resolve() {
   fi
 
   output=$(jq -nce --argjson defaults "$defaults" --argjson raw "$raw" \
+    --slurpfile schema "$SF_SHARE/tui.schema.json" --argjson verbose "$SF_TUI_CONFIG_VERBOSE" \
     -f "$SF_ROOT/libexec/tui/config.jq" 2>&1) || {
     if [[ $output == *"$theme_marker"* ]]; then
       sf_tui_config_fail "unknown theme: ${output#*"$theme_marker"}"
@@ -52,9 +53,4 @@ sf_tui_config_resolve() {
     return
   }
   SF_TUI_CONFIG=$output
-  # --verbose widens previews for a stored session too.
-  (( SF_TUI_CONFIG_VERBOSE )) || return 0
-  SF_TUI_CONFIG=$(jq -c '.preview_lines_reasoning = "full" |
-    .preview_lines = "full"' <<<"$output") ||
-    sf_tui_config_fail 'cannot apply verbose preview limits'
 }
