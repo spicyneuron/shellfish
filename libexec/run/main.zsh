@@ -186,8 +186,9 @@ sf_run_main() {
   else
     trap 'SF_RUN[signal_status]=129; kill -TERM $$' HUP
   fi
+  # Return rather than exit so settlement can finish while unwinding.
   trap '(( SF_RUN[signal_status] )) || SF_RUN[signal_status]=143;
-    sf_run_interrupt "$SF_RUN[signal_status]"; exit $SF_RUN[signal_status]' TERM
+    sf_run_interrupt "$SF_RUN[signal_status]"; return $SF_RUN[signal_status]' TERM
   sf_run_limits || { sf_die "$SF_ERROR"; return 1; }
   local session
   if [[ -n $requested_session ]]; then

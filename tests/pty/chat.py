@@ -70,6 +70,7 @@ def test_sandbox_updates_without_reload():
                 "type": "hook_result",
                 "lifecycle": "user_prompt_submit",
                 "user_text": f"**Sandbox** shell write grant added\n{grant_path}",
+                "user_preview_lines": "full",
                 "model_text": f'<context script="sandbox">\n{granted}\n</context>',
             }
             mark = len(session.output)

@@ -109,4 +109,65 @@ assert_canonical_session "$recovered"
   assert_equal 130 "$reply[2]"
 )
 
+# Signals while awaiting permission settle every call without running a tool.
+SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=true' <<<"$profile")
+session="$tmp/permission-cancel.jsonl"
+sf_test_session "$session"
+python3 - "$ROOT" "$session" "$tmp/permission-ran" <<'PY'
+import json
+import os
+import shlex
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+root, path, marker = map(Path, sys.argv[1:])
+header = path.read_text()
+for sig in (signal.SIGINT, signal.SIGUSR1, signal.SIGHUP, signal.SIGTERM):
+    path.write_text(header)
+    process = subprocess.Popen(
+        [str(root / "bin/shellfish"), "run", "--jsonl", "--session", str(path)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+        env=dict(os.environ, SF_TEST_PROVIDER_TOOL_CALL="1",
+                 SF_TEST_PROVIDER_TOOL_COUNT="3", SF_TEST_PROVIDER_TOOL_BYPASS="true",
+                 SF_TEST_PROVIDER_TOOL_COMMAND=f"touch {shlex.quote(str(marker))}"),
+    )
+    try:
+        process.stdin.write(json.dumps({"type": "user", "content": [
+            {"type": "text", "text": "cancel permission"}]}) + "\n")
+        process.stdin.flush()
+        events = []
+        for line in process.stdout:
+            events.append(json.loads(line))
+            if events[-1]["type"] == "_tool_permission_request":
+                break
+        else:
+            raise AssertionError("turn did not request permission")
+        process.send_signal(sig)
+        output, error = process.communicate(timeout=5)
+        code = 130 if sig in (signal.SIGINT, signal.SIGUSR1) else 128 + sig
+        assert process.returncode == code, (sig, process.returncode, error)
+        events.extend(json.loads(line) for line in output.splitlines())
+        records = [json.loads(line) for line in path.read_text().splitlines()]
+        assert [r["type"] for r in records] == [
+            "session", "user", "assistant", "tool_result", "tool_result", "tool_result", "error"
+        ], (sig, records, error)
+        results = records[3:6]
+        assert [(r["id"], r["exit_code"]) for r in results] == [
+            ("call_1", 126), ("call_2", 126), ("call_3", 126)]
+        assert [r.get("sandbox_access") for r in results] == ["cancelled", None, None]
+        assert all(r["model_text"] == "tool call cancelled" for r in results)
+        assert records[-1] == {"type": "error", "user_text":
+                               "Cancelled." if code == 130 else "Turn interrupted."}
+        assert records[1:] == [e for e in events if not e["type"].startswith("_")]
+        assert not marker.exists(), "cancelled permission ran a tool"
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+PY
+assert_canonical_session "$session"
+
 print -r -- ok
