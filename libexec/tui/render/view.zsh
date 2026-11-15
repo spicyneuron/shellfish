@@ -167,6 +167,21 @@ sf_tui_chat_start() {
   print
 }
 
+sf_tui_loading_frame() {
+  print -rn -- $'\r\e[2K'"$1 Loading session…"
+}
+
+sf_tui_loading() {
+  trap '' TTOU
+  trap 'exit 0' INT TERM HUP
+  integer frame=1
+  while true; do
+    zselect -t "$SF_PRESENT_HEARTBEAT_TIMEOUT" 2>/dev/null || true
+    frame=$(( frame % ${#SF_PRESENT_ACTIVITY_FRAMES} + 1 ))
+    sf_tui_loading_frame "$SF_PRESENT_ACTIVITY_FRAMES[frame]" || return
+  done
+}
+
 sf_tui_chat_end() {
   local session=$1 divider
   integer divider_width=13

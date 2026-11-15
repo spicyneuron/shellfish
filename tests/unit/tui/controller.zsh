@@ -71,6 +71,16 @@ print -n -r -- '{"type":"user"' >"$torn"
 sf_tui_load "$torn" && fail 'incomplete session replay succeeded'
 assert_equal "cannot read incomplete session: $torn" "$SF_PRESENT_ERROR"
 
+# Resume activity is transient on both success and failure.
+sf_tui_resume "$replay" >"$tmp/loading" || fail 'resume failed'
+assert_equal test/fake-model "$SF_PRESENT_IDENTITY"
+[[ $(<"$tmp/loading") == *'Loading session…'*$'\r\e[2K' ]] ||
+  fail 'resume did not clear loading activity'
+sf_tui_resume "$malformed" >"$tmp/loading" && fail 'invalid resume succeeded'
+assert_equal "cannot present session: $malformed" "$SF_PRESENT_ERROR"
+[[ $(<"$tmp/loading") == *$'\r\e[2K' ]] || fail 'failed resume left loading activity'
+assert_equal '' "$(jobs -p)"
+
 # Model context settles under its lifecycle without exposing model text.
 SF_PRESENT_SESSION="$tmp/session.jsonl"
 SF_PRESENT_STATE=working

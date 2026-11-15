@@ -408,6 +408,26 @@ sf_tui_load() {
   }
 }
 
+# Loading runs before ZLE, so its activity has a separate terminal lifetime.
+sf_tui_resume() {
+  setopt localoptions localtraps no_monitor no_notify
+  local worker
+  integer load_status=0
+  trap 'return 130' INT
+  trap 'return 143' TERM
+  sf_tui_loading_frame "$SF_PRESENT_ACTIVITY_FRAMES[1]"
+  sf_tui_loading &
+  worker=$!
+  {
+    sf_tui_load "$1" || load_status=$?
+  } always {
+    kill -TERM "$worker" 2>/dev/null || true
+    wait "$worker" 2>/dev/null || true
+    print -rn -- $'\r\e[2K'
+  }
+  return $load_status
+}
+
 sf_tui_controller() {
   local session=$1 presentation=${2:-\{\}} initial=${3-}
   local session_mode=${4:-resume} draft=${5-}
@@ -449,7 +469,7 @@ sf_tui_controller() {
     SF_PRESENT_ERROR='cannot render startup banner'
     return 1
   }
-  [[ $session_mode == startup ]] || sf_tui_load "$session" || return 1
+  [[ $session_mode == startup ]] || sf_tui_resume "$session" || return
   PROMPT=''
   saved_tty=$(stty -g 2>/dev/null) || return 1
   SF_PRESENT_TTY=$saved_tty

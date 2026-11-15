@@ -6,6 +6,7 @@ import os
 import pty
 import re
 import select
+import shutil
 import signal
 import subprocess
 import struct
@@ -572,7 +573,33 @@ def test_chat_end():
             session.close()
 
 
-def test_sigterm_leaves_terminal_state():
+def test_resume_loading():
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/session/complete.jsonl"
+    records = [json.loads(line) for line in fixture.read_text().splitlines()]
+    with tempfile.TemporaryDirectory() as directory:
+        # Delay the external parser, not the renderer or its activity worker.
+        wrapper = Path(directory) / "jq"
+        wrapper.write_text(
+            '#!/bin/sh\ncase "$*" in *libexec/tui/project.jq*) sleep 0.7;; esac\n'
+            f'exec "{shutil.which("jq")}" "$@"\n'
+        )
+        wrapper.chmod(0o755)
+        session = Session(explicit_session=True, session_records=records,
+                          env={"PATH": directory + ":" + os.environ["PATH"]})
+        try:
+            output = bytes(session.output).decode("utf-8", "replace")
+            assert output.index("Session:") < output.index("Loading session…")
+            assert output.count("Loading session…") >= 3, output
+            assert "⠃ Loading session…" in output and "⠆ Loading session…" in output
+            assert "\r\x1b[2K" in output[output.rfind("Loading session…"):]
+            session.settle()
+            assert "Loading session…" not in (session.screen() or "")
+            assert [json.loads(line) for line in session.explicit_session.read_text().splitlines()] == records
+        finally:
+            session.close()
+
+
+def test_sigterm_leaves_terminal_state(loading=False):
     master, slave = pty.openpty()
     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLUMNS, 0, 0))
     before = termios.tcgetattr(slave)
@@ -608,6 +635,14 @@ def test_sigterm_leaves_terminal_state():
     env["TERM"] = "xterm-256color"
     env["SHELLFISH_DIR"] = str(shellfish_dir)
     env["HOME"] = config_dir.name
+    if loading:
+        wrapper = Path(config_dir.name) / "jq"
+        wrapper.write_text(
+            '#!/bin/sh\ncase "$*" in *libexec/tui/project.jq*) sleep 0.7;; esac\n'
+            f'exec "{shutil.which("jq")}" "$@"\n'
+        )
+        wrapper.chmod(0o755)
+        env["PATH"] = config_dir.name + ":" + env["PATH"]
     process = subprocess.Popen(
         [APP, "--session", str(session_file)],
         stdin=slave, stdout=slave, stderr=slave, env=env,
@@ -620,14 +655,20 @@ def test_sigterm_leaves_terminal_state():
             ready, _, _ = select.select([master], [], [], 0.05)
             if ready:
                 output += os.read(master, 65536)
-            if output.count(b"\x1b[?2026h") > output.count(b"\x1b[?2026l"):
+            if loading and b"Loading session" in output:
                 break
-        assert output.count(b"\x1b[?2026h") > output.count(b"\x1b[?2026l"), (
-            "chat never entered synchronized output"
-        )
+            if not loading and output.count(b"\x1b[?2026h") > output.count(b"\x1b[?2026l"):
+                break
+        if loading:
+            assert b"Loading session" in output
+        else:
+            assert output.count(b"\x1b[?2026h") > output.count(b"\x1b[?2026l"), (
+                "chat never entered synchronized output"
+            )
         all_output = output
 
-        assert not termios.tcgetattr(slave)[3] & termios.ICANON
+        if not loading:
+            assert not termios.tcgetattr(slave)[3] & termios.ICANON
 
         process.send_signal(signal.SIGTERM)
         end = time.monotonic() + 1
@@ -641,9 +682,11 @@ def test_sigterm_leaves_terminal_state():
         assert before[6][termios.VINTR] == termios.tcgetattr(slave)[6][termios.VINTR]
         sync_starts = all_output.count(b"\x1b[?2026h")
         sync_ends = all_output.count(b"\x1b[?2026l")
-        assert sync_starts > 0 and sync_starts == sync_ends, (
+        assert (loading or sync_starts > 0) and sync_starts == sync_ends, (
             f"unbalanced synchronized output: {sync_starts} starts, {sync_ends} ends"
         )
+        if loading:
+            assert all_output.endswith(b"\r\x1b[2K"), all_output
     finally:
         if process.poll() is None:
             process.kill()
@@ -653,8 +696,14 @@ def test_sigterm_leaves_terminal_state():
         config_dir.cleanup()
 
 
+def test_sigterm_during_resume():
+    test_sigterm_leaves_terminal_state(loading=True)
+
+
 if __name__ == "__main__":
     run("terminal PTY scenarios", [
+        test_resume_loading,
+        test_sigterm_during_resume,
         test_sandbox_updates_without_reload,
         test_tool_uses_manifest_display,
         test_activity_input_does_not_delay_interrupt,
