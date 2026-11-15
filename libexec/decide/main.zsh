@@ -41,7 +41,7 @@ sf_decide_main() {
   }
   sf_profile_model_refs decide "${models[@]}" || {
     resolve_status=$?
-    sf_die "$SF_PROFILE_ERROR"
+    sf_die "$SF_ERROR"
     return $resolve_status
   }
   # Inline media can exceed argument limits, so the decision travels on stdin.

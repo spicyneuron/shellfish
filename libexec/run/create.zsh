@@ -43,7 +43,7 @@ sf_run_create() {
   else
     sf_profile_resolve_args "${forwarded[@]}" || {
       resolve_status=$?
-      sf_die "$SF_PROFILE_ERROR"
+      sf_die "$SF_ERROR"
       return $resolve_status
     }
     config=$REPLY

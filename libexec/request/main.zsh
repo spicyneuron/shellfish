@@ -29,7 +29,7 @@ sf_request_main() {
   if (( ${#models} )); then
     sf_profile_model_refs run "${models[@]}" || {
       local resolve_status=$?
-      sf_die "$SF_PROFILE_ERROR"
+      sf_die "$SF_ERROR"
       return $resolve_status
     }
     model=$REPLY

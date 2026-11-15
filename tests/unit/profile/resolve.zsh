@@ -98,12 +98,12 @@ sf_test_profile bad '{"tools":["missing"]}'
 if sf_profile_resolve_args -p bad -m probe; then
   fail 'missing component was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'cannot resolve tools reference: missing' ]]
+[[ $SF_ERROR == 'cannot resolve tools reference: missing' ]]
 sf_test_profile bad '{"hooks":["general.md"]}'
 if sf_profile_resolve_args -p bad -m probe; then
   fail 'a system file was accepted as a hook'
 fi
-[[ $SF_PROFILE_ERROR == 'cannot resolve hooks reference: general.md' ]]
+[[ $SF_ERROR == 'cannot resolve hooks reference: general.md' ]]
 (
   SF_SHARE="$tmp/flat-share"
   mkdir -p "$SF_SHARE/hooks"
@@ -112,5 +112,5 @@ fi
   if sf_profile_resolve_args -p bad -m probe; then
     fail 'non-executable hook was accepted'
   fi
-  [[ $SF_PROFILE_ERROR == 'invalid hooks reference: @hooks/disabled' ]]
+  [[ $SF_ERROR == 'invalid hooks reference: @hooks/disabled' ]]
 )

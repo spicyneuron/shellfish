@@ -94,7 +94,7 @@ sf_run_settle() {
 # Commands run at user_prompt_submit. Every component reads the profile config.
 sf_run_components() {
   local profile=$1
-  sf_profile_components "$profile" || { REPLY=$SF_PROFILE_ERROR; return 1; }
+  sf_profile_components "$profile" || { REPLY=$SF_ERROR; return 1; }
   sf_jq_fields -cn --argjson components "$REPLY" --argjson profile "$profile" '
     include "lib/fields";
     ($components | to_entries[] | entry(.key; .value | tojson)),

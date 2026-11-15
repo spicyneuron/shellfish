@@ -24,7 +24,7 @@ sf_provider_project() {
   ' <<<"$header") || return 1
   # Only tools reach the request, so commands and hooks are not loaded.
   sf_profile_components "$(jq -c '.profile | .commands=[] | .hooks=[]' <<<"$header")" || {
-    SF_PROVIDER[error]=$SF_PROFILE_ERROR
+    SF_PROVIDER[error]=$SF_ERROR
     return 1
   }
   sf_jq_fields -sc --argjson header "$header" --argjson components "$REPLY" \

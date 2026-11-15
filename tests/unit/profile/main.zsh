@@ -121,7 +121,7 @@ jq -e --arg cwd "${PWD:A}" '.profile.sandbox.tools.shell.filesystem.allowRead ==
 if sf_profile_resolve_args -p '{broken' -m fixture; then
   fail 'malformed inline profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == '--profile requires a reference or JSON object' ]]
+[[ $SF_ERROR == '--profile requires a reference or JSON object' ]]
 
 # Supplied configuration freezes without rereading the source profile or model.
 "$ROOT/bin/shellfish" run --session-create --session-out "$tmp/config.jsonl" \
@@ -137,7 +137,7 @@ for value in null false 1 '"text"' '[]'; do
   if sf_profile_resolve_args -p bad -m fixture; then
     fail "profile accepted non-object config: $value"
   fi
-  [[ $SF_PROFILE_ERROR == 'invalid configuration: profile bad $["config"]: must be an object' ]]
+  [[ $SF_ERROR == 'invalid configuration: profile bad $["config"]: must be an object' ]]
 done
 
 for name in '' $'open\nai'; do
@@ -153,7 +153,7 @@ done
 if sf_profile_resolve_args -p work -p work; then
   fail 'a repeated --profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == '--profile may only be specified once' ]]
+[[ $SF_ERROR == '--profile may only be specified once' ]]
 
 # Hooks keep their listed order; a run groups them by declared lifecycle.
 typeset hooks="$SF_TEST_CONFIG/hooks"
@@ -173,7 +173,7 @@ sf_test_profile hooked '{"hooks": ["dir"]}'
 if sf_profile_resolve_args -p hooked -m fixture; then
   fail 'incomplete hook directory was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid hooks reference: dir' ]]
+[[ $SF_ERROR == 'invalid hooks reference: dir' ]]
 print -r -- '#!/bin/sh' | sf_test_hook "$hooks/unbound"
 sf_test_profile hooked '{"hooks": ["unbound"]}'
 sf_profile_resolve_args -p hooked -m fixture
@@ -181,12 +181,12 @@ profile=$(jq -c '.profile' <<<"$REPLY")
 if sf_profile_components "$profile"; then
   fail 'a hook without a lifecycle was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
+[[ $SF_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 rm "$hooks/unbound/manifest.json"
 if sf_profile_components "$profile"; then
   fail 'a hook without a manifest was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
+[[ $SF_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 
 # Starter profiles use bundled components with a configured model.
 # Subagents and review remain opt-in.
@@ -226,7 +226,7 @@ for field in model provider request env extend max_capture_kb theme_light; do
   if sf_profile_resolve_args -p bad -m fixture; then
     fail "profile accepted $field"
   fi
-  [[ $SF_PROFILE_ERROR == "invalid configuration: profile bad \$[\"$field\"]: unknown field" ]]
+  [[ $SF_ERROR == "invalid configuration: profile bad \$[\"$field\"]: unknown field" ]]
 done
 for value in '1' '[1]' '[""]'; do
   if sf_profile_resolve_args -p work -m "$value"; then
@@ -237,7 +237,7 @@ sf_test_model bad '{"tools": []}'
 if sf_profile_resolve_args -p work -m bad; then
   fail 'model file accepted a profile field'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid configuration: model bad $["tools"]: unknown field' ]]
+[[ $SF_ERROR == 'invalid configuration: model bad $["tools"]: unknown field' ]]
 for value in '{"endpoint":"ftp://example.invalid"}' '{"context_window":0}' '{"request":[]}' \
     '{"config":null}' '{"config":[]}' '{"config":false}' '{"config":1}' '{"config":"text"}'; do
   sf_test_model bad "$value"
@@ -249,11 +249,11 @@ sf_test_model providerless '{"request": {"model": "m"}}'
 if sf_profile_resolve_args -p work -m providerless; then
   fail 'a model without a provider was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'a model provider is required'* ]]
+[[ $SF_ERROR == *'a model provider is required'* ]]
 if sf_profile_resolve_args -p work; then
   fail 'a missing default model was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'no model selected: run shellfish init, or pass -m' ]]
+[[ $SF_ERROR == 'no model selected: run shellfish init, or pass -m' ]]
 
 # Named prompts use configuration, and "@" can reach the bundle directly.
 mkdir -p "$SF_TEST_CONFIG/system"
@@ -269,11 +269,11 @@ rm "$SF_TEST_CONFIG/system/general.md"
 if sf_profile_resolve_args -p absent; then
   fail 'unknown profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'unknown profile: absent' ]]
+[[ $SF_ERROR == 'unknown profile: absent' ]]
 if sf_profile_resolve_args -p work -m absent; then
   fail 'unknown model was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'unknown model: absent' ]]
+[[ $SF_ERROR == 'unknown model: absent' ]]
 
 # Options append to lists, a repeated reference collapses to the first, and
 # references reaching the same tool fail.
@@ -295,12 +295,12 @@ sf_test_profile malformed '{"tools":}'
 if sf_profile_resolve_args -p malformed -m fixture; then
   fail 'malformed profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'invalid profile: '*'malformed.jsonc:'*'parse error:'* ]]
+[[ $SF_ERROR == *'invalid profile: '*'malformed.jsonc:'*'parse error:'* ]]
 sf_test_model malformed '{"request":}'
 if sf_profile_resolve_args -p work -m malformed; then
   fail 'malformed model was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'invalid model: '*'malformed.jsonc:'*'parse error:'* ]]
+[[ $SF_ERROR == *'invalid model: '*'malformed.jsonc:'*'parse error:'* ]]
 
 # A provider without a manifest needs an endpoint from a model file.
 mkdir -p "$SF_TEST_CONFIG/providers/bare"
@@ -341,7 +341,7 @@ sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"replace
 if sf_profile_resolve_args -p boxed -m work; then
   fail 'an invalid sandbox path was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid configuration: profile boxed $["sandbox"]["tools"]["shell"]: must be a Fence policy with an optional boolean replace; extends requires replace: true' ]]
+[[ $SF_ERROR == 'invalid configuration: profile boxed $["sandbox"]["tools"]["shell"]: must be a Fence policy with an optional boolean replace; extends requires replace: true' ]]
 for value in '{"enabled": "yes"}' '{"tools":{"shell":{"filesystem":{"allowWrite":"/x"}}}}' '{"paths": []}' \
     '{"tools":null}' '{"tools":[]}' '{"tools":{"*":{}}}' '{"tools":{"shell":null}}' \
     '{"tools":{"shell":{"filesystem":{"allowRead":null}}}}' '{"tools":{"shell":{"extra":[]}}}' \
@@ -366,14 +366,14 @@ sf_test_profile boxed '{"sandbox":{"tools":{"missing":{"filesystem":{"allowRead"
 if sf_profile_resolve_args -p boxed -m work; then
   fail 'sandbox grants for an unselected tool were accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'sandbox grants name an unselected tool: missing'* ]]
+[[ $SF_ERROR == *'sandbox grants name an unselected tool: missing'* ]]
 sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["~/reference"]}}}}}'
 (
   unset HOME
   if sf_profile_resolve_args -p boxed -m work; then
     fail 'home-relative sandbox path resolved without HOME'
   fi
-  [[ $SF_PROFILE_ERROR == *'cannot expand ~ without HOME'* ]]
+  [[ $SF_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
 # init copies the bundled defaults and template, keeping existing files.
@@ -417,7 +417,7 @@ sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"filesys
   if sf_profile_resolve_args; then
     fail 'an empty selection was accepted'
   fi
-  [[ $SF_PROFILE_ERROR == *'no model selected: run shellfish init, or pass -m'* ]]
+  [[ $SF_ERROR == *'no model selected: run shellfish init, or pass -m'* ]]
   sf_profile_resolve_args -m '{"provider":"openrouter","request":{"model":"test-model"}}'
   jq -e '.model.request.model == "test-model" and
     (.profile.tools | map(split("/") | last)) ==
@@ -525,7 +525,7 @@ profile=$(jq -c '.profile' <<<"$REPLY")
 if sf_profile_components "$profile"; then
   fail 'component with ambiguous manifests was accepted'
 fi
-[[ $SF_PROFILE_ERROR == "multiple component manifests: ${tools:A}/beta" ]]
+[[ $SF_ERROR == "multiple component manifests: ${tools:A}/beta" ]]
 rm "$tools/beta/manifest.json"
 
 mv "$tools/gamma/manifest.json" "$tmp/gamma.json"
@@ -568,17 +568,17 @@ for kind name in tools alpha commands go hooks start; do
   saved=$(<"$manifest")
   print -r -- '{}' >"$manifest"
   sf_profile_components "$profile" && fail "invalid $kind manifest was accepted"
-  [[ $SF_PROFILE_ERROR == *"$catalog/$kind/$name"* ]] ||
+  [[ $SF_ERROR == *"$catalog/$kind/$name"* ]] ||
     fail "invalid $kind manifest lost its path"
   print -r -- '{"broken":}' >"$manifest"
   sf_profile_components "$profile" && fail "malformed $kind manifest was accepted"
-  [[ $SF_PROFILE_ERROR == *"$manifest"*'parse error:'* ]] ||
+  [[ $SF_ERROR == *"$manifest"*'parse error:'* ]] ||
     fail "malformed $kind manifest lost its file or diagnostic"
   print -r -- "$saved" >"$manifest"
 done
 chmod -x "$catalog/commands/go/run"
 sf_profile_components "$profile" && fail 'catalog accepted a nonexecutable command'
-[[ $SF_PROFILE_ERROR == "invalid commands reference: $catalog/commands/go" ]]
+[[ $SF_ERROR == "invalid commands reference: $catalog/commands/go" ]]
 sf_profile_components '{"tools":[],"commands":[],"hooks":[]}'
 jq -e '. == {tools:[],commands:[],hooks:[]}' <<<"$REPLY" >/dev/null ||
   fail 'empty component lists left catalog entries'
