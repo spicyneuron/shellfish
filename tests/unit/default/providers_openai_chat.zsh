@@ -230,6 +230,16 @@ jq -e '
   .messages[6].content == "next"
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'openai_chat did not lift prompt or tool result images'
 
+# Every part of an image-bearing prompt keeps its order.
+jq -c '.messages[0].content = [{type:"text",text:"context"},
+  {type:"image",url:"data:image/png;base64,iVBORw0KGgo="},{type:"text",text:"question"}]' \
+  "$req" >"$tmp/parts.json"
+OPENAI_API_KEY=test-key zsh -f "$run" <"$tmp/parts.json" >"$res"
+jq -e '.messages[1].content == [{type:"text",text:"context"},
+    {type:"image_url",image_url:{url:"data:image/png;base64,iVBORw0KGgo="}},
+    {type:"text",text:"question"}]
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'openai_chat dropped or reordered prompt parts'
+
 # Encode call-only messages as null.
 jq -c '.messages[1].content = []' "$batch_request" >"$tmp/calls-only.json"
 OPENAI_API_KEY=test-key zsh -f "$run" <"$tmp/calls-only.json" >"$res"

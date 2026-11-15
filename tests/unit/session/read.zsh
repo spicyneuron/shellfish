@@ -303,6 +303,15 @@ for lifecycle in user_prompt_submit post_tool_use stop; do
     any(.content[]; .type == "image" and .url == "data:image/png;base64,iVBORw0KGgo=")
   ' >/dev/null || fail "hook attachment lost at $lifecycle"
 done
+# Attached hook context joins the prompt as merged text around the image.
+print -r -- '[{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1",
+    "model_content":[{"type":"text","text":"screen:"},
+      {"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]},
+  {"type":"user","content":[{"type":"text","text":"what is shown?"}]}]' | messages | jq -e '
+  .[0].content == [{type:"text",text:"<hook name=\"user_prompt_submit\">\nscreen:"},
+    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="},
+    {type:"text",text:"\n</hook>\n\nwhat is shown?"}]
+' >/dev/null || fail 'hook attachment context did not merge its text parts'
 for content in '[]' '[{"type":"image","url":"https://example.com/a.png"}]'; do
   jq -cn --argjson content "$content" '[{type:"hook_result",lifecycle:"session_start",
     id:"1",model_content:$content}]' | accepts >/dev/null 2>&1 &&

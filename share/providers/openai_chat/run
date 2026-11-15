@@ -36,9 +36,10 @@ jq -ce "$SF_PROVIDER_JQ"'
   def message:
     # Some gateways accept only string content, so parts are sent only with images.
     if .type == "user" then
-      (.content | image_parts) as $images |
-      {role:"user",content:(if $images == [] then text_content
-        else [.content[0] | select(.text != "")] + $images end)}
+      {role:"user",content:(if any(.content[]; .type == "image") then
+          [.content[] | if .type == "image" then {type:"image_url",image_url:{url}}
+            else select(.text != "") | {type:"text",text} end]
+        else text_content end)}
     elif .type == "assistant" then {role:"assistant",content:text_content}
     elif .type == "tool_result" then
       {role:"tool",tool_call_id:.call_id,content:(.content | result_text)}

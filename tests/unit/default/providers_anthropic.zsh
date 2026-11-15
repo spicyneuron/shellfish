@@ -148,6 +148,16 @@ jq -e '
     [{type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}}]]
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not send prompt or tool result images'
 
+# Every part of an image-bearing prompt keeps its order.
+jq -c '.messages[0].content = [{type:"text",text:"context"},
+  {type:"image",url:"data:image/png;base64,iVBORw0KGgo="},{type:"text",text:"question"}]' \
+  "$req" >"$tmp/parts.json"
+ANTHROPIC_API_KEY=test zsh -f "$run" <"$tmp/parts.json" >"$res"
+jq -e '.messages[0].content == [{type:"text",text:"context"},
+    {type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}},
+    {type:"text",text:"question"}]
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic dropped or reordered prompt parts'
+
 # The provider always streams, so a stream option is refused.
 jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"
 if ANTHROPIC_API_KEY=test zsh -f "$run" <"$tmp/no-stream.json" >"$res" 2>"$tmp/error"; then

@@ -126,11 +126,16 @@ def canonical_response:
       ($calls | length) > 0 and (([$calls[].id] | unique | length) == ($calls | length))
     else ($calls | length) == 0 end);
 
+def merge_text:
+  reduce .[] as $part ([];
+    if $part.type == "text" and .[-1].type? == "text" then .[-1].text += $part.text
+    else . + [$part] end);
+
 # Attachments turn text-only context into content parts.
 def join_content:
   if any(.[]; type == "array") then
     [to_entries[] | (if .key > 0 then {type:"text",text:"\n\n"} else empty end),
-      (.value | if type == "array" then .[] else {type:"text",text:.} end)]
+      (.value | if type == "array" then .[] else {type:"text",text:.} end)] | merge_text
   else join("\n\n") end;
 
 # Hook results from one lifecycle share a group.
