@@ -127,18 +127,21 @@ for tool in "$tools"/*(/); do
 done
 
 # Every sandboxed tool has common protections and tool-specific access.
-typeset policy resolved settings
+typeset policy resolved settings override
+mkdir -p "$tmp/policies"
+cp "$tools/base.fence.jsonc" "$tmp/policies/"
 for policy in "$tools"/*/fence.jsonc; do
+  mkdir -p "$tmp/policies/${policy:h:t}"
+  cp "$policy" "$tmp/policies/${policy:h:t}/"
+done
+for policy in "$tmp"/policies/*/fence.jsonc; do
   settings=$policy
-  # Standalone policies must also resolve outside the installation.
-  if [[ ${policy:h:t} != shell_readonly ]]; then
-    settings="$tmp/${policy:h:t}.json"
-    cp "$policy" "$settings"
-  fi
   resolved=$(fence config show --settings "$settings" 2>/dev/null) ||
     fail "${policy:h:t} has an invalid sandbox policy"
   jq -e --arg tool "${policy:h:t}" '
-    ["**/.env", "**/.env.*", "**/*.key", "**/*.pem", "~/.*hist*", "~/.aws/**",
+    ["**/.env", "**/.env.*", "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx",
+     "**/.direnv/**", "**/.git-credentials", "**/.netrc", "**/.npmrc", "**/.pypirc",
+     "~/.*hist*", "~/.aws/**",
      "~/.cache/huggingface/token", "~/.cargo/credentials.toml",
      "~/.claude/.credentials.json", "~/.claude/oauth-token",
      "~/.codex/.credentials.json", "~/.codex/auth.json",
@@ -166,4 +169,18 @@ for policy in "$tools"/*/fence.jsonc; do
     .network.allowLocalBinding != true and .network.allowLocalOutbound != true and
     .command.useDefaults == true
   ' <<<"$resolved" >/dev/null || fail "${policy:h:t} has unexpected sandbox permissions"
+
+  # Profile additions survive the tool's relative inheritance chain.
+  override="$tmp/${policy:h:t}-override.json"
+  jq -n --arg policy "$policy" '{extends:$policy,
+    filesystem:{allowRead:["/extra/read"],allowWrite:["/extra/write"]},
+    network:{allowedDomains:["extra.test"]}}' >"$override"
+  fence config show --settings "$override" 2>/dev/null |
+    jq -e --argjson base "$resolved" '
+      .filesystem.allowRead == (($base.filesystem.allowRead // []) + ["/extra/read"]) and
+      .filesystem.allowWrite == (($base.filesystem.allowWrite // []) + ["/extra/write"]) and
+      .filesystem.denyRead == $base.filesystem.denyRead and
+      .filesystem.denyWrite == $base.filesystem.denyWrite and
+      .network.allowedDomains == (($base.network.allowedDomains // []) + ["extra.test"])
+    ' >/dev/null || fail "${policy:h:t} lost sandbox overrides or base protections"
 done

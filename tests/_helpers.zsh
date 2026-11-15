@@ -135,6 +135,7 @@ sf_test_shell_tool() {
   mkdir -p "$tool"
   cp -f "${run:-$bundled/run}" "$tool/run"
   cp -f "$bundled/fence.jsonc" "$tool/fence.jsonc"
+  cp -f "$bundled/../base.fence.jsonc" "$tool/../base.fence.jsonc"
   jq "$filter" "$bundled/manifest.json" >"$tool/manifest.json"
   SF_TEST_PROFILE=$(jq -c --arg tool "$tool" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
 }
