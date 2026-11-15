@@ -7,7 +7,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_profile_components] )) || source "$SF_ROOT/lib/profile.zsh"
 
-typeset -gA SF_PROVIDER=(directory '' error '' group_file '' pid '')
+typeset -gA SF_PROVIDER=(directory '' group_file '' pid '')
 typeset -ga SF_PROVIDER_PARTIAL_EVENTS=()
 
 # What one provider invocation needs, keyed by name.
@@ -16,17 +16,13 @@ typeset -gA SF_PROVIDER_PLAN=()
 # One projection of the transcript on stdin: the provider request and command.
 sf_provider_project() {
   local model=${1:-null} header
-  SF_PROVIDER[error]='cannot prepare provider request'
-  IFS= read -r header || return 1
+  IFS= read -r header || { sf_fail 'cannot prepare provider request'; return; }
   header=$(sf_jq -ce --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" '
     include "lib/profile";
     select(canonical_session_header) | header_expand($share; $home)
-  ' <<<"$header") || return 1
+  ' <<<"$header") || { sf_fail 'cannot prepare provider request'; return; }
   # Only tools reach the request, so commands and hooks are not loaded.
-  sf_profile_components "$(jq -c '.profile | .commands=[] | .hooks=[]' <<<"$header")" || {
-    SF_PROVIDER[error]=$SF_ERROR
-    return 1
-  }
+  sf_profile_components "$(jq -c '.profile | .commands=[] | .hooks=[]' <<<"$header")" || return
   sf_jq_fields -sc --argjson header "$header" --argjson components "$REPLY" \
       --argjson model "$model" '
     include "lib/fields";
@@ -43,7 +39,7 @@ sf_provider_project() {
     entry("cwd"; $header.cwd),
     entry("command"; $header.model.provider + "/run"),
     ("ok" | field)
-  ' || return 1
+  ' || { sf_fail 'cannot prepare provider request'; return; }
   SF_PROVIDER_PLAN=( "${reply[@]}" )
 }
 
@@ -54,25 +50,21 @@ sf_provider_capture() {
   local command=$1 directory input
   integer max_capture=$2
   local -A process
-  sf_environment_load || {
-    SF_PROVIDER[error]=$SF_ERROR
-    return 1
-  }
+  sf_environment_load || return
   sf_scratch -d provider-capture || {
-    SF_PROVIDER[error]='cannot prepare provider capture'
+    SF_ERROR='cannot prepare provider capture'
     return 1
   }
   directory=$REPLY
   input="$directory.input"
   print -r -- "$SF_PROVIDER_PLAN[request]" >"$input" || {
     rm -rf -- "$directory" "$input"
-    SF_PROVIDER[error]='cannot prepare provider request'
+    SF_ERROR='cannot prepare provider request'
     return 1
   }
   if ! sf_process_run "$directory" "$SF_PROVIDER_PLAN[cwd]" "${input:A}" "$max_capture" "$max_capture" : \
       /usr/bin/env "${SF_ENVIRONMENT_VALUES[@]}" "$command"; then
     rm -rf -- "$directory" "$input"
-    SF_PROVIDER[error]=$SF_ERROR
     return 1
   fi
   process=( "${reply[@]}" )
@@ -110,14 +102,11 @@ sf_provider_run() {
   integer provider_status=1 decoder_status=1 ended=0 signal_status=0 guard_fd run_status
 
   REPLY=''
-  SF_PROVIDER=(directory '' error '' group_file '' pid '')
+  SF_PROVIDER=(directory '' group_file '' pid '')
   SF_PROVIDER_PARTIAL_EVENTS=()
-  sf_environment_load || {
-    SF_PROVIDER[error]=$SF_ERROR
-    return 1
-  }
+  sf_environment_load || return
   sf_scratch -d provider || {
-    SF_PROVIDER[error]='cannot prepare provider capture'
+    SF_ERROR='cannot prepare provider capture'
     return 1
   }
   directory=$REPLY
@@ -135,7 +124,7 @@ sf_provider_run() {
     rm -rf -- "$directory"
     SF_PROVIDER[directory]=''
     SF_PROVIDER[group_file]=''
-    SF_PROVIDER[error]='cannot prepare provider capture'
+    SF_ERROR='cannot prepare provider capture'
     return 1
   }
   process_command=( "${reply[@]}" )
@@ -206,11 +195,11 @@ sf_provider_run() {
   fi
   if [[ $kind == invalid || $provider_status != 0 || -z $REPLY ]]; then
     if [[ -s $error_file ]]; then
-      SF_PROVIDER[error]=$(LC_ALL=C tr -s '[:cntrl:]' ' ' <"$error_file" | cut -c 1-1000)
+      SF_ERROR=$(LC_ALL=C tr -s '[:cntrl:]' ' ' <"$error_file" | cut -c 1-1000)
     elif [[ $kind == invalid ]]; then
-      SF_PROVIDER[error]='provider emitted an invalid event stream'
+      SF_ERROR='provider emitted an invalid event stream'
     else
-      SF_PROVIDER[error]='provider exited before completing a response'
+      SF_ERROR='provider exited before completing a response'
     fi
     rm -rf -- "$directory"
     SF_PROVIDER[directory]=''

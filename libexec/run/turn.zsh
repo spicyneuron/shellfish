@@ -416,7 +416,7 @@ sf_run_turn() {
           if (( SF_RUN_STEP[requests] == 0 )) && [[ $SF_RUN_STEP[context_window] != true &&
               -f $context_command && -x $context_command ]]; then
             sf_provider_context_window "$context_command" "$SF_RUN[max_capture]" ||
-              { sf_run_status $? "$SF_PROVIDER[error]"; break; }
+              { sf_run_status $? "$SF_ERROR"; break; }
             SF_RUN[model]=$(jq -c --argjson window "$REPLY" \
               '.context_window=$window' <<<"$SF_RUN[model]") &&
               config=$(jq -cn --argjson profile "$SF_RUN[profile]" --argjson model "$SF_RUN[model]" \
@@ -433,7 +433,7 @@ sf_run_turn() {
           sf_provider_run sf_run_emit || {
             run_status=$?
             (( ! SF_RUN[signal_status] )) || run_status=$SF_RUN[signal_status]
-            sf_run_status $run_status "$SF_PROVIDER[error]"
+            sf_run_status $run_status "$SF_ERROR"
             break
           }
           sf_run_append "$session" "$REPLY" || { failure=$REPLY; break; }

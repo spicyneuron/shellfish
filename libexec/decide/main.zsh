@@ -55,7 +55,7 @@ sf_decide_main() {
   SF_PROVIDER_PLAN=( "${reply[@]}" cwd "${PWD:A}" )
 
   sf_provider_capture "$SF_PROVIDER_PLAN[command]" $SF_DECIDE_CAPTURE || {
-    sf_die "$SF_PROVIDER[error]"
+    sf_die "$SF_ERROR"
     return 1
   }
   process=( "${reply[@]}" )

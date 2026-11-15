@@ -34,11 +34,11 @@ sf_request_main() {
     }
     model=$REPLY
   fi
-  sf_provider_project "$model" || { sf_die "$SF_PROVIDER[error]"; return 1; }
+  sf_provider_project "$model" || { sf_die "$SF_ERROR"; return 1; }
   sf_provider_run || {
     local request_status=$?
     # A signal status means the request was cancelled, which needs no message.
-    (( request_status != 1 )) || sf_die "$SF_PROVIDER[error]"
+    (( request_status != 1 )) || sf_die "$SF_ERROR"
     return $request_status
   }
   print -r -- "$REPLY"

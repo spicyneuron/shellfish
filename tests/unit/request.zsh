@@ -253,3 +253,14 @@ for invalid_mode in malformed late response; do
   [[ $(<"$tmp/invalid-$invalid_mode.err") == *'provider emitted an invalid event stream'* ]] ||
     fail "request misreported $invalid_mode provider output"
 done
+
+# Successful projection preserves the diagnostic; failures replace it.
+sf_test_source lib/provider.zsh
+SF_ERROR='earlier failure'
+sf_provider_project <"$session" || fail "$SF_ERROR"
+assert_equal 'earlier failure' "$SF_ERROR"
+if sf_provider_project </dev/null; then fail 'empty provider projection succeeded'; fi
+assert_equal 'cannot prepare provider request' "$SF_ERROR"
+SF_PROVIDER_PLAN=( request '{}' cwd "$tmp/missing" )
+if sf_provider_capture "$SF_TEST_PROVIDER" 128; then fail 'invalid provider cwd succeeded'; fi
+assert_equal 'cannot read process status' "$SF_ERROR"
