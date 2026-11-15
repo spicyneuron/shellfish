@@ -71,7 +71,7 @@ sf_run_component_execute() {
   local capture=$1 limit=$4 max_control=$5 state=ok
   local -A process
   sf_process_run "${watch[@]}" "$@" ||
-    { REPLY=$SF_PROCESS_ERROR; return 1; }
+    { REPLY=$SF_ERROR; return 1; }
   process=( "${reply[@]}" )
   if (( process[interrupted] )); then
     state=interrupted

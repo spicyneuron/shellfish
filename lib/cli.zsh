@@ -1,3 +1,11 @@
+typeset -g SF_ERROR
+
+# Read only after failure. Successful calls leave the diagnostic unchanged.
+sf_fail() {
+  SF_ERROR=$1
+  return 1
+}
+
 sf_die() {
   print -u2 -r -- "shellfish: $*"
   return 1

@@ -72,7 +72,7 @@ sf_provider_capture() {
   if ! sf_process_run "$directory" "$SF_PROVIDER_PLAN[cwd]" "${input:A}" "$max_capture" "$max_capture" : \
       /usr/bin/env "${SF_ENVIRONMENT_VALUES[@]}" "$command"; then
     rm -rf -- "$directory" "$input"
-    SF_PROVIDER[error]=${SF_PROCESS_ERROR:-cannot run provider}
+    SF_PROVIDER[error]=$SF_ERROR
     return 1
   fi
   process=( "${reply[@]}" )

@@ -25,8 +25,10 @@ typeset -A result
 collect() { lines+=( "$1" ); }
 mkdir "$capture"
 capture=${capture:A}
+SF_ERROR='earlier failure'
 sf_process_run "$capture" "$tmp" "$input_file" 512 512 collect \
-  /usr/bin/env RUNNER_VALUE=ambient "$command" argument || { fail "$SF_PROCESS_ERROR"; exit 1; }
+  /usr/bin/env RUNNER_VALUE=ambient "$command" argument || { fail "$SF_ERROR"; exit 1; }
+[[ $SF_ERROR == 'earlier failure' ]] || fail 'successful runner changed the diagnostic'
 result=( "${reply[@]}" )
 (( result[exit_code] == 7 && result[interrupted] == 0 && result[stdout_bytes] > 0 &&
    result[stderr_bytes] == 5 && result[control_bytes] == 19 )) ||
@@ -76,7 +78,7 @@ mkdir "$stream_capture"
 lines=()
 collect() { lines+=( "$1" ); : >"$seen"; }
 sf_process_run "$stream_capture" "$tmp" "$input_file" 512 512 collect \
-  /usr/bin/env SEEN="$seen" "$stream" || fail "$SF_PROCESS_ERROR"
+  /usr/bin/env SEEN="$seen" "$stream" || fail "$SF_ERROR"
 result=( "${reply[@]}" )
 (( result[exit_code] == 0 )) || fail 'runner delivered no line before exit'
 [[ ${(j:|:)lines} == '{"a":1}' ]] || fail "runner split or padded lines: $lines"
@@ -94,7 +96,7 @@ chmod +x "$overflow"
 mkdir "$overflow_capture"
 lines=()
 sf_process_run "$overflow_capture" "$tmp" "$input_file" 16 16 collect "$overflow" ||
-  fail "$SF_PROCESS_ERROR"
+  fail "$SF_ERROR"
 result=( "${reply[@]}" )
 (( result[exit_code] == 0 && result[interrupted] == 0 && result[stdout_bytes] == 17 &&
    result[stderr_bytes] == 17 && result[control_bytes] > 16 && ! ${#lines} )) ||
@@ -139,7 +141,7 @@ mkdir "$tmp/failure"
 if sf_process_run "$tmp/failure" "$tmp/missing" "$input_file" 16 16 collect "$command"; then
   fail 'runner returned a command result for a machinery failure'
 fi
-[[ -n $SF_PROCESS_ERROR ]] || fail 'runner omitted its machinery error'
+[[ $SF_ERROR == 'cannot read process status' ]] || fail 'runner omitted its machinery error'
 [[ -z $(find "$tmp/failure" -mindepth 1 -print -quit) ]] ||
   fail 'runner left files after a machinery failure'
 
@@ -159,5 +161,5 @@ mkdir "$no_status_capture"
 if sf_process_run "$no_status_capture" "$tmp" "$input_file" 16 16 collect "$command"; then
   fail 'runner returned a command result without an isolation status'
 fi
-[[ $SF_PROCESS_ERROR == 'cannot read process status' ]] ||
+[[ $SF_ERROR == 'cannot read process status' ]] ||
   fail 'runner misdiagnosed a missing isolation status'
