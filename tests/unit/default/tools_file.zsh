@@ -126,9 +126,44 @@ for tool in "$tools"/*(/); do
     [[ -f $tool/fence.jsonc ]] || fail "${tool:t} is sandboxed without a policy"
 done
 
-# Sandboxed tools that may write cannot create or change a Shellfish directory.
+# Every sandboxed tool has common protections and tool-specific access.
+typeset policy resolved settings
 for policy in "$tools"/*/fence.jsonc; do
-  jq -e '(.filesystem.allowWrite // []) == [] or
-    (.filesystem.denyWrite | index("**/.shellfish") and index("**/.shellfish/**"))
-  ' "$policy" >/dev/null || fail "${policy:h:t} may write Shellfish directories"
+  settings=$policy
+  # Standalone policies must also resolve outside the installation.
+  if [[ ${policy:h:t} != shell_readonly ]]; then
+    settings="$tmp/${policy:h:t}.json"
+    cp "$policy" "$settings"
+  fi
+  resolved=$(fence config show --settings "$settings" 2>/dev/null) ||
+    fail "${policy:h:t} has an invalid sandbox policy"
+  jq -e --arg tool "${policy:h:t}" '
+    ["**/.env", "**/.env.*", "*.key", "*.pem", "~/.*hist*", "~/.aws/**",
+     "~/.cache/huggingface/token", "~/.cargo/credentials.toml",
+     "~/.claude/.credentials.json", "~/.claude/oauth-token",
+     "~/.codex/.credentials.json", "~/.codex/auth.json",
+     "~/.config/colima/_lima/_config/**", "~/.config/gh/hosts.yml",
+     "~/.config/git/credentials", "~/.config/glab-cli/config.yml", "~/.config/op/**",
+     "~/.config/pnpm/auth.ini", "~/.config/pnpm/rc", "~/.config/rclone/rclone.conf",
+     "~/.docker/config.json", "~/.git-credentials", "~/.gnupg/**", "~/.netrc",
+     "~/.npmrc", "~/.ssh/**", "~/.viminfo", "~/.vimtmp/**", "~/.zsh_sessions/**"] as $read |
+    ["**/.env", "**/.env.*", "**/.direnv/**", "**/.netrc",
+     "**/.git-credentials", "**/.npmrc", "**/.pypirc",
+     "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx"] as $write |
+    ($tool | IN("fetch_url", "search_web")) as $web |
+    ($tool | IN("shell", "shell_readonly")) as $shell |
+    .filesystem.defaultDenyRead == true and
+    .filesystem.denyRead == $read and
+    .filesystem.denyWrite == ($write + ["**/.shellfish", "**/.shellfish/**"] +
+      if $tool == "shell_readonly" then ["**"] else [] end) and
+    (.filesystem.allowRead // []) == (if $web then [] else ["."] end) and
+    (.filesystem.allowWrite // []) == (if $web or $tool == "read_file" then [] else ["."] end) and
+    (.filesystem.allowExecute // []) == (if $shell then ["."] else [] end) and
+    (.allowPty // false) == $shell and
+    (.network.allowedDomains // []) ==
+      (if $tool == "fetch_url" then ["r.jina.ai"]
+       elif $tool == "search_web" then ["mcp.exa.ai"] else [] end) and
+    .network.allowLocalBinding != true and .network.allowLocalOutbound != true and
+    .command.useDefaults == true
+  ' <<<"$resolved" >/dev/null || fail "${policy:h:t} has unexpected sandbox permissions"
 done

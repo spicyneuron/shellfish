@@ -95,7 +95,7 @@ To remove or narrow bundled denies, use `replace: true` and supply the policy yo
 }
 ```
 
-Fence's `extends` requires `replace: true` and can share configuration files or templates. Fence's mandatory protections remain in force, and tools retain platform temporary-directory access. Bundled policies block writes to `.shellfish` directories because their contents run outside the sandbox. Replacing those policies can remove that protection. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
+In a profile, Fence's `extends` requires `replace: true` and can share configuration files or templates. Fence's mandatory protections remain in force, and tools retain platform temporary-directory access. Bundled policies block writes to `.shellfish` directories because their contents run outside the sandbox. Replacing those policies can remove that protection. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
 
 `network.allowedDomains` accepts Fence's hostname patterns, including `*`. Allowing every domain relaxes network isolation, so prefer specific hosts. Local binding and outbound access remain separate Fence settings.
 
