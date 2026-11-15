@@ -114,7 +114,7 @@ assert_canonical_session() {
   }
 }
 
-# Frozen profile and model used by tool and exec tests.
+# Frozen profile and model used by tool and run tests.
 sf_test_frozen_profile() {
   typeset -g SF_TEST_PROFILE SF_TEST_MODEL
   SF_TEST_PROFILE=$(jq -cn --arg tool "$ROOT/share/tools/shell" '

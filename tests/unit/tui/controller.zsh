@@ -235,14 +235,14 @@ sf_tui_terminal_restore
 SF_PRESENT_QUEUE=( queued )
 sf_tui_transport_reset
 exec {SF_TUI_TRANSPORT_OUTPUT_FD}< <(print -r -- broken)
-sf_tui_exec_ready "$SF_TUI_TRANSPORT_OUTPUT_FD"
+sf_tui_turn_ready "$SF_TUI_TRANSPORT_OUTPUT_FD"
 assert_equal working "$SF_PRESENT_STATE"
 sf_tui_heartbeat_tick
 assert_equal stopped "$SF_PRESENT_STATE"
-assert_equal 'exec sent invalid JSONL' "$SF_PRESENT_ERROR"
+assert_equal 'turn sent invalid JSONL' "$SF_PRESENT_ERROR"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 [[ $committed == *committed* ]] || fail 'committed rows were never written'
-[[ $PREDISPLAY == *'Shellfish stopped: exec sent invalid JSONL'* ]] ||
+[[ $PREDISPLAY == *'Shellfish stopped: turn sent invalid JSONL'* ]] ||
   fail 'the stopped view did not report the failure'
 [[ $PREDISPLAY == *'/refresh'* && $PREDISPLAY == *'/quit'* ]] ||
   fail 'the stopped view did not say which prompts it accepts'
@@ -278,7 +278,7 @@ SF_PRESENT_QUEUE=( first second )
 SF_PRESENT_HANDOFF=()
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=0
-sf_tui_exec_finish
+sf_tui_turn_finish
 assert_equal queued "$SF_PRESENT_STATE"
 assert_equal first "$SF_PRESENT_SUBMITTED"
 assert_equal second "$SF_PRESENT_QUEUE[1]"
@@ -295,7 +295,7 @@ for code in 0 130; do
   SF_TUI_TRANSPORT_EOF=1
   SF_TUI_TRANSPORT_EXIT_STATUS=$code
   SF_TUI_TRANSPORT_EXIT_DETAIL=''
-  sf_tui_exec_finish
+  sf_tui_turn_finish
   assert_equal idle "$SF_PRESENT_STATE"
   assert_equal first,second "${(j:,:)SF_PRESENT_QUEUE}"
   sf_tui_transcript 79 20
@@ -315,7 +315,7 @@ for code in 0 130; do
   SF_TUI_TRANSPORT_EOF=1
   SF_TUI_TRANSPORT_EXIT_STATUS=$code
   SF_TUI_TRANSPORT_EXIT_DETAIL=''
-  sf_tui_exec_finish
+  sf_tui_turn_finish
   assert_equal queued "$SF_PRESENT_STATE"
   assert_equal now "$SF_PRESENT_SUBMITTED"
   assert_equal later "${(j:,:)SF_PRESENT_QUEUE}"
@@ -331,7 +331,7 @@ SF_PRESENT_QUEUE=( now )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='provider failed'
-sf_tui_exec_finish
+sf_tui_turn_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal 0 "$SF_PRESENT_STEER"
@@ -349,7 +349,7 @@ SF_PRESENT_QUEUE=( early )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=130
 SF_TUI_TRANSPORT_EXIT_DETAIL=''
-sf_tui_exec_finish
+sf_tui_turn_finish
 assert_equal stopped "$SF_PRESENT_STATE"
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 [[ $SF_PRESENT_ERROR == *'Discarded 1 queued prompt'* ]] ||
@@ -364,11 +364,11 @@ SF_PRESENT_QUEUE=( speculative )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='provider failed'
-sf_tui_exec_finish
+sf_tui_turn_finish
 assert_equal 0 "${#SF_PRESENT_QUEUE}"
 assert_equal idle "$SF_PRESENT_STATE"
 
-# Keep the draft hidden by a permission prompt when the exec fails.
+# Keep the draft hidden by a permission prompt when the turn fails.
 sf_tui_reset
 sf_tui_terminal_reset
 SF_PRESENT_SESSION="$tmp/recover.jsonl"
@@ -379,7 +379,7 @@ BUFFER=''
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=1
 SF_TUI_TRANSPORT_EXIT_DETAIL='provider failed'
-sf_tui_exec_finish
+sf_tui_turn_finish
 assert_equal idle "$SF_PRESENT_STATE"
 assert_equal draft "$BUFFER"
 assert_equal 2 "$CURSOR"
@@ -398,7 +398,7 @@ SF_TUI_TRANSPORT_EXIT_DETAIL='test provider failure'
 sf_tui_heartbeat_tick
 assert_equal idle "$SF_PRESENT_STATE"
 sf_tui_transcript 79 20
-[[ $SF_PRESENT_VIEWPORT_TEXT != *'Exec process failed'* ]] ||
+[[ $SF_PRESENT_VIEWPORT_TEXT != *'Turn failed'* ]] ||
   fail "a settled error was reported twice: $SF_PRESENT_VIEWPORT_TEXT"
 
 # Recover from terminated execs.
@@ -409,7 +409,7 @@ SF_PRESENT_STATE=working
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=143
 SF_TUI_TRANSPORT_EXIT_DETAIL=''
-sf_tui_exec_finish
+sf_tui_turn_finish
 assert_equal idle "$SF_PRESENT_STATE"
 sf_tui_submit next
 assert_equal submit "$REPLY"
@@ -468,7 +468,7 @@ SF_PRESENT_HANDOFF=()
 SF_PRESENT_QUEUE=( /refresh )
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=0
-sf_tui_exec_finish
+sf_tui_turn_finish
 assert_equal handoff "$SF_PRESENT_ACTION"
 assert_equal "$SF_ENTRY --clear --session $tmp/recover.jsonl" \
   "${(j: :)SF_PRESENT_HANDOFF}"
@@ -502,7 +502,7 @@ sf_tui_transcript 79 20
   fail 'startup hook activity did not settle in place'
 SF_TUI_TRANSPORT_EOF=1
 SF_TUI_TRANSPORT_EXIT_STATUS=0
-sf_tui_exec_finish
+sf_tui_turn_finish
 assert_equal queued "$SF_PRESENT_STATE"
 assert_equal early "$SF_PRESENT_SUBMITTED"
 
@@ -519,7 +519,7 @@ for code in 0 9; do
   SF_TUI_TRANSPORT_EOF=1
   SF_TUI_TRANSPORT_EXIT_STATUS=$code
   SF_TUI_TRANSPORT_EXIT_DETAIL='startup failure'
-  sf_tui_exec_finish
+  sf_tui_turn_finish
   assert_equal stopped "$SF_PRESENT_STATE"
   [[ $SF_PRESENT_ERROR == 'Session creation failed.'* ]] ||
     fail "creation failure reported $SF_PRESENT_ERROR"

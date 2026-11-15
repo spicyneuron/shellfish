@@ -80,16 +80,16 @@ sf_tui_transport_start() {
   integer had_monitor=$options[monitor] had_bg_nice=$options[bg_nice]
 
   [[ -z $SF_TUI_TRANSPORT_PID ]] || {
-    SF_TUI_TRANSPORT_ERROR='exec process is already running'
+    SF_TUI_TRANSPORT_ERROR='turn is already running'
     return 1
   }
   (( ${#SF_TUI_TRANSPORT_COMMAND} )) || {
-    SF_TUI_TRANSPORT_ERROR='exec command is not configured'
+    SF_TUI_TRANSPORT_ERROR='turn command is not configured'
     return 1
   }
   sf_tui_transport_reset
   sf_scratch transport-error || {
-    SF_TUI_TRANSPORT_ERROR='cannot create exec error file'
+    SF_TUI_TRANSPORT_ERROR='cannot create turn error file'
     return 1
   }
   error_file=$REPLY
@@ -103,7 +103,7 @@ sf_tui_transport_start() {
     (( ! had_monitor )) || setopt monitor
     (( ! had_bg_nice )) || setopt bg_nice
     sf_tui_transport_stop
-    SF_TUI_TRANSPORT_ERROR='cannot attach to exec process'
+    SF_TUI_TRANSPORT_ERROR='cannot attach to turn'
     return 1
   fi
   coproc :
@@ -115,12 +115,12 @@ sf_tui_transport_start() {
     print -r -- "$input" >&$SF_TUI_TRANSPORT_INPUT_FD 2>/dev/null
   ); then
     sf_tui_transport_stop
-    SF_TUI_TRANSPORT_ERROR='cannot write to exec process'
+    SF_TUI_TRANSPORT_ERROR='cannot write to turn'
     return 1
   fi
   if ! sf_tui_transport_watch "$callback"; then
     sf_tui_transport_stop
-    SF_TUI_TRANSPORT_ERROR='cannot watch exec process'
+    SF_TUI_TRANSPORT_ERROR='cannot watch turn'
     return 1
   fi
 }

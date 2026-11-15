@@ -67,17 +67,17 @@ while (( waited < 50 )) && ! grep -q '_assistant_message_delta' "$cancel_output"
   sleep 0.1
   (( waited += 1 ))
 done
-(( waited < 50 )) || fail 'exec never started streaming a turn to cancel'
+(( waited < 50 )) || fail 'run never started streaming a turn to cancel'
 kill -INT "$cancel_pid" || fail 'turn ended before it could be cancelled'
 integer cancel_status=0
 wait "$cancel_pid" || cancel_status=$?
-(( cancel_status == 130 )) || fail 'cancelled exec did not report the signal'
+(( cancel_status == 130 )) || fail 'cancelled run did not report the signal'
 jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-2] | .type == "assistant" and .stop == "cancelled" and
     (.content | any(.type == "text" and .text != "")))
   and $events[-1] == {type:"error",user_text:"Cancelled."}
-' <"$cancel_output" >/dev/null || fail 'cancelled exec did not persist partial content'
+' <"$cancel_output" >/dev/null || fail 'cancelled run did not persist partial content'
 
 # Cancellation preserves streamed reasoning.
 typeset cancel_provider="$tmp/cancel-provider" cancel_provider_marker="$tmp/tool-input"
@@ -113,7 +113,7 @@ while (( waited < 50 )) && ! grep -q '_assistant_reasoning_delta' "$reasoning_ou
   sleep 0.1
   (( waited += 1 ))
 done
-(( waited < 50 )) || fail 'exec never streamed reasoning to cancel'
+(( waited < 50 )) || fail 'run never streamed reasoning to cancel'
 kill -TERM "$reasoning_pid" || fail 'reasoning turn ended before cancellation'
 integer reasoning_status=0
 wait "$reasoning_pid" || reasoning_status=$?
@@ -172,7 +172,7 @@ print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |
   $events[0] == {type:"error",user_text:"Turn interrupted."} and
   ($events[1] | .type == "user")
-' >/dev/null || fail 'exec did not start after an unfinished turn'
+' >/dev/null || fail 'run did not start after an unfinished turn'
 
 # An incomplete physical tail is an error and is never repaired in place.
 typeset incomplete="$tmp/incomplete.jsonl" incomplete_before="$tmp/incomplete.before"

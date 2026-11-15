@@ -246,11 +246,11 @@ sf_tui_pending_next() {
   # Reloading is the only recovery from invalid live output.
   sf_tui_transport_stop
   sf_tui_discard_queue
-  sf_tui_stop 'exec sent invalid JSONL'
+  sf_tui_stop 'turn sent invalid JSONL'
   return 0
 }
 
-sf_tui_exec_finish() {
+sf_tui_turn_finish() {
   local heading detail exit_detail
   integer exit_status cancelled=0 settled_error=$SF_PRESENT_ERROR_SETTLED
   integer creating=$SF_PRESENT_CREATING steer=$SF_PRESENT_STEER resumable
@@ -278,13 +278,13 @@ sf_tui_exec_finish() {
       heading='Cancelled.'
       detail=$exit_detail
     elif (( exit_status >= 128 )); then
-      heading='Exec process terminated.'
+      heading='Turn terminated.'
       detail=${exit_detail:-"Terminated by signal $(( exit_status - 128 ))."}
     else
       if (( creating )); then
         heading='Session creation failed.'
       else
-        heading='Exec process failed.'
+        heading='Turn failed.'
       fi
       detail=${exit_detail:-"Exited with status $exit_status."}
     fi
@@ -328,7 +328,7 @@ sf_tui_dequeue() {
   sf_tui_client_command "$SF_PRESENT_SUBMITTED" || SF_PRESENT_STATE=queued
 }
 
-sf_tui_exec_ready() {
+sf_tui_turn_ready() {
   sf_tui_transport_read "$1" || return 1
   sf_tui_heartbeat_arm
 }
@@ -373,7 +373,7 @@ sf_tui_turn() {
   SF_PRESENT_STATE=working
   SF_TUI_PROJECT_MODE=live
   sf_tui_activity_start || { SF_PRESENT_STATE=idle; return 1; }
-  if ! sf_tui_transport_start "$input" sf_tui_exec_ready; then
+  if ! sf_tui_transport_start "$input" sf_tui_turn_ready; then
     SF_PRESENT_STATE=idle
     SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
     return 1
@@ -465,7 +465,7 @@ sf_tui_controller() {
   if [[ $session_mode == startup ]]; then
     SF_PRESENT_STATE=working
     sf_tui_activity_start || return 1
-    sf_tui_transport_start '' sf_tui_exec_ready || {
+    sf_tui_transport_start '' sf_tui_turn_ready || {
       SF_PRESENT_ERROR=$SF_TUI_TRANSPORT_ERROR
       return 1
     }

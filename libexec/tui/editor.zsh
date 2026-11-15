@@ -95,7 +95,7 @@ sf_tui_heartbeat_ready() {
     read -k 1 -u "$fd" || { sf_tui_heartbeat_stop; return 1; }
   done
   if [[ -n $transport ]] && zselect -r "$transport" -t 0 2>/dev/null; then
-    sf_tui_exec_ready "$transport" || return 1
+    sf_tui_turn_ready "$transport" || return 1
   fi
   sf_tui_heartbeat_tick || tick_status=$?
   (( ! tick_status )) && return 0
@@ -123,7 +123,7 @@ sf_tui_heartbeat_tick() {
       continue
     fi
     if sf_tui_transport_is_complete; then
-      sf_tui_exec_finish || return 1
+      sf_tui_turn_finish || return 1
       continue
     fi
     if ! sf_tui_repaint_checked stage; then
@@ -170,7 +170,7 @@ sf_tui_line_init() {
   # Working turns render a viewport; other states stage commits.
   local mode=''
   sf_tui_terminal_restore
-  sf_tui_transport_watch sf_tui_exec_ready
+  sf_tui_transport_watch sf_tui_turn_ready
   [[ $SF_PRESENT_STATE == working ]] || mode=stage
   if ! sf_tui_repaint_checked "$mode"; then
     zle -R
@@ -607,7 +607,7 @@ sf_tui_bind() {
   SF_PRESENT_HEARTBEAT_FD=''
   SF_PRESENT_VERTICAL_COLUMN=-1
   sf_tui_history_reset
-  zle -N sf_tui_exec_ready
+  zle -N sf_tui_turn_ready
   zle -N sf_tui_heartbeat_ready
   zle -N zle-line-init sf_tui_line_init
   zle -N zle-line-finish sf_tui_line_finish
