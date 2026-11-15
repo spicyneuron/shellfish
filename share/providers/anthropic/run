@@ -33,8 +33,11 @@ jq -ce '
   def blocks:
     map(if (.content | length) == 0
         then .content = [{type:"text",text:"[no content]"}] else . end);
-  # Images are inline data URIs, which the API takes as base64 sources.
-  def result_content:
+  # Images are inline data URIs, which the API takes as base64 sources. It
+  # refuses an image over 8000 px on a side, or over 2000 px once a request
+  # holds more than 20 images. Every request resends the whole transcript, so
+  # every image in the session counts.
+  def api_content:
     if type == "string" then .
     else [.[] |
       if .type == "image" then
@@ -43,9 +46,7 @@ jq -ce '
       else select(.text != "") | {type:"text",text:.text} end]
     end;
   def regular_message:
-    if .type == "user" then
-      {role:"user",content:[.content[] |
-        select(.type == "text" and .text != "") | {type:"text",text:.text}]}
+    if .type == "user" then {role:"user",content:(.content | api_content)}
     elif .type == "assistant" then
       {role:"assistant",content:[.content[] |
         if .type == "text" then (select(.text != "") | {type:"text",text:.text})
@@ -87,7 +88,7 @@ jq -ce '
       .pending += [{
         type:"tool_result",
         tool_use_id:$message.call_id,
-        content:($message.content | result_content),
+        content:($message.content | api_content),
         is_error:(($message.exit_code // 0) != 0)
       }]
     # A call rejoins the assistant message that requested it. Results stay

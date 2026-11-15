@@ -47,9 +47,11 @@ def canonical_tool_call:
   .type == "tool_call" and (.id | identifier) and (.name | tool_name) and
   (.input | type == "object");
 
+# The prompt text leads, followed by any attached images.
 def canonical_user_message:
   type == "object" and keys == ["content", "type"] and .type == "user" and
-  (.content | type == "array" and length == 1 and (.[0] | canonical_text)) and
+  (.content | type == "array" and (.[0] | canonical_text) and
+    all(.[1:][]; canonical_image)) and
   (.content[0].text | nul_free_string);
 
 def canonical_state_update:
@@ -157,7 +159,8 @@ def session_state:
         .next = "user" | .calls = [] | .response = null
       elif ($record | canonical_user_message) then
         if .next != "user" then error("user request inside a turn") else . end |
-        .messages += [context_message(.context; $record.content[0].text)] |
+        .messages += [context_message(.context; $record.content[0].text) |
+          .content += $record.content[1:]] |
         .context = [] | .next = "assistant" | .requests = 0
       elif ($record | canonical_response) then
         if .next == "assistant" then .

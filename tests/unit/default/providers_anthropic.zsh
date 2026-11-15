@@ -149,18 +149,21 @@ jq -e '
   (.messages[2].content | map(.is_error)) == [false,true]
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not regroup a call batch'
 
-# Tool result images.
-jq -c '.messages[3].content = [{type:"text",text:"shot"},
+# Prompt and tool result images.
+jq -c '.messages[0].content += [{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}] |
+  .messages[3].content = [{type:"text",text:"shot"},
   {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}] |
   .messages[5].content = [{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]' \
   "$batch_request" >"$tmp/images.json"
 ANTHROPIC_API_KEY=test zsh -f "$run" <"$tmp/images.json" >"$res"
 jq -e '
-  .messages[2].content | map(.content) == [
+  .messages[0].content == [{type:"text",text:"run both"},
+    {type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}}] and
+  (.messages[2].content | map(.content)) == [
     [{type:"text",text:"shot"},
      {type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}}],
     [{type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}}]]
-' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not send tool result images'
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not send prompt or tool result images'
 
 # The provider always streams, so a stream option is refused.
 jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"

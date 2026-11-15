@@ -101,6 +101,16 @@ print -r -- '[
     "</hook>\n\ngo"
 ' >/dev/null || fail 'same-lifecycle hook context was not grouped'
 
+# Attached images follow the prompt and its context.
+print -r -- '[
+  {"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"ctx"},
+  {"type":"user","content":[{"type":"text","text":"see"},
+    {"type":"image","url":"data:image/png;base64,AAAA"}]}
+]' | messages | jq -e '
+  .[0].content == [{type:"text",text:"<hook name=\"session_start\">\nctx\n</hook>\n\nsee"},
+    {type:"image",url:"data:image/png;base64,AAAA"}]
+' >/dev/null || fail 'prompt images did not follow the prompt text'
+
 # Errors close a turn, reach no request, and never become context.
 typeset failed_turn='[
   {"type":"user","content":[{"type":"text","text":"first"}]},
@@ -206,6 +216,13 @@ typeset -a invalid=(
   'an error carrying model text' '[{"type":"error","user_text":"failed","model_text":"failed"}]'
   'reasoning with an extra field' '[{"type":"user","content":[{"type":"text","text":"a"}]},
      {"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"why","extra":true}]}]'
+  'a prompt led by an image' '[{"type":"user","content":[
+     {"type":"image","url":"data:image/png;base64,AAAA"},{"type":"text","text":"a"}]}]'
+  'a prompt with two texts' '[{"type":"user","content":[
+     {"type":"text","text":"a"},{"type":"text","text":"b"}]}]'
+  'a prompt with a remote image' '[{"type":"user","content":[
+     {"type":"text","text":"a"},{"type":"image","url":"https://example.test/a.png"}]}]'
+  'an empty prompt' '[{"type":"user","content":[]}]'
   'consecutive user requests' '[{"type":"user","content":[{"type":"text","text":"a"}]},
      {"type":"user","content":[{"type":"text","text":"b"}]}]'
   'a user request during a tool sequence' '[{"type":"user","content":[{"type":"text","text":"a"}]},

@@ -202,6 +202,7 @@ context=$(jq -ces --argjson request "$request" --arg system "$system" \
         .age += 1
       else .out += [$record] end) | .out;
   def bytes: tojson | utf8bytelength;
+  def omit_images: map(if .type == "image" then {type:"text",text:"[image omitted]"} else . end);
   .[0] as $header |
   [.[1:][] |
     select(.type != "state_update") |
@@ -209,9 +210,8 @@ context=$(jq -ces --argjson request "$request" --arg system "$system" \
     (if .type == "error" then . else del(.user_text, .user_preview_lines) end) |
     if .type == "assistant" then
       del(.usage) | .content |= map(select(.type != "reasoning"))
-    elif .type == "tool_result" and has("model_content") then
-      .model_content |= map(
-        if .type == "image" then {type:"text",text:"[image omitted]"} else . end)
+    elif .type == "user" then .content |= omit_images
+    elif .type == "tool_result" and has("model_content") then .model_content |= omit_images
     else . end
   ] as $timeline |
   ($timeline | map(.type) | index("user")) as $first_user |

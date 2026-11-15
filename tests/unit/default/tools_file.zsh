@@ -20,7 +20,7 @@ assert_equal '(empty)' "$(run_tool read_file '{"file_path":"empty.txt"}')"
 
 # Images return on fd 3 for the model to view, and other binary files are refused.
 typeset small_png=iVBORw0KGgoAAAANSUhEUgAAAAQAAAACAQMAAABFZu8gAAAAA1BMVEUAgACc+aWRAAAADElEQVQI12NgYGAAAAAEAAEnNCcKAAAAAElFTkSuQmCC
-typeset wide_png=iVBORw0KGgoAAAANSUhEUgAAB9AAAAAKAQMAAADW9Ff9AAAAA1BMVEUAgACc+aWRAAAAGUlEQVRIx+3BAQ0AAADCoPdPbQ43oAAA+DUJzgABnKClDgAAAABJRU5ErkJggg==
+typeset wide_png=iVBORw0KGgoAAAANSUhEUgAACcQAAAAKAQMAAACqx11pAAAAA1BMVEUAgACc+aWRAAAAGklEQVR42u3BgQAAAADDoPlTX+EAVQEAAPwGDEQAAWCjMYgAAAAASUVORK5CYII=
 print -rn -- $small_png | base64 -d >"$tmp/small.png"
 print -rn -- $wide_png | base64 -d >"$tmp/wide.png"
 if (( $+commands[sips] || $+commands[magick] || ($+commands[identify] && $+commands[convert]) )); then
@@ -38,10 +38,10 @@ if (( $+commands[sips] || $+commands[magick] || ($+commands[identify] && $+comma
   jq -e --arg url "data:image/png;base64,$small_png" '.content == [{type:"image",url:$url}]' \
     "$tmp/fd3" >/dev/null || fail 'read_file re-encoded an image it could send unchanged'
   : >|"$tmp/fd3"
-  assert_equal '[image 1568x8 png, downscaled from 2000x10]' \
+  assert_equal '[image 2000x8 png, downscaled from 2500x10]' \
     "$(SHELLFISH_CONFIG=$png run_tool read_file '{"file_path":"wide.png"}')"
   : >|"$tmp/fd3"
-  assert_equal '[image 1000x5 png, downscaled from 2000x10]' \
+  assert_equal '[image 1000x4 png, downscaled from 2500x10]' \
     "$(SHELLFISH_CONFIG='{"read_file":{"image_format":"png","image_max_edge":1000}}' \
       run_tool read_file '{"file_path":"wide.png"}')"
   : >|"$tmp/fd3"

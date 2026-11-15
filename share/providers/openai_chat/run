@@ -28,13 +28,17 @@ jq -ce '
     else [.[] | select(.type == "text") | .text] | join("\n\n") |
       if . == "" then "[images follow in the next user message]" else . end
     end;
-  def result_images:
+  def image_parts:
     if type == "string" then []
     else [.[] | select(.type == "image") | {type:"image_url",image_url:{url}}] end;
   def flush_images:
     if .images == [] then . else .out += [{role:"user",content:.images}] | .images = [] end;
   def message:
-    if .type == "user" then {role:"user",content:text_content}
+    # Some gateways accept only string content, so parts are sent only with images.
+    if .type == "user" then
+      (.content | image_parts) as $images |
+      {role:"user",content:(if $images == [] then text_content
+        else [.content[0] | select(.text != "")] + $images end)}
     elif .type == "assistant" then {role:"assistant",content:text_content}
     elif .type == "tool_result" then
       {role:"tool",tool_call_id:.call_id,content:(.content | result_text)}
@@ -67,7 +71,7 @@ jq -ce '
       (if .out[$index].content == "" then .out[$index].content = null else . end)
     elif $message.type == "tool_result" then
       .out += [$message | message] |
-      ($message.content | result_images) as $images |
+      ($message.content | image_parts) as $images |
       if $images == [] then .
       else .images += [{type:"text",
         text:"Images from the \($message.name) call \($message.call_id):"}] + $images end

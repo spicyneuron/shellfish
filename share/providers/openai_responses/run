@@ -25,15 +25,15 @@ unset api_key account_id
 jq -ce '
   def text_content:
     [.content[] | select(.type == "text") | .text] | join("");
-  # Images omit detail, which some compatible gateways reject in tool output.
-  def output:
+  # Images omit detail, which some compatible gateways reject.
+  def input_content:
     if type == "string" then .
     else [.[] | if .type == "image" then {type:"input_image",image_url:.url}
       else {type:"input_text",text:.text} end]
     end;
   def items:
     if .type == "user" then
-      [{type:"message",role:"user",content:[{type:"input_text",text:text_content}]}]
+      [{type:"message",role:"user",content:(.content | input_content)}]
     elif .type == "assistant" then
       (text_content) as $text |
       # Reasoning leads, as the API emits it, so each item still precedes the
@@ -48,7 +48,7 @@ jq -ce '
     elif .type == "tool_call" then
       [{type:"function_call",call_id:.id,name:.name,arguments:(.input | tojson)}]
     elif .type == "tool_result" then
-      [{type:"function_call_output",call_id:.call_id,output:(.content | output)}]
+      [{type:"function_call_output",call_id:.call_id,output:(.content | input_content)}]
     else
       error("unsupported canonical type")
     end;

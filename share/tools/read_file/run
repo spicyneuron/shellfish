@@ -60,7 +60,7 @@ if image_format "$file_path"; then
     .read_file // {} |
     if type == "object" and
       (keys - ["image_format", "image_max_edge", "image_quality"]) == [] then
-      "\(.image_format // "webp") \(.image_quality // 75) \(.image_max_edge // 1568)"
+      "\(.image_format // "webp") \(.image_quality // 75) \(.image_max_edge // 2000)"
     else error end
   ' <<<"${SHELLFISH_CONFIG:-{\}}" 2>/dev/null) || settings=''
   read -r format quality max_edge <<<"$settings"

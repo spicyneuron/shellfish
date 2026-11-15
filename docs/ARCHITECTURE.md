@@ -31,7 +31,7 @@ Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absol
 | Durable record | Role |
 | --- | --- |
 | `hook_result` | Lifecycle hook output |
-| `user` | User message |
+| `user` | User message: prompt text, then any attached images |
 | `assistant` | Complete assistant response with text, reasoning, and tool calls |
 | `tool_result` | The exact call identity and input plus its settled result |
 | `state_update` | Model-invisible named state update; the latest exact name wins and `null` clears it |

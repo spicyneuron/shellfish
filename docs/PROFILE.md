@@ -115,7 +115,7 @@ Both starter profiles enable sandboxing with no extra grants. The default profil
 | `fetch_url` | Fetch a page as Markdown through Jina Reader |
 | `skill` | Load an advertised Agent Skill |
 
-`read_file` defaults to WebP at quality 75 and at most 1568 pixels on the long edge. Set `"config": {"read_file": {"image_format": "jpeg", "image_quality": 60, "image_max_edge": 1024}}` to choose `webp`, `jpeg`, or `png`, quality 1 to 100, and a long edge of 1 to 8000 pixels. Smaller images can cost fewer tokens. Without ImageMagick, images needing re-encoding become JPEG when `sips` cannot write the chosen format. An image already in the chosen format and within the size limit is sent unchanged.
+`read_file` defaults to WebP at quality 75 and at most 2000 pixels on the long edge. Set `"config": {"read_file": {"image_format": "jpeg", "image_quality": 60, "image_max_edge": 1024}}` to choose `webp`, `jpeg`, or `png`, quality 1 to 100, and a long edge of 1 to 8000 pixels. Smaller images can cost fewer tokens. Anthropic refuses images over 2000 pixels on a side once a request holds more than 20 images, so a larger limit can break long sessions. Without ImageMagick, images needing re-encoding become JPEG when `sips` cannot write the chosen format. An image already in the chosen format and within the size limit is sent unchanged.
 
 The default profile's `session_start` hooks record context once:
 

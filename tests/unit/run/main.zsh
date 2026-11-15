@@ -191,6 +191,33 @@ jq -c . "$stream_session" | tail -n +$(( prefix + 1 )) >"$tmp/session-durable"
 cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
 
+# Images attached to a prompt persist and reach the provider after its text.
+typeset image_record='{"type":"user","content":[{"type":"text","text":"look"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
+print -r -- "$image_record" |
+  SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST="$tmp/image-request" \
+  zsh -f "$entry" run --jsonl --session "$stream_session" >/dev/null ||
+  fail 'JSONL run rejected an image prompt'
+jq -es --argjson record "$image_record" \
+  '[.[] | select(.type == "user")] | last == $record' "$stream_session" >/dev/null ||
+  fail 'the image prompt was not persisted exactly'
+jq -e '.messages[-1].content ==
+  [{type:"text",text:"look"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]' \
+  "$tmp/image-request" >/dev/null || fail 'the image prompt did not reach the provider'
+
+# A user message over the content limit fails before it is stored.
+typeset -i users=$(jq -es '[.[] | select(.type == "user")] | length' "$stream_session")
+jq -cn '{type:"user",content:[{type:"text",text:"look"},
+  {type:"image",url:("data:image/png;base64," + ("A" * 2048))}]}' |
+  SHELLFISH_MAX_CONTENT_KB=1 SF_TEST_PROVIDER_DELAY=0 \
+  zsh -f "$entry" run --jsonl --session "$stream_session" >/dev/null 2>"$tmp/oversized" &&
+  fail 'run accepted a user message over the content limit'
+grep -Fq 'user message exceeds content limit' "$tmp/oversized" ||
+  fail 'run did not explain the oversized user message'
+jq -es --argjson users $users '
+  ([.[] | select(.type == "user")] | length) == $users and
+  .[-1] == {type:"error",user_text:"user message exceeds content limit"}
+' "$stream_session" >/dev/null || fail 'the oversized user message was stored'
+
 # Context discovery replaces the complete frozen profile before inference.
 typeset context_provider="$tmp/context-provider"
 typeset context_session="$tmp/context.jsonl" context_stream="$tmp/context.stream"
