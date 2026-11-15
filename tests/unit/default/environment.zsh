@@ -176,6 +176,10 @@ jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
   (.[1].user_text | contains("/verbose, /v") and contains("/copy [N]") and
     test("/compact\\s"))' "$command_session" >/dev/null ||
   fail 'help did not list profile commands'
+submit /sandbox
+jq -e -s 'map(.type) == ["session","hook_result"] and
+  .[1].user_preview_lines == "full" and .[1].action == "deny"' \
+  "$command_session" >/dev/null || fail 'sandbox output did not request a full preview'
 submit '/copy x'
 jq -e -s '(.[1].user_text | rtrimstr("\n")) == "usage: /copy [N]" and .[1].action == "deny"' \
   "$command_session" >/dev/null || fail 'command did not receive its arguments'
@@ -250,6 +254,21 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
       zsh -f "$sandbox" 3>"$tmp/control" >/dev/null 2>"$tmp/sandbox.err" || fail 'sandbox command failed'
     jq -rs 'last' "$tmp/control"
   }
+  call '/sandbox ' >/dev/null
+  assert_equal "Sandbox: enabled
+Additional grants (tool policy still applies):
+shell:
+  read:
+    @system
+  write:
+    ${tmp:A}/project/dir
+    ~/share
+  domains:
+    *.example.com" "$(<"$tmp/sandbox.err")" 'sandbox listing includes only granted tools and access'
+  call '/sandbox read_file' >/dev/null
+  assert_equal 'Sandbox: enabled
+Additional grants (tool policy still applies):
+  (none)' "$(<"$tmp/sandbox.err")" 'sandbox inspection summarizes empty grants'
   # A bundled grant matches by "@" or by its absolute path.
   [[ $(call "/sandbox shell +read $ROOT/share/system" | jq -r .action) == null ]] ||
     fail 'bundled grant duplicated'
@@ -273,8 +292,8 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
   grep -q '^shell:$' "$tmp/sandbox.err" && ! grep -q '^read_file:$' "$tmp/sandbox.err" ||
     fail 'tool inspection included another tool'
   call '/sandbox ' >/dev/null
-  grep -q '^shell:$' "$tmp/sandbox.err" && grep -q '^read_file:$' "$tmp/sandbox.err" ||
-    fail 'sandbox inspection omitted a selected tool'
+  grep -q '^shell:$' "$tmp/sandbox.err" && ! grep -q '^read_file:$' "$tmp/sandbox.err" ||
+    fail 'sandbox inspection did not omit an empty tool'
   [[ $(call '/sandbox missing +read dir' | jq -r .action) == null ]] ||
     fail 'sandbox command granted access to an unselected tool'
   [[ $(call '/sandbox +read dir' | jq -r .action) == null ]] &&

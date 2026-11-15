@@ -24,12 +24,13 @@ fi
 
 if [[ $body == "$tool" ]]; then
   jq -r --arg tool "$tool" '.profile as $profile | $profile.sandbox as $sandbox |
+    [($profile.tools[] | split("/") | last | select($tool == "" or . == $tool)) as $name |
+      [("read", "write", "domains") as $access | ($sandbox.tools[$name][$access] // []) as $grants |
+        select($grants | length > 0) | "  \($access):", ($grants[] | "    " + .)] as $sections |
+      select($sections | length > 0) | $name + ":", $sections[]] as $lines |
     "Sandbox: " + (if $sandbox.enabled then "enabled" else "disabled" end),
     "Additional grants (tool policy still applies):",
-    ($profile.tools[] | split("/") | last | select($tool == "" or . == $tool)) as $name |
-      $name + ":",
-      (("read", "write", "domains") as $access | ($sandbox.tools[$name][$access] // []) as $grants |
-        "  \($access):", if $grants == [] then "    (none)" else $grants[] | "    " + . end)
+    (if $lines == [] then "  (none)" else $lines[] end)
   ' <<<"$header" >&2
   exit
 fi
