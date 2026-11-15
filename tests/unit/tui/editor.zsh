@@ -402,3 +402,47 @@ assert_equal stopped "$SF_PRESENT_STATE"
 assert_equal 'cannot stage chat rows' "$SF_PRESENT_ERROR"
 functions[sf_tui_terminal_stage]=$saved_stage
 functions[sf_tui_repaint_checked]=$saved_repaint
+
+# Clipboard readers and a failing optional resizer are isolated from host tools.
+sf_test_tmp tui-editor-paste
+mkdir -p "$tmp/bin" "$tmp/paste"
+for command in head od tr grep mktemp rm; do
+  ln -s "$commands[$command]" "$tmp/bin/$command"
+done
+print -r -- '#!/bin/sh
+case "$*:$FAKE_CLIPBOARD" in
+  *TARGETS*|*--list-types*)
+    case "$FAKE_CLIPBOARD" in
+      png|failed) printf "text/plain\nimage/png\n" ;;
+      mixed) printf "image/bmp\nimage/png\n" ;;
+      bmp) printf "image/bmp\n" ;;
+      text) printf "text/plain\n" ;;
+    esac ;;
+  *image/png*) printf "\211PNG\r\n\032\n" ;;
+  *image/bmp*) printf "BM bitmap" ;;
+esac
+[ "$FAKE_CLIPBOARD" != failed ]' >"$tmp/bin/xclip"
+print -r -- '#!/bin/sh
+exit 1' >"$tmp/bin/magick"
+chmod +x "$tmp/bin/xclip" "$tmp/bin/magick"
+for reader in xclip wl-paste; do
+  [[ $reader != wl-paste ]] || ln -s xclip "$tmp/bin/wl-paste"
+  (
+    path=( "$tmp/bin" )
+    for clipboard in png mixed bmp text failed; do
+      LBUFFER='look '
+      FAKE_CLIPBOARD=$clipboard TMPDIR=$tmp/paste sf_tui_paste_image
+      if [[ $clipboard == (png|mixed) ]]; then
+        [[ $LBUFFER == "look [Image: $tmp/paste/shellfish-paste."* ]] ||
+          fail "a $clipboard clipboard inserted $LBUFFER through $reader"
+        sf_tui_image_format "${${LBUFFER#*\[Image: }%\]}" && [[ $REPLY == png ]] ||
+          fail 'the pasted image was not saved'
+        rm -f -- $tmp/paste/*(N)
+      else
+        assert_equal 'look ' "$LBUFFER" "a $clipboard clipboard inserted a marker through $reader"
+        left=( $tmp/paste/*(N) )
+        assert_equal 0 ${#left} "a $clipboard clipboard left a file"
+      fi
+    done
+  )
+done

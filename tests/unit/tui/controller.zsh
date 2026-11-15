@@ -530,4 +530,19 @@ for code in 0 9; do
   [[ $POSTDISPLAY != *'[r]'* ]] || fail 'refresh was offered without a session'
 done
 
+# Image markers attach readable images in order; other markers stay text only.
+typeset png=iVBORw0KGgoAAAANSUhEUgAAAAQAAAACAQMAAABFZu8gAAAAA1BMVEUAgACc+aWRAAAADElEQVQI12NgYGAAAAAEAAEnNCcKAAAAAElFTkSuQmCC
+print -rn -- $png | base64 -d >"$tmp/shot"
+print -rn -- $'\xff\xd8\xff\xe0 jpeg' >"$tmp/photo"
+print -r -- 'not an image' >"$tmp/notes"
+typeset prompt="Compare [Image: $tmp/shot] with [Image: $tmp/photo], [Image: $tmp/notes], and [Image: $tmp/gone]"
+sf_tui_user_record "$prompt" | jq -e --arg prompt "$prompt" --arg png "$png" '
+  . == {type:"user",content:[{type:"text",text:$prompt},
+    {type:"image",url:("data:image/png;base64," + $png)},
+    {type:"image",url:"data:image/jpeg;base64,/9j/4CBqcGVn"}]}
+' >/dev/null || fail 'image markers did not attach their images'
+sf_tui_user_record 'plain [Image: words' |
+  jq -e '. == {type:"user",content:[{type:"text",text:"plain [Image: words"}]}' >/dev/null ||
+  fail 'a prompt without complete markers gained content'
+
 print -r -- ok

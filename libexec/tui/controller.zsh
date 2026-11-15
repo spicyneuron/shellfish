@@ -333,12 +333,37 @@ sf_tui_exec_ready() {
   sf_tui_heartbeat_arm
 }
 
+# Sets REPLY to a readable file's image format, read from its leading bytes.
+sf_tui_image_format() {
+  [[ -f $1 && -r $1 ]] || return 1
+  case $(head -c 12 -- "$1" | od -An -tx1 | tr -d ' \n') in
+    (89504e470d0a1a0a*) REPLY=png ;;
+    (ffd8ff*) REPLY=jpeg ;;
+    (47494638*) REPLY=gif ;;
+    (52494646????????57454250) REPLY=webp ;;
+    (*) return 1 ;;
+  esac
+}
+
+# The prompt's user record, attaching each [Image: PATH] marker's image file.
+# Images stream into jq, since one can exceed an argument's size limit.
+sf_tui_user_record() {
+  local rest=$1 file
+  while [[ $rest == *'[Image: '*']'* ]]; do
+    rest=${rest#*\[Image: } file=${rest%%\]*} rest=${rest#*\]}
+    sf_tui_image_format "$file" || continue
+    print -rn -- "data:image/$REPLY;base64,"
+    base64 <"$file" | tr -d '\n'
+    print
+  done | jq -cRn --arg prompt "$1" '
+    {type:"user",content:([{type:"text",text:$prompt}] + [inputs | {type:"image",url:.}])}'
+}
+
 sf_tui_turn() {
   local prompt=$1 input
 
   [[ $SF_PRESENT_STATE == idle ]] || return 1
-  input=$(jq -cn --arg prompt "$prompt" \
-    '{type:"user",content:[{type:"text",text:$prompt}]}') || return 1
+  input=$(sf_tui_user_record "$prompt") || return 1
   SF_PRESENT_HANDOFF=()
   SF_PRESENT_ERROR_SETTLED=0
   SF_PRESENT_CREATING=0

@@ -475,6 +475,34 @@ sf_tui_complete() {
   fi
 }
 
+# Saves the clipboard's image and inserts a marker that attaches it when the
+# prompt is sent. Only a captured, supported image gets a marker.
+sf_tui_paste_image() {
+  local file type pattern='^image/(png|jpeg|gif|webp)$'
+  local -a size
+  file=$(mktemp "${TMPDIR:-/tmp}/shellfish-paste.XXXXXX") || return 0
+  if (( $+commands[osascript] )); then
+    osascript -e "set f to open for access POSIX file \"$file\" with write permission" \
+      -e 'write (the clipboard as «class PNGf») to f' -e 'close access f'
+  elif (( $+commands[wl-paste] )); then
+    type=$(wl-paste --list-types | grep -Em 1 "$pattern") && wl-paste --type "$type" >"$file"
+  elif (( $+commands[xclip] )); then
+    type=$(xclip -selection clipboard -target TARGETS -out | grep -Em 1 "$pattern") &&
+      xclip -selection clipboard -target "$type" -out >"$file"
+  else
+    false
+  fi >/dev/null 2>&1 && sf_tui_image_format "$file" || { rm -f -- "$file"; return 0; }
+  # Shrinking to fit 2000 pixels is optional, so a failure keeps the original.
+  if (( $+commands[magick] )); then
+    magick "${file}[0]" -resize '2000x2000>' "$file"
+  elif (( $+commands[sips] )); then
+    # sips enlarges smaller images, so it resizes only larger ones.
+    size=( $(sips -g pixelWidth -g pixelHeight "$file" | awk '/pixel/ { print $2 }') )
+    (( ${size[1]:-0} <= 2000 && ${size[2]:-0} <= 2000 )) || sips -Z 2000 "$file"
+  fi >/dev/null 2>&1 || true
+  LBUFFER+="[Image: $file]"
+}
+
 # A key may finish decoding after an asynchronous permission request arrives.
 sf_tui_input() {
   local widget=$WIDGET paste
@@ -490,7 +518,7 @@ sf_tui_input() {
     return 0
   fi
   case $widget in
-    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete|sf_tui_complete_back)
+    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete|sf_tui_complete_back|sf_tui_paste_image)
       "$widget" "$@"
       ;;
     *)
@@ -607,6 +635,7 @@ sf_tui_bind() {
     '^C' sf_tui_interrupt
     '^[' sf_tui_escape
     '^[[200~' bracketed-paste
+    '^V' sf_tui_paste_image
     '^A' beginning-of-line
     '^E' end-of-line
     '^[[H' beginning-of-line
