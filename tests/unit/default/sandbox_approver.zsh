@@ -45,7 +45,7 @@ sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use",
 sf_session_append "$session" '{"type":"state_update","name":"inspection","value":"hidden state"}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"4","user_text":"display only"}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}}}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"5","model_text":"permission context"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"5","model_content":[{"type":"text","text":"permission context"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
 assert_canonical_session "$session"
 request='{"tool_input":{"command":"setup"},"sandbox_access":{"unrestricted":true,"reason":"needed"}}'
 
@@ -119,7 +119,7 @@ jq -e -s --argjson request "$request" \
     {type:"text",text:"I will run it."},{type:"tool_call",id:"call_7",name:"shell",
       input:{command:"setup",request_sandbox_access:{unrestricted:true,reason:"needed"}}}] and
   $context.recent_timeline[4] == {type:"hook_result",lifecycle:"permission_request",id:"5",
-    model_text:"permission context"} and
+    model_content:[{type:"text",text:"permission context"},{type:"text",text:"[image omitted]"}]} and
   ($context | tostring | contains("retry constraint") | not) and
   all($context.recent_timeline[]; has("usage") | not) and
   ($context | tostring | contains("base64") | not) and

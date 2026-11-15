@@ -77,6 +77,11 @@ def result_fields($required):
   (if has("model_text") then .model_text | type == "string" and length > 0 else true end) and
   ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint));
 
+def model_content_fields:
+  (has("model_content") | not) or ((has("model_text") | not) and
+    (.model_content | type == "array" and length > 0 and
+      all(.[]; canonical_content_part)));
+
 # A settled sandbox access request records whether it was approved, and
 # whether for the session. Model content replaces model text.
 def canonical_tool_result:
@@ -84,15 +89,14 @@ def canonical_tool_result:
     result_fields(["exit_code", "id", "input", "name"])) and
   ((has("sandbox_access") | not) or
     (.sandbox_access | IN("approved", "session", "denied", "cancelled"))) and
-  ((has("model_content") | not) or ((has("model_text") | not) and
-    (.model_content | type == "array" and length > 0 and
-      all(.[]; canonical_content_part)))) and
+  model_content_fields and
   .type == "tool_result" and
   (.id | identifier) and (.name | tool_name) and (.input | type == "object") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
 
 def canonical_hook_result:
-  (del(.action, .reason) | result_fields(["id", "lifecycle"])) and
+  (del(.action, .reason, .model_content) | result_fields(["id", "lifecycle"])) and
+  model_content_fields and
   .type == "hook_result" and (.lifecycle | record_lifecycle) and
   (.id | test("^[1-9][0-9]*$")) and
   (if has("action") then .action == "deny" and
@@ -116,24 +120,36 @@ def canonical_response:
       ($calls | length) > 0 and (([$calls[].id] | unique | length) == ($calls | length))
     else ($calls | length) == 0 end);
 
-# Hook results from one lifecycle share a group; each text is inserted verbatim.
+# Attachments turn text-only context into content parts.
+def join_content:
+  if any(.[]; type == "array") then
+    [to_entries[] | (if .key > 0 then {type:"text",text:"\n\n"} else empty end),
+      (.value | if type == "array" then .[] else {type:"text",text:.} end)]
+  else join("\n\n") end;
+
+# Hook results from one lifecycle share a group.
 def render_context:
-  if type == "string" then .
+  if type == "string" or type == "array" then .
+  elif any(.texts[]; type == "array") then
+    [{type:"text",text:("<hook name=\"" + (.lifecycle | @html) + "\">\n")}] +
+      (.texts | join_content) + [{type:"text",text:"\n</hook>"}]
   else
     "<hook name=\"" + (.lifecycle | @html) + "\">\n" +
     ([.texts[] | if endswith("\n") then . else . + "\n" end] | add) + "</hook>"
   end;
 
 def add_hook_context($record):
+  ($record.model_content // $record.model_text) as $content |
   ([to_entries[] | select(.value.lifecycle? == $record.lifecycle) | .key] | first) as $index |
-  if $index == null then . + [{lifecycle:$record.lifecycle,texts:[$record.model_text]}]
-  else .[$index].texts += [$record.model_text] end;
+  if $index == null then . + [{lifecycle:$record.lifecycle,texts:[$content]}]
+  else .[$index].texts += [$content] end;
 
 def join_context($parts):
-  [$parts[] | select(. != "") | render_context] | join("\n\n");
+  [$parts[] | select(. != "") | render_context] | join_content;
 
 def context_message($context; $request):
-  {type:"user", content:[{type:"text", text:join_context([$context[], $request])}]};
+  {type:"user", content:(join_context([$context[], $request]) |
+    if type == "array" then . else [{type:"text",text:.}] end)};
 
 def session_state:
   reduce .[] as $record
@@ -148,7 +164,7 @@ def session_state:
           (if $record.lifecycle == "stop" and $record.action? == "deny" then
              .next = "assistant"
            else . end) |
-          if ($record.model_text // "") == "" then .
+          if ($record.model_content // $record.model_text // "") == "" then .
           # Post-tool context annotates the result it follows.
           elif $record.lifecycle == "post_tool_use" and (.context | length) == 0 and
               .messages[-1].type? == "tool_result" then
@@ -203,8 +219,11 @@ def state_run:
 def state_messages:
   [.messages[] |
     if .type == "tool_result" then
-      .content = (if .result | type == "array" then
-          [join_context(.parts) | select(. != "") | {type:"text", text:.}] + .result
+      .content = (if (.result | type == "array") or any(.parts[].texts[]?; type == "array") then
+          (join_context(.parts) | if type == "array" then .
+            else [select(. != "") | {type:"text",text:.}] end) +
+          (.result | if type == "array" then .
+            else [select(. != "") | {type:"text",text:.}] end)
         else join_context([.parts[], .result]) end) |
       del(.parts, .result)
     else . end] +

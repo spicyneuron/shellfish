@@ -9,6 +9,18 @@ sf_test_hook "$hook" '{"user_text":"${output.stdout}"}' <<'ZSH'
 [[ $# == 0 && $SHELLFISH_TURN_ID == <1-> && -d $SHELLFISH_TURN_STATE ]] || exit 2
 input=$(cat)
 case $input in
+  image|image-only|image-fail)
+    print -r -u3 -- '{"content":[{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
+    [[ $input != image-fail ]] || exit 3
+    [[ $input != image ]] || print -rn -- caption ;;
+  bad-image) print -r -u3 -- '{"content":[{"type":"image","url":"https://example.com/a.png"}]}' ;;
+  big-image)
+    for i in {1..2}; do
+      jq -cn '{content:[{type:"text",text:("é" * 300)}]}' >&3
+    done ;;
+  large-content)
+    print -r -u3 -- '{"action":"deny"}'
+    jq -cn '{content:[{type:"text",text:("x" * 200000)}]}' >&3 ;;
   handoff) print -r -u3 -- '{"action":"deny"}'
     print -r -u3 -- '{"action":"handoff","argv":["/usr/bin/printf","next.jsonl"]}'
     print -r -u3 -- '{"state_update":[{"name":"prompt/handoff","value":true}]}'
@@ -29,6 +41,28 @@ esac
 ZSH
 sf_test_bind_hooks user_prompt_submit "$hook"
 new_session() { session="$tmp/$1.jsonl"; sf_test_session "$session"; }
+for input in image image-only; do
+  new_session "$input"; sf_test_run "$input" "$session" >"$stream" || fail 'hook image failed'
+  assert_canonical_session "$session"
+  jq -es '.[1].model_content[-1] ==
+    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="} and
+    (.[1] | has("model_text") | not)' "$session" >/dev/null || fail 'hook image was not durable'
+  jq -L "$ROOT" -es 'include "lib/session";
+    .[1:] | session_messages | .[0].content |
+    any(.[]; .type == "image" and .url == "data:image/png;base64,iVBORw0KGgo=")
+  ' "$session" >/dev/null || fail 'hook image did not reach provider messages'
+done
+new_session large-content
+sf_test_run large-content "$session" >"$stream" || fail 'large hook content failed'
+jq -es '.[1].model_content[0].text == ("x" * 200000)' "$session" >/dev/null ||
+  fail 'large hook content was not preserved'
+for input in image-fail bad-image big-image; do
+  new_session "$input"
+  SHELLFISH_MAX_CONTENT_KB=1 sf_test_run "$input" "$session" >"$stream" 2>"$tmp/image.err" &&
+    fail 'invalid or failed hook content succeeded'
+  jq -es 'map(.type) == ["session","error"]' "$session" >/dev/null ||
+    fail 'failed hook persisted content'
+done
 new_session deny; sf_test_run deny "$session" >"$stream" || fail 'prompt denial failed'
 jq -e -s 'map(.type) == ["session","hook_result"] and
   .[1] == {type:"hook_result",lifecycle:"user_prompt_submit",id:"1",action:"deny"}' \
@@ -91,6 +125,10 @@ sf_test_hook "$stop" '{"user_text":"${output.stdout}${output.stderr}"}' <<'ZSH'
 cat >"$STOP_INPUT"
 if [[ $1 == 1 ]]; then
   print -r -u3 -- '{"action":"deny","reason":"not finished"}'
+  if [[ -n ${STOP_IMAGE:-} ]]; then
+    print -r -u3 -- '{"content":[{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
+    exit 0
+  fi
   # A silent hook shows its text to the user only.
   [[ -e $STOP_SILENT ]] && print -rn -u2 -- 'checking again' || print -rn -- 'checking again'
 fi
@@ -106,6 +144,11 @@ assert_equal 2 "$(<$count)" 'stop did not continue provider'
 jq -e -s 'map(select(.type == "hook_result") | {model_text,action,reason}) ==
   [{model_text:"<context script=\"stop\">\nchecking again\n</context>",action:"deny",reason:"not finished"}]' "$session" \
   >/dev/null || fail 'stop feedback did not settle'
+rm -f "$count"
+new_session stop-image
+STOP_IMAGE=1 sf_test_run stop "$session" >"$stream" || fail 'image-only stop feedback failed'
+assert_equal 2 "$(<$count)" 'image-only stop feedback did not continue provider'
+assert_canonical_session "$session"
 new_session limit
 SHELLFISH_MAX_REQUESTS_PER_TURN=1 sf_test_run stop "$session" >"$stream" 2>"$tmp/limit.err" &&
   fail 'request limit succeeded'

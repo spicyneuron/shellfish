@@ -384,3 +384,29 @@ for command in compact compact_tools; do
   PATH="$tmp/http-bin:$PATH" sf_test_run 'Continue' "$integration_child" >"$integration_stream"
   assert_canonical_session "$integration_child" end
 done
+
+# Hook text has the same retention budget in either result representation.
+typeset attachment_source="$tmp/attachments.jsonl" attachment_child representation
+for representation in model_text model_content; do
+  head -n 1 "$compact_source" >"$attachment_source"
+  jq -cn --arg representation "$representation" '
+    def user($text): {type:"user",content:[{type:"text",text:$text}]};
+    def assistant: {type:"assistant",stop:"end",content:[]};
+    def hook($id): {type:"hook_result",lifecycle:"user_prompt_submit",id:$id} +
+      if $representation == "model_text" then {model_text:("x" * 90000)}
+      else {model_content:[{type:"text",text:("x" * 90000)},
+        {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]} end;
+    user("first"),assistant,hook("1"),user("second"),assistant,
+    hook("2"),user("third"),assistant
+  ' >>"$attachment_source"
+  assert_canonical_session "$attachment_source"
+  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$attachment_source" \
+    SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+    3>"$compact_control" 2>"$compact_display" </dev/null
+  attachment_child=$(actions | jq -r '.argv[2]')
+  [[ -n $attachment_child ]] || fail "$representation hook text bypassed compaction"
+  assert_canonical_session "$attachment_child"
+  jq -es --slurpfile source "$attachment_source" '
+    ([.[] | select(.type == "user")] | length) == 2 and .[-3:] == $source[-3:]
+  ' "$attachment_child" >/dev/null || fail "$representation retained the wrong turns"
+done

@@ -262,6 +262,35 @@ print -r -- '[{"type":"user","content":[{"type":"text","text":"a"}]},
     {type:"text",text:"shot"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]
 ' >/dev/null || fail 'model content did not become request parts'
 
+# Hook attachments survive replay at submission, after tools, and on stop denial.
+for lifecycle in user_prompt_submit post_tool_use stop; do
+  jq -cn --arg lifecycle "$lifecycle" '
+    [{type:"user",content:[{type:"text",text:"inspect"}]}] as $user |
+    {type:"hook_result",lifecycle:$lifecycle,id:"1",model_content:[
+      {type:"text",text:"caption"},
+      {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]} as $hook |
+    if $lifecycle == "user_prompt_submit" then [$hook] + $user
+    elif $lifecycle == "stop" then $user +
+      [{type:"assistant",stop:"end",content:[]}, $hook + {action:"deny"}]
+    else $user + [{type:"assistant",stop:"tool_calls",content:[
+      {type:"tool_call",id:"c1",name:"shell",input:{}}]},
+      {type:"tool_result",id:"c1",name:"shell",input:{},exit_code:0,model_text:"out"},$hook]
+    end
+  ' | messages | jq -e --arg lifecycle "$lifecycle" '
+    (if $lifecycle == "user_prompt_submit" then .[0] else .[-1] end) |
+    (.content | type == "array") and
+    any(.content[]; .type == "image" and .url == "data:image/png;base64,iVBORw0KGgo=")
+  ' >/dev/null || fail "hook attachment lost at $lifecycle"
+done
+for content in '[]' '[{"type":"image","url":"https://example.com/a.png"}]'; do
+  jq -cn --argjson content "$content" '[{type:"hook_result",lifecycle:"session_start",
+    id:"1",model_content:$content}]' | accepts >/dev/null 2>&1 &&
+    fail 'invalid hook model content accepted'
+done
+print -r -- '[{"type":"hook_result","lifecycle":"session_start","id":"1",
+  "model_text":"text","model_content":[{"type":"text","text":"text"}]}]' |
+  accepts >/dev/null 2>&1 && fail 'hook accepted both model text and content'
+
 typeset -a malformed_results=(
   'an out-of-range exit code' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":256}'
   'raw capture fields' '{"type":"tool_result","id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}'

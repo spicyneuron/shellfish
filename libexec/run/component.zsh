@@ -46,6 +46,21 @@ sf_run_component_line() {
   REPLY=$line[rest]
 }
 
+# Content accumulates within one component's model-content budget.
+sf_run_component_content() {
+  local parts
+  integer bytes
+  sf_process_bytes "$1"
+  bytes=$REPLY
+  (( (content_bytes += bytes) <= max_content )) || return 0
+  parts=$(sf_jq -c '
+    include "lib/session";
+    if .content | type == "array" and length > 0 and all(.[]; canonical_content_part)
+    then .content[] else error("invalid content") end
+  ' <<<"$1" 2>/dev/null) || { SF_COMPONENT[error]=invalid; return 1; }
+  content+=( "${(@f)parts}" )
+}
+
 # Run a prepared command into CAPTURE, streaming fd 3 lines of at most
 # MAX_CONTROL bytes to the supplied handler. reply is (status exit_code) with
 # status ok, interrupted, cancelled, invalid, or overflow; ok leaves the outcome in

@@ -64,20 +64,28 @@ sf_run_hook_manifest() {
   ' || { REPLY="invalid hook manifest: $command"; return 1; }
 }
 
-# The last control line wins. It is validated when the hook settles.
+# The last action wins. It is validated when the hook settles.
 sf_run_hook_line() {
-  sf_run_component_line "$1" action argv profile reason || return
-  [[ -z $REPLY ]] || control=$REPLY
+  local line
+  sf_run_component_line "$1" action argv profile reason content || return
+  [[ -n $REPLY ]] || return 0
+  line=$REPLY
+  if [[ $(jq 'has("content")' <<<"$line") == true ]]; then
+    sf_run_component_content "$line" || return
+  fi
+  line=$(jq -c 'del(.content)' <<<"$line") || return
+  [[ $line == '{}' ]] || control=$line
 }
 
 sf_run_hook_complete() {
   local lifecycle=$1 outcome=$2 command=$3
   local -A settled
-  sf_jq_fields -cn --argjson component "$SF_COMPONENT[values]" --argjson outcome "$outcome" \
+  print -rl -- "$outcome" "${content[@]}" | sf_jq_fields -cs --argjson component "$SF_COMPONENT[values]" \
     --argjson control "$control" --arg lifecycle "$lifecycle" '
     include "lib/fields";
     include "lib/session";
     include "lib/profile";
+    .[0] as $outcome | .[1:] as $content |
     ({user_prompt_submit:["deny","handoff","session_update"],
       permission_request:["allow","deny"],pre_tool_use:["deny"],
       stop:["deny"]}[$lifecycle] // []) as $actions |
@@ -96,10 +104,13 @@ sf_run_hook_complete() {
         (if endswith("\n") then "" else "\n" end) + "</context>" end)} +
       (if $control.action == "deny" then $control else {} end) |
       with_entries(select(.value != "")) |
-      if (has("user_text") or has("model_text") or has("action")) | not then entry("result"; "")
+      (if $content == [] then . else
+        .model_content = ([.model_text? | select(. != null) | {type:"text",text:.}] + $content) |
+        del(.model_text) end) |
+      if (has("user_text") or has("model_text") or has("model_content") or has("action")) | not then entry("result"; "")
       elif canonical_hook_result then entry("result"; tojson)
       else error("invalid hook result") end,
-      entry("model_feedback"; has("model_text") | tostring)),
+      entry("model_feedback"; (has("model_text") or has("model_content")) | tostring)),
     entry("action"; $control.action // ""), entry("reason"; $control.reason // ""),
     entry("payload"; $control | .argv // .profile | if . == null then "" else tojson end),
     ("ok" | field)
@@ -119,24 +130,24 @@ sf_run_hooks() {
   setopt local_options no_err_exit
   local -a watch=()
   if [[ $1 == --poll ]]; then watch=( "$1" "$2" ); shift 2; fi
-  local session=$1 lifecycle=$2 content=$3 turn_state=$4
+  local session=$1 lifecycle=$2 input_text=$3 turn_state=$4
   shift 4
   local command input config_dir directory error='' control action='' reason='' payload=''
   local kind=hooks
-  local -a hooks environment
+  local -a hooks environment content
   local -A SF_COMPONENT=() prepared
-  integer max_capture model_feedback=0
+  integer max_capture model_feedback=0 max_content=$SF_RUN[max_content] content_bytes=0
 
   SF_RUN_HOOK_ERROR=''
   reply=( action '' reason '' payload '' )
   [[ " $SF_RUN[lifecycles] " == *" $lifecycle "* ]] || return 0
-  sf_run_hook_project "$lifecycle" "$content" || {
+  sf_run_hook_project "$lifecycle" "$input_text" || {
     SF_RUN_HOOK_ERROR="cannot inspect $lifecycle hooks"
     return 1
   }
   hooks=( ${(f)SF_HOOK_PLAN[hooks]} )
   if [[ -n $SF_HOOK_PLAN[command] ]]; then
-    kind=commands hooks=( "$SF_HOOK_PLAN[command]" ) content=$SF_HOOK_PLAN[arguments]
+    kind=commands hooks=( "$SF_HOOK_PLAN[command]" ) input_text=$SF_HOOK_PLAN[arguments]
   fi
   (( ${#hooks} )) || return 0
   sf_environment_load || {
@@ -164,7 +175,7 @@ sf_run_hooks() {
   else
     environment=( -u SHELLFISH_TURN_ID -u SHELLFISH_TURN_STATE "${environment[@]}" )
   fi
-  if ! print -rn -- "$content" >"$input"; then
+  if ! print -rn -- "$input_text" >"$input"; then
     error="cannot prepare $lifecycle hook input"
   else
     for command in "${hooks[@]}"; do
@@ -172,11 +183,12 @@ sf_run_hooks() {
         error="hook command is not executable: $command"
         break
       }
-      sf_run_hook_manifest "$command" "$lifecycle" "$content" \
+      sf_run_hook_manifest "$command" "$lifecycle" "$input_text" \
         "$SF_RUN[hook_id]" "$SF_RUN[max_capture]" "$SF_RUN[$kind]" || { error=$REPLY; break; }
       prepared=( "${reply[@]}" )
       [[ -n $prepared[component] ]] || continue
       max_capture=$prepared[max_capture]
+      content=() content_bytes=0
       sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
       # A command's prompt is never submitted.
@@ -185,17 +197,19 @@ sf_run_hooks() {
       if [[ -n $prepared[draft] ]] && ! sf_run_emit "$prepared[draft]"; then
         error='cannot emit hook draft'
       elif ! sf_run_component_execute "${watch[@]}" "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
-          "$max_capture" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_KB=$(( max_capture / 1024 ))" \
+          "$max_content" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_KB=$(( max_capture / 1024 ))" \
+          "SHELLFISH_MAX_CONTENT_KB=$(( max_content / 1024 ))" \
           "$command/run" "$@"; then
         error=$REPLY
       else
+        [[ $reply[1] != ok ]] || (( content_bytes <= max_content )) || reply[1]=overflow
         case $reply[1] in
           (cancelled) error="$lifecycle hook cancelled" ;;
           (interrupted)
             SF_RUN[signal_status]=$reply[2]
             error="cannot run $lifecycle hook" ;;
           (invalid) error="$lifecycle hook returned invalid control: $command" ;;
-          (overflow) error="$lifecycle hook output exceeds capture limit: $command" ;;
+          (overflow) error="$lifecycle hook content exceeds content limit: $command" ;;
           (*)
             if (( reply[2] )); then
               error="$lifecycle hook failed with status $reply[2]: $command"
