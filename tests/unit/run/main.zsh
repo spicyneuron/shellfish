@@ -217,6 +217,11 @@ jq -es --argjson users $users '
   ([.[] | select(.type == "user")] | length) == $users and
   .[-1] == {type:"error",user_text:"user message exceeds content limit"}
 ' "$stream_session" >/dev/null || fail 'the oversized user message was stored'
+# The limit counts bytes: 600 two-byte characters fit 1 KB as characters only.
+jq -cn '{type:"user",content:[{type:"text",text:("é" * 600)}]}' |
+  SHELLFISH_MAX_CONTENT_KB=1 SF_TEST_PROVIDER_DELAY=0 \
+  zsh -f "$entry" run --jsonl --session "$stream_session" >/dev/null 2>&1 &&
+  fail 'run measured the content limit in characters'
 
 # Context discovery replaces the complete frozen profile before inference.
 typeset context_provider="$tmp/context-provider"

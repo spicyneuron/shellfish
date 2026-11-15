@@ -370,7 +370,9 @@ sf_run_turn() {
     begun=1
     [[ -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
       failure="session working directory is unavailable: $SF_RUN[cwd]"
-    (( ${#user_record} <= SF_RUN[max_content] )) || failure='user message exceeds content limit'
+    # The limit is in bytes, so multibyte text counts in full.
+    () { setopt local_options no_multibyte; (( ${#1} <= SF_RUN[max_content] )) } "$user_record" ||
+      failure='user message exceeds content limit'
     sf_scratch_directory turn || failure='cannot prepare hook turn state'
     turn_state=$REPLY
     if [[ -z $failure ]]; then
