@@ -9,27 +9,7 @@ typeset codex_context_window="$ROOT/share/providers/codex/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
-cat >"$tmp/curl" <<'EOF'
-#!/usr/bin/env bash
-while (($#)); do
-  case $1 in
-    --data-binary) cp "${2#@}" "$PROVIDER_TEST_BODY" ; shift 2 ;;
-    *) shift ;;
-  esac
-done
-if [[ -n ${PROVIDER_TEST_ATTEMPTS:-} ]]; then
-  attempts=0
-  [[ ! -s $PROVIDER_TEST_ATTEMPTS ]] || attempts=$(<"$PROVIDER_TEST_ATTEMPTS")
-  printf '%s\n' "$((attempts + 1))" >"$PROVIDER_TEST_ATTEMPTS"
-fi
-if [[ -n ${PROVIDER_TEST_FAIL_ONCE:-} && ${attempts:-0} == 0 ]]; then
-  printf '%s' 'curl: (92) HTTP/2 stream was not closed cleanly: INTERNAL_ERROR (err 2)000' >&2
-  exit 92
-fi
-cat "$PROVIDER_TEST_RESPONSE"
-printf %s "${PROVIDER_TEST_STATUS:-200}" >&2
-exit "${PROVIDER_TEST_CURL_STATUS:-0}"
-EOF
+cp "$ROOT/tests/fixtures/curl" "$tmp/curl"
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
 export PROVIDER_TEST_RESPONSE="$tmp/response"

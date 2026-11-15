@@ -7,18 +7,7 @@ typeset decide="$ROOT/share/providers/openai_decisions/decide"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.json"
 
-cat >"$tmp/curl" <<'EOF'
-#!/usr/bin/env bash
-while (($#)); do
-  case $1 in
-    --data-binary) cp "${2#@}" "$PROVIDER_TEST_BODY" ; shift 2 ;;
-    --header) [[ $2 == @* ]] && cp "${2#@}" "$PROVIDER_TEST_HEADERS" ; shift 2 ;;
-    *) shift ;;
-  esac
-done
-cat "$PROVIDER_TEST_RESPONSE"
-printf %s "${PROVIDER_TEST_STATUS:-200}" >&2
-EOF
+cp "$ROOT/tests/fixtures/curl" "$tmp/curl"
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
 export PROVIDER_TEST_RESPONSE="$tmp/response"

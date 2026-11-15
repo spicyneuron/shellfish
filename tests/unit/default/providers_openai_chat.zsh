@@ -11,21 +11,7 @@ typeset req="$tmp/request.json"
 typeset res="$tmp/response.json"
 typeset body="$tmp/body.json"
 
-cat >"$tmp/curl" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "$@" >"$PROVIDER_TEST_ARGS"
-while (($#)); do
-  case $1 in
-    --data-binary) cp "${2#@}" "$PROVIDER_TEST_BODY" ; shift 2 ;;
-    --header)
-      [[ $2 != @* ]] || cp "${2#@}" "$PROVIDER_TEST_HEADERS"
-      shift 2 ;;
-    *) shift ;;
-  esac
-done
-cat "$PROVIDER_TEST_RESPONSE"
-printf "200" >&2
-EOF
+cp "$ROOT/tests/fixtures/curl" "$tmp/curl"
 chmod +x "$tmp/curl"
 
 export PATH="$tmp:$PATH"
