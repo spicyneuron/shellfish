@@ -126,9 +126,8 @@ mkdir "$interrupt_capture"
   result=( "${reply[@]}" )
   print -r -- "$result[exit_code] $result[interrupted] $lines" >"$interrupt_result"
 ) &
-integer runner=$! waited=0
-while (( waited++ < 100 )) && [[ ! -s $child_file ]]; do sleep 0.02; done
-[[ -s $child_file ]] || fail 'runner command did not start'
+integer runner=$!
+sf_test_wait test -s "$child_file" || fail 'runner command did not start'
 kill -TERM "$runner"
 wait "$runner" || fail 'runner did not settle an interrupted command'
 [[ $(<"$interrupt_result") == '143 143 streamed' ]] ||

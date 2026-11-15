@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp run-hook-contract
-export SF_TEST_PROVIDER_DELAY=0
 sf_test_frozen_profile
 typeset hook="$tmp/prompt" session stream="$tmp/stream"
 sf_test_hook "$hook" '{"user_text":"${output.stdout}"}' <<'ZSH'
@@ -103,9 +102,8 @@ typeset marker="$tmp/started"
 new_session interrupt
 jq -cn '{type:"user",content:[{type:"text",text:"interrupt"}]}' |
   INTERRUPT_MARKER=$marker "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" &
-integer pid=$! waited=0 interrupted=0
-while (( waited++ < 100 )) && [[ ! -e $marker ]]; do sleep 0.02; done
-[[ -e $marker ]] || fail 'interrupt hook did not start'
+integer pid=$! interrupted=0
+sf_test_wait test -e "$marker" || fail 'interrupt hook did not start'
 kill -TERM "$pid"; wait "$pid" || interrupted=$?
 (( interrupted == 143 )) || fail 'interrupted hook returned wrong status'
 jq -e -s '.[1] == {type:"state_update",name:"prompt/started",value:true} and

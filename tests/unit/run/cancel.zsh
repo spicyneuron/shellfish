@@ -3,20 +3,18 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/session.zsh
 sf_test_tmp run-tool-cancel-contract
-export SF_TEST_PROVIDER_DELAY=0
 sf_test_frozen_profile
 
 # Start a two-call tool turn, then interrupt it once the marker appears.
 interrupt() {
   local session=$1 stream=$2 marker=$3 command=$4
-  integer waited=0 run_status=0
+  integer run_status=0
   sf_test_session "$session"
   jq -cn --arg text cancel '{type:"user",content:[{type:"text",text:$text}]}' |
     SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COUNT=2 \
     SF_TEST_PROVIDER_TOOL_COMMAND="$command" \
     "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" &
-  while (( waited++ < 100 )) && [[ ! -e $marker ]]; do sleep 0.02; done
-  (( waited <= 100 )) || fail 'interruption point was not reached'
+  sf_test_wait test -e "$marker" || fail 'interruption point was not reached'
   kill -TERM $! || fail 'tool turn ended before interruption'
   wait $! || run_status=$?
   (( run_status == 143 )) || fail 'interrupted tool turn returned the wrong status'

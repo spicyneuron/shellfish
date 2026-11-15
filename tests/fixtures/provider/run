@@ -11,7 +11,7 @@ integer keyword_count delay_match think error_count lorem delta_index input_toke
 integer text_tokens output_tokens reasoning_tokens
 # Zero preserves the prompt's line breaks.
 integer wrap=${SF_TEST_PROVIDER_LINE_WORDS:-0}
-typeset delay=${SF_TEST_PROVIDER_DELAY:-0.02}
+typeset delay=${SF_TEST_PROVIDER_DELAY:-0}
 typeset delay_match_seconds=${SF_TEST_PROVIDER_DELAY_MATCH_SECONDS:-5}
 request=$(cat)
 input_tokens=$(( (${#request} + 3) / 4 ))
@@ -166,7 +166,7 @@ stream_deltas() {
   typeset delta_type=$1
   integer index
   for (( index = 1; index <= ${#deltas}; index++ )); do
-    sleep "$delay"
+    (( delay == 0 )) || sleep "$delay"
     jq -cn --arg text "$deltas[index]" --arg type "$delta_type" '{type:$type,text:$text}'
   done
 }

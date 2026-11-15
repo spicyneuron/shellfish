@@ -87,6 +87,15 @@ fail() {
   return 1
 }
 
+# Readiness predicates may fail transiently while another process starts.
+sf_test_wait() {
+  integer attempts=0
+  until "$@" 2>/dev/null; do
+    (( ++attempts < 250 )) || return 1
+    sleep 0.02
+  done
+}
+
 # The optional stop reason must match the final record.
 # The response a provider's output ends with, when every line before it is a
 # delta. REPLY is the response; fails on any other stream.

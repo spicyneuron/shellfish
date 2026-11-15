@@ -30,9 +30,11 @@ mkdir -p -- "$TMPDIR" || exit 1
 # Tests isolate the Shellfish directory; a developer's override would bypass that.
 unset SHELLFISH_DIR
 
+[[ ${1-} != perf ]] || exec "$test_dir/perf/run.zsh" "${@:2}"
+
 if (( $# == 0 )); then
   suites=( unit )
-elif (( $# == 1 )) && [[ $1 == (unit|pty|perf|loc) ]]; then
+elif (( $# == 1 )) && [[ $1 == (unit|pty|loc) ]]; then
   suites=( $1 )
 else
   for test_path in "$@"; do
@@ -45,10 +47,6 @@ for suite in $suites; do
   case $suite in
     unit) tests+=( $test_dir/unit/**/*.zsh(N.) ) ;;
     pty)  tests+=( $test_dir/pty/**/*.py(N.) ) ;;
-    perf)
-      "$test_dir/perf/run.zsh" || exit
-      exit
-      ;;
     loc)
       "$test_dir/loc/run.zsh" || exit
       exit
@@ -59,7 +57,7 @@ done
 for test_file in $tests; do
   [[ -f $test_file && $test_file == *.(zsh|py) ]] || {
     print -u2 -r -- "Invalid test path: $test_file"
-    print -u2 -r -- "Usage: $0 [unit|pty|perf|loc|TEST_PATH ...] or $0 decisions [--chat | --threshold N] MODEL..."
+    print -u2 -r -- "Usage: $0 [unit|pty|loc|TEST_PATH ...] or $0 perf [positive-iterations] or $0 decisions [--chat | --threshold N] MODEL..."
     exit 2
   }
 done

@@ -40,12 +40,7 @@ MODEL_READY="$model_ready" MODEL_STOPPED="$model_stopped" \
   zsh -f "$entry" run -m default -m model --session-out "$model_session" prompt \
   >"$model_output" 2>&1 &
 typeset model_pid=$!
-integer model_waited=0
-while (( model_waited < 50 )) && [[ ! -s $model_ready ]]; do
-  sleep 0.1
-  (( model_waited += 1 ))
-done
-(( model_waited < 50 )) || fail 'model metadata lookup did not begin'
+sf_test_wait test -s "$model_ready" || fail 'model metadata lookup did not begin'
 kill -USR1 "$model_pid" || fail 'model metadata lookup ended before cancellation'
 integer model_status=0
 wait "$model_pid" || model_status=$?
@@ -62,12 +57,8 @@ SF_TEST_PROVIDER_DELAY=0.3 zsh -f "$entry" run --jsonl \
   >"$cancel_output" 2>&1 &
 typeset cancel_pid=$!
 # Wait for streaming before signaling.
-integer waited=0
-while (( waited < 50 )) && ! grep -q '_assistant_message_delta' "$cancel_output" 2>/dev/null; do
-  sleep 0.1
-  (( waited += 1 ))
-done
-(( waited < 50 )) || fail 'run never started streaming a turn to cancel'
+sf_test_wait grep -q '_assistant_message_delta' "$cancel_output" ||
+  fail 'run never started streaming a turn to cancel'
 kill -INT "$cancel_pid" || fail 'turn ended before it could be cancelled'
 integer cancel_status=0
 wait "$cancel_pid" || cancel_status=$?
@@ -108,12 +99,8 @@ zsh -f "$entry" run --jsonl -m default -m cancel-provider \
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"reasoning"}]}') \
   >"$reasoning_output" 2>&1 &
 typeset reasoning_pid=$!
-waited=0
-while (( waited < 50 )) && ! grep -q '_assistant_reasoning_delta' "$reasoning_output" 2>/dev/null; do
-  sleep 0.1
-  (( waited += 1 ))
-done
-(( waited < 50 )) || fail 'run never streamed reasoning to cancel'
+sf_test_wait grep -q '_assistant_reasoning_delta' "$reasoning_output" ||
+  fail 'run never streamed reasoning to cancel'
 kill -TERM "$reasoning_pid" || fail 'reasoning turn ended before cancellation'
 integer reasoning_status=0
 wait "$reasoning_pid" || reasoning_status=$?
@@ -132,13 +119,9 @@ CANCEL_PROVIDER_MARKER="$cancel_provider_marker" CANCEL_PROVIDER_PID_FILE="$canc
   < <(print -r -- '{"type":"user","content":[{"type":"text","text":"tool input"}]}') \
   >"$tool_input_output" 2>&1 &
 typeset tool_input_pid=$!
-waited=0
-while (( waited < 50 )) &&
-    [[ ! -s $cancel_provider_marker || ! -s $cancel_provider_pid_file ]]; do
-  sleep 0.1
-  (( waited += 1 ))
-done
-(( waited < 50 )) || fail 'provider never started tool input to cancel'
+sf_test_wait test -s "$cancel_provider_marker" &&
+  sf_test_wait test -s "$cancel_provider_pid_file" ||
+  fail 'provider never started tool input to cancel'
 sleep 0.1
 kill -TERM "$tool_input_pid" || fail 'tool-input turn ended before cancellation'
 integer tool_input_status=0
@@ -158,7 +141,7 @@ jq -e -s '
 
 # Interrupted sessions accept another turn.
 typeset recovered_session="$tmp/recovered.jsonl"
-SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run \
+zsh -f "$entry" run \
   --session-out "$recovered_session" seed >/dev/null || fail 'recovery seed failed'
 print -r -- \
   '{"type":"user","content":[{"type":"text","text":"interrupted"}]}' \
@@ -166,7 +149,7 @@ print -r -- \
 typeset jsonl
 jsonl=$(print -r -- \
   '{"type":"user","content":[{"type":"text","text":"next"}]}' |
-  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl \
+  zsh -f "$entry" run --jsonl \
     --session "$recovered_session") || fail 'recovery run failed'
 print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |

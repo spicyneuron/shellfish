@@ -5,7 +5,6 @@ sf_test_source lib/session.zsh
 sf_test_tmp run-tool-contract
 mkdir "$tmp/host-temp"
 export TMPDIR="$tmp/host-temp" TMPPREFIX="$tmp/manifest-prefix"
-export SF_TEST_PROVIDER_DELAY=0
 sf_test_frozen_profile
 
 # The bundled shell decodes multiline commands once, preserves exit status, and
@@ -943,14 +942,11 @@ jq -cn '{type:"user",content:[{type:"text",text:"protocol"}]}' |
   SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=stream \
   TOOL_MARKER=$live_marker "$ROOT/bin/shellfish" run --jsonl --session "$session" \
   >"$stream" &
-integer live_pid=$! live_waited=0 live_status=0
-while (( live_waited++ < 100 )) && [[ ! -e $live_marker ]]; do sleep 0.02; done
-(( live_waited <= 100 )) || fail 'tool did not reach its wait'
-live_waited=0
-while (( live_waited++ < 100 )) && ! jq -e -s \
+integer live_pid=$! live_status=0
+sf_test_wait test -e "$live_marker" || fail 'tool did not reach its wait'
+sf_test_wait jq -e -s \
     'any(.[]; .type == "state_update" and .name == "tool/live")' "$session" \
-    >/dev/null 2>&1; do sleep 0.02; done
-(( live_waited <= 100 )) || fail 'tool state was not committed while running'
+    >/dev/null || fail 'tool state was not committed while running'
 kill -TERM "$live_pid" 2>/dev/null
 wait "$live_pid" || live_status=$?
 (( live_status == 143 )) || fail 'interrupted tool returned the wrong status'
@@ -978,9 +974,8 @@ jq -cn '{type:"user",content:[{type:"text",text:"protocol"}]}' |
   SHELLFISH_MAX_CONTENT_KB=64 SF_TEST_PROVIDER_TOOL_CALL=1 \
   SF_TEST_PROVIDER_TOOL_COMMAND=flood TOOL_MARKER=$flood_marker \
   "$ROOT/bin/shellfish" run --jsonl --session "$session" >"$stream" &
-integer flood_pid=$! flood_waited=0 flood_status=0
-while (( flood_waited++ < 100 )) && [[ ! -e $flood_marker ]]; do sleep 0.02; done
-(( flood_waited <= 100 )) || fail 'flooding tool did not reach its wait'
+integer flood_pid=$! flood_status=0
+sf_test_wait test -e "$flood_marker" || fail 'flooding tool did not reach its wait'
 kill -USR1 "$flood_pid" 2>/dev/null
 wait "$flood_pid" || flood_status=$?
 (( flood_status == 130 )) || fail "cancelled overflow returned status $flood_status"
