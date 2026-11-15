@@ -115,7 +115,7 @@ The user can approve specific access for the rest of the session, which adds it 
 
 ## Starter agent
 
-The bundled default profile supplies a complete agent without `init`, once you select a model. `shellfish init` copies that profile for customization, plus an editable read-only profile and its paired prompt. The general, tools, and sandbox prompts stay bundled unless you override them with your own files.
+The bundled default profile supplies the agent below. See [Setup](CONFIG.md#setup) to install editable starter configuration.
 
 Both starter profiles enable sandboxing with no extra grants. The default profile includes commented examples for enabling subagents and model-reviewed sandbox access requests.
 
@@ -161,13 +161,13 @@ The bundled commands are selected by the profile:
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
 | `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox policy |
 
-Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Prompts submitted during a turn queue behind it. Ctrl-C cancels the active turn and leaves queued prompts pending. Ctrl-X sends the draft, or else the first queued prompt, interrupting an active turn and waiting for cancellation to settle first. Ctrl-Return and Cmd-Return also send now when supported by the terminal. Ctrl-V pastes a clipboard image as an `[Image: PATH]` marker, using `wl-paste` or `xclip` on Linux, and shrinks it to at most 2000 pixels on the long edge when ImageMagick or `sips` is present. Sending a prompt attaches each marker's PNG, JPEG, GIF, or WebP file. The remaining queue is preserved and resumes automatically after the new turn. Use `/queue drop N` or `/queue clear` to remove pending prompts. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
+See [Chat controls](CONFIG.md#chat) for client-owned commands, editor keys, and queued prompts. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
 
 Both compaction commands leave the source unchanged and open a child through the client. Startup context and the first user message are protected outside the recent-history allowance. They preserve recent turns' model-visible content in full, targeting 80 KiB of text and always keeping the latest turn. `/compact` summarizes the older conversation into the first user message, alongside the original user request preserved verbatim. Later compactions replace that summary rather than accumulating summaries. `/compact_tools` instead replaces older tool results, including images, with omission markers while preserving the conversation, tool calls, and exit status. Neither command creates a child when there is nothing to reduce. Automatic compaction preserves the interrupted prompt as an editable draft.
 
 ### Skills
 
-`init` copies the starter `skill-creator` into `skills/`, where you can edit it. Skills come from these sources in precedence order:
+Skills come from these sources in precedence order:
 
 1. `.agents/skills/` in the working directory.
 2. `skills/` in the selected Shellfish directory.

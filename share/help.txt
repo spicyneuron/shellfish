@@ -9,12 +9,17 @@ Usage:
   shellfish request [-m REF|JSON]    Respond once to the transcript on stdin as JSON
   shellfish decide -m REF|JSON       Answer the decision on stdin as JSON
 
+General:
+  -h, --help           Show this help
+  --version            Print the Shellfish version
+
 Run output:
   --json               Print the final result, usage, and session path as JSON
   --jsonl              Stream all turn events as JSON Lines
   --background         Start one detached turn; print its session path
 
 New sessions:
+  --session-out PATH     Create the new session at PATH, which must not exist
   -p, --profile REF|JSON  Select a profile by name, path, or object
   -m, --model REF|JSON    Select a model file or object; repeats merge
   --sandbox JSON          Extend sandbox grants or replace settings
@@ -48,6 +53,7 @@ Authentication:
   codex             Uses existing $CODEX_HOME/auth.json
 
 Chat:
+  --verbose         Show full reasoning and component-output previews
   Run /help in chat to list available commands.
 
 Full documentation:
