@@ -26,7 +26,7 @@ sf_run_limits() {
     SHELLFISH_MAX_CAPTURE_KB 32
     SHELLFISH_MAX_CONTENT_KB 5120
   )
-  sf_environment_settings "${(k)limits}" || { REPLY=$SF_ENVIRONMENT_ERROR; return 1; }
+  sf_environment_settings "${(k)limits}" || { REPLY=$SF_ERROR; return 1; }
   for name in ${(k)limits}; do
     limits[$name]=${SF_ENVIRONMENT_SETTINGS[$name]:-$limits[$name]}
     [[ $limits[$name] == <1-2147483647> ]] || { REPLY="$name must be a positive integer"; return 1; }

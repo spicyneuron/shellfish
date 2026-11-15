@@ -1,13 +1,8 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
-typeset -g SF_ENVIRONMENT_ERROR=''
+(( $+functions[sf_fail] )) || source "$SF_ROOT/lib/cli.zsh"
 typeset -ga SF_ENVIRONMENT_VALUES=()
-
-sf_environment_fail() {
-  SF_ENVIRONMENT_ERROR=$1
-  return 1
-}
 
 # The Shellfish directory holds configuration, credentials, and sessions. It is
 # SHELLFISH_DIR, else the nearest .shellfish above the working directory, else
@@ -18,7 +13,7 @@ sf_environment_dir() {
   local dir=${PWD:a}
   while [[ ! -d $dir/.shellfish && $dir != / ]]; do dir=${dir:h}; done
   [[ ! -d $dir/.shellfish ]] || { REPLY=$dir/.shellfish; return; }
-  [[ -n ${HOME-} ]] || sf_environment_fail 'HOME or SHELLFISH_DIR is required' || return
+  [[ -n ${HOME-} ]] || sf_fail 'HOME or SHELLFISH_DIR is required' || return
   REPLY=${HOME:a}/.shellfish
 }
 
@@ -30,7 +25,6 @@ sf_environment_load() {
   integer all=$(( $# == 0 ))
   local -A values
 
-  SF_ENVIRONMENT_ERROR=''
   SF_ENVIRONMENT_VALUES=()
   sf_environment_dir || return
   env_file=$REPLY/.env
@@ -40,7 +34,7 @@ sf_environment_load() {
   done
   if [[ -e $env_file || -L $env_file ]]; then
     [[ -f $env_file && -r $env_file ]] || {
-      sf_environment_fail "cannot read env file: $env_file"
+      sf_fail "cannot read env file: $env_file"
       return
     }
     while IFS= read -r line || [[ -n $line ]]; do
@@ -51,14 +45,14 @@ sf_environment_load() {
         line=${line#${MATCH}}
       fi
       [[ $line == *=* ]] || {
-        sf_environment_fail "invalid env file line in $env_file"
+        sf_fail "invalid env file line in $env_file"
         return
       }
       key=${line%%=*}
       key=${key%${key##*[![:space:]]}}
       key=${key#${key%%[![:space:]]*}}
       [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
-        sf_environment_fail "invalid env name in $env_file: $key"
+        sf_fail "invalid env name in $env_file: $key"
         return
       }
       (( all || ${selected_names[(Ie)$key]} )) || continue

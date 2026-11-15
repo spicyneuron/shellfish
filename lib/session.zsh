@@ -15,7 +15,7 @@ sf_session_fail() {
 sf_session_directory() {
   local LC_ALL=C root cwd scope
   setopt local_options extended_glob
-  sf_environment_dir || { sf_session_fail "$SF_ENVIRONMENT_ERROR"; return; }
+  sf_environment_dir || { sf_session_fail "$SF_ERROR"; return; }
   root=$REPLY/sessions
   cwd=$(pwd -P) || {
     sf_session_fail 'cannot resolve the working directory'

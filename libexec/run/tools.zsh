@@ -42,7 +42,7 @@ sf_run_tool_execute() {
 
   SF_RUN_TOOL_ERROR=''
   sf_environment_load "$selected" || {
-    SF_RUN_TOOL_ERROR=$SF_ENVIRONMENT_ERROR
+    SF_RUN_TOOL_ERROR=$SF_ERROR
     return 1
   }
   config_dir=$REPLY

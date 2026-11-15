@@ -151,7 +151,7 @@ sf_run_hooks() {
   fi
   (( ${#hooks} )) || return 0
   sf_environment_load || {
-    SF_RUN_HOOK_ERROR=$SF_ENVIRONMENT_ERROR
+    SF_RUN_HOOK_ERROR=$SF_ERROR
     return 1
   }
   config_dir=$REPLY

@@ -140,7 +140,7 @@ sf_profile_model_refs() {
   local entry=$1 config_dir items
   shift
   SF_PROFILE_ERROR=''
-  sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
+  sf_environment_dir || sf_profile_fail "$SF_ERROR" || return
   config_dir=$REPLY
   items=$(sf_jq -cn --arg cwd "${PWD:A}" '
     include "lib/profile";
@@ -207,7 +207,7 @@ sf_profile_resolve() {
 
   SF_PROFILE_ERROR=''
   REPLY=''
-  sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
+  sf_environment_dir || sf_profile_fail "$SF_ERROR" || return
   config_dir=$REPLY
   # Without -p, profiles/default.jsonc is the base, user-owned or bundled. An inline
   # profile resolves relative paths against PWD, like other inline items.

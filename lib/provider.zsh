@@ -55,7 +55,7 @@ sf_provider_capture() {
   integer max_capture=$2
   local -A process
   sf_environment_load || {
-    SF_PROVIDER[error]=$SF_ENVIRONMENT_ERROR
+    SF_PROVIDER[error]=$SF_ERROR
     return 1
   }
   sf_scratch -d provider-capture || {
@@ -113,7 +113,7 @@ sf_provider_run() {
   SF_PROVIDER=(directory '' error '' group_file '' pid '')
   SF_PROVIDER_PARTIAL_EVENTS=()
   sf_environment_load || {
-    SF_PROVIDER[error]=$SF_ENVIRONMENT_ERROR
+    SF_PROVIDER[error]=$SF_ERROR
     return 1
   }
   sf_scratch -d provider || {
