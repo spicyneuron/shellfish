@@ -79,7 +79,7 @@ typeset -gx SF_TEST_PROVIDER_REQUEST="$compact_request"
 
 # Automatic compaction skips low usage.
 SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_SHARE_DIR="$ROOT/share" zsh -f "$compact_hook" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" \
   3>"$compact_control" 2>"$compact_display" </dev/null
 [[ ! -s $compact_control && ! -e $compact_request ]] ||
   fail 'below-threshold automatic compaction requested inference'
@@ -133,7 +133,7 @@ jq -es 'any(.[]; .type == "hook_result" and .id == "3" and .action == "deny" and
 
 # No source usage measurement should immediately compact the child again.
 SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_child" \
-  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_SHARE_DIR="$ROOT/share" zsh -f "$compact_hook" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" \
   3>"$compact_control" 2>"$compact_display" </dev/null
 [[ ! -s $compact_control ]] || fail 'child reused stale token usage'
 

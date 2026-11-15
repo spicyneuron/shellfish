@@ -11,8 +11,7 @@ if [[ -n $target && ( $target != <1-> || ${#target} -gt 9 ) ]]; then
 fi
 target=${target:-0}
 
-text=$(jq -j -s -L "${0:A:h:h:h}/lib" --argjson target "$target" '
-  include "sections";
+text=$(jq -j -s --argjson target "$target" "$(<"$SHELLFISH_SHARE_DIR/lib/sections.jq")"'
   sections as $sections |
   # Without a target, skip trailing notices such as an earlier copy confirmation.
   (if $target == 0 then

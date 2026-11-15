@@ -221,6 +221,11 @@ copy_section() {
   fail 'copy without a target did not skip a trailing notice'
 [[ $(copy_section 5) == 'Nothing to copy.' ]] || fail 'copy of a pending notice copied text'
 [[ $(copy_section 6) == 'copy target does not exist' ]] || fail 'copy invented a section'
+# A project's own jq files cannot replace the bundled section rule.
+mkdir -p "$tmp/shadow"
+print -r -- 'def sections: [{texts:["hijacked"]}];' >"$tmp/shadow/sections.jq"
+(builtin cd -- "$tmp/shadow" && copy_section 3 >/dev/null)
+[[ $(<$clip) == two ]] || fail 'copy loaded section rules from the project'
 cut_at() {
   print -rn -- "$2" | SHELLFISH_SESSION="$turns" SHELLFISH_EXECUTABLE=shellfish \
     SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/commands/fork/run" $1 3>|"$cut_actions" >/dev/null
@@ -250,7 +255,7 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
 (
   builtin cd -- "$tmp/project"; export HOME="$tmp/home"
   call() {
-    print -rn -- "${1#/sandbox }" | SHELLFISH_SESSION="$sandbox_session" SHELLFISH_SHARE_DIR="$ROOT/share" \
+    print -rn -- "${1#/sandbox }" | SHELLFISH_SESSION="$sandbox_session" \
       zsh -f "$sandbox" 3>"$tmp/control" >/dev/null 2>"$tmp/sandbox.err" || fail 'sandbox command failed'
     jq -rs 'last' "$tmp/control"
   }

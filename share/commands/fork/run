@@ -18,8 +18,8 @@ target=${target:-0}
 
 # The cut restores the moment before the prompt was sent: notices that awaited
 # it stay, and output from hooks that ran on its submission goes.
-resolved=$(jq -j -s -L "${0:A:h:h:h}/lib" --argjson target "$target" --argjson rewind "$rewind" '
-  include "sections";
+resolved=$(jq -j -s --argjson target "$target" --argjson rewind "$rewind" \
+  "$(<"$SHELLFISH_SHARE_DIR/lib/sections.jq")"'
   . as $records |
   def cut:
     if .prompt == null then [($records | length), "", 0]

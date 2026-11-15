@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-source "${0:A:h:h:h}/lib/compact.zsh" || exit 1
+source "$SHELLFISH_SHARE_DIR/lib/compact.zsh" || exit 1
 
 typeset draft='' steering='' instruction request summary split transcript
 

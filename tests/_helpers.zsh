@@ -6,6 +6,8 @@ setopt err_exit no_aliases no_bg_nice no_multios pipe_fail
 typeset -gr ROOT=${${(%):-%x}:A:h:h}
 typeset -g SF_ROOT=$ROOT
 typeset -g SF_SHARE=$ROOT/share
+# Bundled scripts that tests run directly find helpers as Shellfish tells them.
+export SHELLFISH_SHARE_DIR=$SF_SHARE
 typeset -gr SF_TEST_SESSIONS=$ROOT/tests/fixtures/session
 typeset -gr SF_TEST_PROVIDER=$ROOT/tests/fixtures/provider/run
 typeset -g tmp=''
