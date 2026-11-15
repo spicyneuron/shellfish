@@ -518,6 +518,7 @@ sf_tui_controller() {
   [[ $SF_TUI_STATE == idle ]] || sf_tui_transport_stop
   print
   if [[ $SF_TUI_ACTION == handoff ]]; then
+    sf_tui_paste_cleanup
     exec -- "${SF_TUI_HANDOFF[@]}"
     SF_TUI_ERROR='cannot execute handoff'
     return 1

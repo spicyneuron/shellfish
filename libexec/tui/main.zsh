@@ -130,6 +130,7 @@ sf_tui_main() {
       "$session_mode" "$draft" || controller_status=$?
   } always {
     [[ -z $SF_TUI_TRANSPORT_PID ]] || sf_tui_transport_stop
+    sf_tui_paste_cleanup
   }
   if (( controller_status )); then
     [[ -z $SF_TUI_ERROR ]] || sf_die "$SF_TUI_ERROR"

@@ -15,6 +15,8 @@ typeset -gi SF_TUI_HISTORY_CURSOR=0 SF_TUI_HISTORY_NO=0
 typeset -gi SF_TUI_HISTORY_LIMIT=100
 typeset -ga SF_TUI_HISTORY=()
 typeset -gi SF_TUI_COMPLETION_START=0
+# Pasted images live until the chat ends, so recalled prompts can resend them.
+typeset -ga SF_TUI_PASTES=()
 KEYTIMEOUT=5
 
 # Keep the editor alive for /refresh and /quit after renderer failure.
@@ -500,7 +502,13 @@ sf_tui_paste_image() {
     size=( $(sips -g pixelWidth -g pixelHeight "$file" | awk '/pixel/ { print $2 }') )
     (( ${size[1]:-0} <= 2000 && ${size[2]:-0} <= 2000 )) || sips -Z 2000 "$file"
   fi >/dev/null 2>&1 || true
+  SF_TUI_PASTES+=( "$file" )
   LBUFFER+="[Image: $file]"
+}
+
+sf_tui_paste_cleanup() {
+  (( ! ${#SF_TUI_PASTES} )) || rm -f -- "${SF_TUI_PASTES[@]}"
+  SF_TUI_PASTES=()
 }
 
 # A key may finish decoding after an asynchronous permission request arrives.

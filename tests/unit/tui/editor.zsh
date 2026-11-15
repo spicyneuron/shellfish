@@ -437,7 +437,9 @@ for reader in xclip wl-paste; do
           fail "a $clipboard clipboard inserted $LBUFFER through $reader"
         sf_tui_image_format "${${LBUFFER#*\[Image: }%\]}" && [[ $REPLY == png ]] ||
           fail 'the pasted image was not saved'
-        rm -f -- $tmp/paste/*(N)
+        sf_tui_paste_cleanup
+        left=( $tmp/paste/*(N) )
+        assert_equal 0 ${#left} "cleanup left a $clipboard paste from $reader"
       else
         assert_equal 'look ' "$LBUFFER" "a $clipboard clipboard inserted a marker through $reader"
         left=( $tmp/paste/*(N) )
