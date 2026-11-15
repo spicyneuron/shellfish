@@ -22,19 +22,9 @@ sf_run_tool_refused() {
 
 # Content parts accumulate for the result, within the content limit per call.
 sf_run_tool_line() {
-  local parts
-  integer bytes
-  sf_process_bytes "$1"
-  bytes=$REPLY
   sf_run_component_line "$1" content || return
   [[ -n $REPLY ]] || return 0
-  (( (content_bytes += bytes) <= max_content )) || return 0
-  parts=$(sf_jq -c '
-    include "lib/session";
-    if .content | type == "array" and length > 0 and all(.[]; canonical_content_part)
-    then .content[] else error("invalid content") end
-  ' <<<"$REPLY" 2>/dev/null) || { SF_COMPONENT[error]=invalid; return 1; }
-  content+=( "${(@f)parts}" )
+  sf_run_component_content "$REPLY"
 }
 
 sf_run_tool_execute() {
@@ -93,14 +83,15 @@ sf_run_tool_execute() {
   [[ -z ${XDG_CONFIG_HOME-} ]] || arguments+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
   arguments+=( "TMPDIR=$temp_dir" "TMPPREFIX=$temp_dir/zsh" )
   if [[ $sandbox == true ]]; then
-    if [[ $override != '{}' ]]; then
-      jq --arg base "$policy" '
-        .replace as $replace | del(.replace) | if $replace then . else .extends=$base end
-      ' <<<"$override" >"$capture.fence.json" || {
-          SF_RUN_TOOL_ERROR='cannot prepare sandbox policy'; return 1
-        }
-      policy=$capture.fence.json
-    fi
+    # Policy mounts keep library access subject to Fence's deny masks.
+    jq --arg base "$policy" --arg library "$SF_SHARE/lib" '
+      .replace as $replace | del(.replace) |
+      .filesystem.allowRead = ((.filesystem.allowRead // []) + [$library]) |
+      if $replace then . else .extends=$base end
+    ' <<<"$override" >"$capture.fence.json" || {
+        SF_RUN_TOOL_ERROR='cannot prepare sandbox policy'; return 1
+      }
+    policy=$capture.fence.json
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
       --settings "$policy" --expose-host-path "$command" )
     temp_paths=( /tmp "$temp_dir" )

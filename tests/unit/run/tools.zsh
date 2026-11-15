@@ -450,6 +450,37 @@ jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
   (.model_text | contains("sandboxing requires fence"))
 ' <"$stream" >/dev/null || fail 'missing sandbox runner was not skipped'
 
+# Bundled helpers are readable outside the project, without exposing other resources.
+sf_test_shell_tool '.environment=[]'
+SF_TEST_PROFILE=$(jq -c '.hooks=[] | .sandbox.tools={}' <<<"$SF_TEST_PROFILE")
+mkdir "$tmp/project"
+session="$tmp/sandbox-library.jsonl"
+( builtin cd -- "$tmp/project"; sf_test_session "$session" )
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='
+  source "$SHELLFISH_SHARE_DIR/lib/skills.zsh" || exit 1
+  sf_skills_scalar ready || exit 1
+  [[ ! -r $SHELLFISH_SHARE_DIR/help.txt ]] || exit 2
+  if made=$(mktemp "$SHELLFISH_SHARE_DIR/lib/sandbox-write.XXXXXX" 2>/dev/null); then
+    rm -f -- "$made"
+    exit 3
+  fi
+  print -rn -- "$REPLY"
+' sf_test_run library "$session" >"$stream" || fail 'bundled library turn failed'
+jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
+  .exit_code == 0 and .model_text == "ready\nexit 0"
+' <"$stream" >/dev/null || fail 'bundled library access was missing or too broad'
+jq --arg library "$SF_SHARE/lib" '.filesystem.denyRead += [$library]' \
+  "$tmp/tools/shell/fence.jsonc" >"$tmp/policy.json"
+mv "$tmp/policy.json" "$tmp/tools/shell/fence.jsonc"
+session="$tmp/sandbox-library-denied.jsonl"
+( builtin cd -- "$tmp/project"; sf_test_session "$session" )
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='
+  if cat "$SHELLFISH_SHARE_DIR/lib/capped.zsh" >/dev/null 2>&1; then exit 1; fi
+  print -rn -- blocked
+' sf_test_run library "$session" >"$stream" || fail 'denied library turn failed'
+assert_equal $'blocked\nexit 0' "$(jq -r 'select(.type == "tool_result") | .model_text' "$stream")" \
+  'baseline library access overrode a policy deny'
+
 # The clean environment preserves Fence's proxy and inherited domain denies.
 sf_test_shell_tool '.environment=["TMPPREFIX"]'
 jq '.network.allowedDomains=["baseline.example.com"] |
@@ -522,9 +553,9 @@ jq -e --slurpfile output "$sandbox_output" '
 ' < <(jq -c 'select(.type == "tool_result")' "$stream") >/dev/null ||
   fail 'post_tool_use did not receive the rendered sandbox output'
 SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
-jq -e --arg base "$tmp/tools/shell/fence.jsonc" '
+jq -e --arg base "$tmp/tools/shell/fence.jsonc" --arg library "$SF_SHARE/lib" '
   .extends == $base and
-  .filesystem == {allowRead:["/shell/read"],allowWrite:["/shell/write"]} and
+  .filesystem == {allowRead:["/shell/read",$library],allowWrite:["/shell/write"]} and
   .network.allowedDomains == ["github.com","*.npmjs.org","blocked.invalid"]
 ' "$tmp/fence-policy.json" >/dev/null || fail 'domain policy did not extend the selected tool'
 jq -e '
@@ -545,7 +576,8 @@ session="$tmp/sandbox-path-grants.jsonl"
 sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run paths "$session" >"$stream" ||
   fail 'path-only sandbox grants failed the turn'
-jq -e '.filesystem == {allowRead:["/shell/read"],allowWrite:["/shell/write"]} and
+jq -e --arg library "$SF_SHARE/lib" '
+  .filesystem == {allowRead:["/shell/read",$library],allowWrite:["/shell/write"]} and
   .network.allowedDomains == []' "$tmp/fence-policy.json" >/dev/null ||
   fail 'path-only grants did not reach the sandbox policy'
 
@@ -577,8 +609,9 @@ jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 0 and .model_text == "output\nexit 0"
 ' <"$stream" >/dev/null || fail 'a succeeding tool was annotated'
-jq -e 'has("extends") | not' "$tmp/fence-policy.json" >/dev/null ||
-  fail 'a tool without domain grants received a temporary policy'
+jq -e --arg library "$SF_SHARE/lib" '
+  has("extends") and .filesystem == {allowRead:[$library]} and (has("network") | not)
+' "$tmp/fence-policy.json" >/dev/null || fail 'baseline library access needed profile grants'
 
 # Replacement skips the bundled policy, including its denies and network list.
 typeset native_profile=$SF_TEST_PROFILE policy_fixture="$tmp/policy-fixture"
@@ -592,8 +625,9 @@ for replacement in false true; do
   sf_test_session "$session"
   SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run policy "$session" >"$stream" ||
     fail 'custom policy turn failed'
-  jq -e --argjson replace "$replacement" --arg dir "$policy_fixture" '
+  jq -e --argjson replace "$replacement" --arg dir "$policy_fixture" --arg library "$SF_SHARE/lib" '
     (has("replace") | not) and .command.useDefaults == false and
+    (.filesystem.allowRead | index($library) != null) and
     (.filesystem.denyRead | index($dir + "/*.key") != null) and
     ((.filesystem.denyRead | index("**/.env") == null) == $replace) and
     ((.network.allowedDomains // [] | index("baseline.example.com") == null) == $replace)
@@ -611,14 +645,16 @@ session="$tmp/inherited.jsonl"
 sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run inherited "$session" >"$stream" ||
   fail 'inherited policy turn failed'
-jq -e --arg dir "$policy_fixture" '
+jq -e --arg dir "$policy_fixture" --arg library "$SF_SHARE/lib" '
   (.filesystem.allowRead | index($dir) != null) and
+  (.filesystem.allowRead | index($library) != null) and
   .filesystem.allowExecute == ["/custom/bin"] and
   (.network.allowedDomains | index("parent.example.com") != null and
     index("child.example.com") != null) and
   (.network.allowedDomains | index("baseline.example.com") == null)
 ' "$tmp/fence-resolved.json" >/dev/null || fail 'native extends lost a policy layer'
-if grep -Fxq "$policy_fixture" "$fence_arguments" || grep -Fxq '/custom/read-*' "$fence_arguments"; then
+if grep -Fxq "$policy_fixture" "$fence_arguments" || grep -Fxq '/custom/read-*' "$fence_arguments" ||
+    grep -Fxq "$SF_SHARE/lib" "$fence_arguments"; then
   fail 'native policy paths received duplicate host-path mounts'
 fi
 SF_TEST_PROFILE=$native_profile
@@ -649,8 +685,9 @@ jq -eRn --arg dir "$granted" '
   ($events | any(.type == "_session_update") | not)
 ' <"$stream" >/dev/null || fail 'grant approval produced the wrong records'
 # Approved access belongs in the policy, not in overriding host-path mounts.
-jq -e --arg dir "$granted" '.network.allowedDomains == ["grant.example.com"] and
-  .filesystem == {allowRead:[],allowWrite:[$dir]}' "$tmp/fence-policy.json" >/dev/null ||
+jq -e --arg dir "$granted" --arg library "$SF_SHARE/lib" '
+  .network.allowedDomains == ["grant.example.com"] and
+  .filesystem == {allowRead:[$library],allowWrite:[$dir]}' "$tmp/fence-policy.json" >/dev/null ||
   fail 'grant did not reach the sandbox policy'
 head -1 "$session" | jq -e '.profile.sandbox.tools == {}' >/dev/null ||
   fail 'a one-call grant changed the session profile'
