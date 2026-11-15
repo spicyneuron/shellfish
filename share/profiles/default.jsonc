@@ -8,21 +8,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/spicyneuron/shellfish/refs/heads/main/share/profile.schema.json",
 
-  "sandbox": {
-    // Setting false runs every tool with user permissions.
-    "enabled": true,
-    // Seconds to wait for user approval of a sandbox access request.
-    "user_approval_timeout": 120,
-    // Fence policies keyed by selected tool name. Lists extend the tool policy.
-    // Set "replace": true inside a tool entry to use only your policy instead.
-    "tools": {
-      // "shell": {
-      //   "filesystem": {"allowRead": ["~/.cargo"], "allowWrite": ["~/.cache/uv"]},
-      //   "network": {"allowedDomains": ["github.com"]}
-      // }
-    }
-  },
-
   // Files under system/ concatenated into the system prompt.
   "system": ["general.md", "tools.md", "sandbox.md"],
 
@@ -53,5 +38,35 @@
   //   "sandbox": {
   //     "approver": {"model": "default"}
   //   }
-  // }
+  // },
+
+  "sandbox": {
+    // Setting false runs every tool with user permissions.
+    "enabled": true,
+    // Seconds to wait for user approval of a sandbox access request.
+    "user_approval_timeout": 120,
+    // Fence policies keyed by selected tool name. Lists extend the tool policy.
+    // Grants apply only to the named tool. Existing deny rules still win.
+    // Paths starting with ./ or ../ are relative to this profile's directory.
+    // Use ~ for home paths, or . for the session directory.
+    // Set "replace": true inside a tool entry to discard its bundled policy,
+    // including its protections for secrets and .shellfish directories.
+    "tools": {
+      // Let uv install packages using its cache and PyPI.
+      // "shell": {
+      //   "filesystem": {"allowRead": ["~/.cache/uv"], "allowWrite": ["~/.cache/uv"]},
+      //   "network": {"allowedDomains": ["pypi.org", "files.pythonhosted.org"]}
+      // },
+      // Edit a shared library outside the session directory.
+      // "edit_file": {
+      //   "filesystem": {"allowRead": ["~/projects/shared"], "allowWrite": ["~/projects/shared"]}
+      // },
+      // Use your own Fence policy file instead of read_file's bundled policy.
+      // This file must exist, relative to this profile's directory.
+      // "read_file": {
+      //   "replace": true,
+      //   "extends": "../sandboxes/read-only.jsonc"
+      // },
+    }
+  }
 }
