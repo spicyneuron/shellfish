@@ -103,14 +103,14 @@ sf_tui_main() {
     session=$REPLY
     session_mode=resume
   fi
-  source "$SF_ROOT/libexec/tui/presentation.zsh"
-  SF_PRESENTATION_VERBOSE=$verbose_requested
-  sf_presentation_resolve || {
+  source "$SF_ROOT/libexec/tui/config.zsh"
+  SF_TUI_CONFIG_VERBOSE=$verbose_requested
+  sf_tui_config_resolve || {
     resolve_status=$?
-    sf_die "$SF_PRESENTATION_ERROR"
+    sf_die "$SF_TUI_CONFIG_ERROR"
     return $resolve_status
   }
-  presentation=$SF_PRESENTATION
+  presentation=$SF_TUI_CONFIG
 
   source "$SF_ROOT/libexec/tui/render/main.zsh"
   source "$SF_ROOT/libexec/tui/project.zsh"
@@ -132,7 +132,7 @@ sf_tui_main() {
     [[ -z $SF_TUI_TRANSPORT_PID ]] || sf_tui_transport_stop
   }
   if (( controller_status )); then
-    [[ -z $SF_PRESENT_ERROR ]] || sf_die "$SF_PRESENT_ERROR"
+    [[ -z $SF_TUI_ERROR ]] || sf_die "$SF_TUI_ERROR"
     return $controller_status
   fi
 }

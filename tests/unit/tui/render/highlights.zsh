@@ -27,27 +27,27 @@ typeset -g theme_config='{"theme_mode":"dark","theme_light":"l","theme_dark":"d"
     "diff_added_background":"#222222","diff_removed":"#222222",
     "diff_removed_background":"#222222","permission":"#222222"}}}'
 
-sf_tui_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
-assert_equal 'fg=#555555,bold' "$SF_PRESENT_STYLE[section.user]"
-assert_equal 'fg=#2a2a2a,bold' "$SF_PRESENT_STYLE[section.agent]"
-assert_equal 'fg=#232323,bold' "$SF_PRESENT_STYLE[section.system]"
-assert_equal 'fg=#2b2b2b' "$SF_PRESENT_STYLE[activity]"
-assert_equal 'fg=#565656,underline' "$SF_PRESENT_STYLE[syntax.link]"
-assert_equal 'fg=#575757' "$SF_PRESENT_STYLE[syntax.code]"
-assert_equal 'fg=#222222' "$SF_PRESENT_STYLE[execution]"
-assert_equal 'fg=#777777' "$SF_PRESENT_STYLE[message]"
-assert_equal 'fg=#666666' "$SF_PRESENT_STYLE[error]"
-assert_equal 'fg=#444444' "$SF_PRESENT_STYLE[prompt]"
-assert_equal 'fg=#448844' "$SF_PRESENT_STYLE[prompt_waiting]"
-assert_equal 'fg=#222225' "$SF_PRESENT_STYLE[syntax.string]"
+sf_tui_theme_config "$theme_config" || fail "theme setup failed: $SF_TUI_HIGHLIGHT_ERROR"
+assert_equal 'fg=#555555,bold' "$SF_TUI_STYLE[section.user]"
+assert_equal 'fg=#2a2a2a,bold' "$SF_TUI_STYLE[section.agent]"
+assert_equal 'fg=#232323,bold' "$SF_TUI_STYLE[section.system]"
+assert_equal 'fg=#2b2b2b' "$SF_TUI_STYLE[activity]"
+assert_equal 'fg=#565656,underline' "$SF_TUI_STYLE[syntax.link]"
+assert_equal 'fg=#575757' "$SF_TUI_STYLE[syntax.code]"
+assert_equal 'fg=#222222' "$SF_TUI_STYLE[execution]"
+assert_equal 'fg=#777777' "$SF_TUI_STYLE[message]"
+assert_equal 'fg=#666666' "$SF_TUI_STYLE[error]"
+assert_equal 'fg=#444444' "$SF_TUI_STYLE[prompt]"
+assert_equal 'fg=#448844' "$SF_TUI_STYLE[prompt_waiting]"
+assert_equal 'fg=#222225' "$SF_TUI_STYLE[syntax.string]"
 
 if NO_COLOR=1 sf_tui_theme_config "$theme_config"; then
-  assert_equal 0 "${#SF_PRESENT_STYLE}"
+  assert_equal 0 "${#SF_TUI_STYLE}"
 else
   fail 'NO_COLOR should disable styling rather than fail'
 fi
 if TERM=dumb sf_tui_theme_config "$theme_config"; then
-  assert_equal 0 "${#SF_PRESENT_STYLE}"
+  assert_equal 0 "${#SF_TUI_STYLE}"
 else
   fail 'a dumb terminal should disable styling rather than fail'
 fi
@@ -57,26 +57,26 @@ typeset -g auto_config=${theme_config/'"theme_mode":"dark"'/'"theme_mode":"auto"
 [[ $auto_config == *'"theme_mode":"auto"'* ]] || fail 'auto theme fixture was not built'
 sf_tui_background_mode() { REPLY=light; }
 
-SF_PRESENT_BACKGROUND=''
-sf_tui_theme_config "$auto_config" || fail "auto theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
-assert_equal light "$SF_PRESENT_BACKGROUND"
-assert_equal 'fg=#111111,bold' "$SF_PRESENT_STYLE[section.user]"
-assert_equal '' "$SF_PRESENT_STYLE[message]"
+SF_TUI_BACKGROUND=''
+sf_tui_theme_config "$auto_config" || fail "auto theme setup failed: $SF_TUI_HIGHLIGHT_ERROR"
+assert_equal light "$SF_TUI_BACKGROUND"
+assert_equal 'fg=#111111,bold' "$SF_TUI_STYLE[section.user]"
+assert_equal '' "$SF_TUI_STYLE[message]"
 
-SF_PRESENT_BACKGROUND=''
+SF_TUI_BACKGROUND=''
 sf_tui_background_mode() { return 1 }
 sf_tui_theme_config "$auto_config" || fail 'an unanswered probe should fall back to dark'
-assert_equal dark "$SF_PRESENT_BACKGROUND"
+assert_equal dark "$SF_TUI_BACKGROUND"
 
-sf_tui_theme_config "$theme_config" || fail "theme setup failed: $SF_PRESENT_HIGHLIGHT_ERROR"
+sf_tui_theme_config "$theme_config" || fail "theme setup failed: $SF_TUI_HIGHLIGHT_ERROR"
 
 span_texts() {
   local source=$1
   local -a texts=()
   integer index start end
-  for (( index = 1; index <= ${#SF_PRESENT_HIGHLIGHT_SPANS}; index += 3 )); do
-    start=$(( SF_PRESENT_HIGHLIGHT_SPANS[index] + 1 ))
-    end=${SF_PRESENT_HIGHLIGHT_SPANS[index + 1]}
+  for (( index = 1; index <= ${#SF_TUI_HIGHLIGHT_SPANS}; index += 3 )); do
+    start=$(( SF_TUI_HIGHLIGHT_SPANS[index] + 1 ))
+    end=${SF_TUI_HIGHLIGHT_SPANS[index + 1]}
     texts+=( "${source[start,end]}" )
   done
   REPLY="${(j:,:)texts}"
@@ -84,27 +84,27 @@ span_texts() {
 
 # Syntax offsets count characters before multibyte text.
 typeset code='é const x = "text"; // note'
-SF_PRESENT_HIGHLIGHT_SPANS=()
+SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_code_highlight "$code" js
 span_texts "$code"
 assert_equal 'const,"text",// note' "$REPLY"
-assert_equal '2,7,fg=#222224' "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,3]}"
+assert_equal '2,7,fg=#222224' "${(j:,:)SF_TUI_HIGHLIGHT_SPANS[1,3]}"
 
 typeset markdown=$'# Head\n**bold** [link](url) `code`\n```js\nconst x = 3;\n```'
-SF_PRESENT_HIGHLIGHT_SPANS=()
+SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_markdown_highlight "$markdown"
 span_texts "$markdown"
 assert_equal $'# Head,**bold**,[link](url),`code`,```js,const,3,```' "$REPLY"
 assert_equal '0,6,bold,underline,7,15,bold' \
-  "${(j:,:)SF_PRESENT_HIGHLIGHT_SPANS[1,6]}"
+  "${(j:,:)SF_TUI_HIGHLIGHT_SPANS[1,6]}"
 
 markdown=$'```js\n\nconst value\n\t```'
-SF_PRESENT_HIGHLIGHT_SPANS=()
+SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_markdown_highlight "$markdown"
 span_texts "$markdown"
 assert_equal $'```js,const,\t```' "$REPLY"
 
-SF_PRESENT_HIGHLIGHT_SPANS=()
+SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_markdown_highlight 'const x = 3;' $'```\tjs'
 span_texts 'const x = 3;'
 assert_equal 'const,3' "$REPLY"
@@ -115,11 +115,11 @@ sf_tui_markdown_highlight $'```js\nconst x = 3;'
 assert_equal $'```\tjs\t0' "$REPLY"
 
 # Block comments carry styling state across chunks.
-SF_PRESENT_HIGHLIGHT_SPANS=()
+SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_code_highlight '/* opened' js
 span_texts '/* opened'
 assert_equal '/* opened' "$REPLY"
-SF_PRESENT_HIGHLIGHT_SPANS=()
+SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_code_highlight 'still inside */ const x = 3;' js 0 1
 span_texts 'still inside */ const x = 3;'
 assert_equal 'still inside */,const,3' "$REPLY"
@@ -132,10 +132,10 @@ assert_equal $'```\tjs\t0' "$REPLY"
 
 # Hunk and file headers are styled apart from the changed lines.
 typeset diff=$'@@ -1 +1 @@\n-old\n+new\n--- a/file\n+++ b/file\n---- rule'
-SF_PRESENT_HIGHLIGHT_SPANS=()
+SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_diff_highlight "$diff"
 span_texts "$diff"
 assert_equal '@@ -1 +1 @@,-old,+new,--- a/file,+++ b/file,---- rule' "$REPLY"
-assert_equal "$SF_PRESENT_STYLE[clamp]" "$SF_PRESENT_HIGHLIGHT_SPANS[3]"
-assert_equal bold "$SF_PRESENT_HIGHLIGHT_SPANS[12]"
-assert_equal "$SF_PRESENT_STYLE[syntax.removed]" "$SF_PRESENT_HIGHLIGHT_SPANS[18]"
+assert_equal "$SF_TUI_STYLE[clamp]" "$SF_TUI_HIGHLIGHT_SPANS[3]"
+assert_equal bold "$SF_TUI_HIGHLIGHT_SPANS[12]"
+assert_equal "$SF_TUI_STYLE[syntax.removed]" "$SF_TUI_HIGHLIGHT_SPANS[18]"

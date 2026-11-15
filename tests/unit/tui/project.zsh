@@ -12,7 +12,7 @@ typeset update=$(jq -c '{type:"_session_update",profile,model:(.model | .context
   <<<"$header")
 
 # Join one action per line for comparison; a trailing empty field shows as "|".
-actions() { print -rl -- ${(@)${(@)SF_PRESENT_ACTIONS//$'\0'/ | }% } }
+actions() { print -rl -- ${(@)${(@)SF_TUI_ACTIONS//$'\0'/ | }% } }
 
 project() {
   local mode=$1
@@ -236,10 +236,10 @@ integer project_status=0
 sf_tui_project live '{"type":"_assistant_message_delta","text":"partial"}' \
   '{"type":"_unknown"}' || project_status=$?
 assert_equal 1 "$project_status"
-assert_equal 0 "${#SF_PRESENT_ACTIONS}"
+assert_equal 0 "${#SF_TUI_ACTIONS}"
 project_status=0
 sf_tui_project live 'not json' || project_status=$?
 assert_equal 1 "$project_status"
-assert_equal 0 "${#SF_PRESENT_ACTIONS}"
+assert_equal 0 "${#SF_TUI_ACTIONS}"
 
 print -r -- ok

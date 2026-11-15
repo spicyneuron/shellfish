@@ -22,13 +22,13 @@ sf_tui_action() {
 }
 
 sf_tui_identity() {
-  SF_PRESENT_IDENTITY=$1
-  SF_PRESENT_FOOTER=$1
+  SF_TUI_IDENTITY=$1
+  SF_TUI_FOOTER=$1
 }
 
 # Reported usage also refines the estimate a live reasoning summary shows.
 sf_tui_usage() {
   local text=$1 reasoning=$2
-  [[ -z $text ]] || SF_PRESENT_FOOTER="${SF_PRESENT_IDENTITY} · $text"
+  [[ -z $text ]] || SF_TUI_FOOTER="${SF_TUI_IDENTITY} · $text"
   [[ -z $reasoning ]] || sf_tui_reasoning_tokens "$reasoning"
 }

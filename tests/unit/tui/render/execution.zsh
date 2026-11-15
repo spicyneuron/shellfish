@@ -11,12 +11,12 @@ typeset -g BUFFER='' CURSOR=0 PREDISPLAY='' POSTDISPLAY=''
 
 view() {
   sf_tui_transcript "${1:-80}" 100 || fail 'rendering executions failed'
-  REPLY=${SF_PRESENT_VIEWPORT_TEXT%$'\n'}
+  REPLY=${SF_TUI_VIEWPORT_TEXT%$'\n'}
 }
 assert_tail() { [[ $REPLY == *"$1" ]] || fail "expected tail: $1" "actual: $REPLY" }
 # Content settles at the terminal width, so a narrow case sets it up front.
 width() { COLUMNS=$(( $1 + 1 )) }
-has_style() { (( ${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$1]} )) }
+has_style() { (( ${SF_TUI_VIEWPORT_HIGHLIGHTS[(Ie)$1]} )) }
 message() {
   sf_tui_action message_start "$1" &&
     sf_tui_action message_delta 0 text "$2" '' &&
@@ -29,7 +29,7 @@ sf_tui_terminal_reset
 sf_tui_activity_start
 view
 assert_equal '⠃' "$REPLY"
-assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 0 "$SF_TUI_SAFE_ROWS"
 sf_tui_action message_start agent
 sf_tui_action message_end
 sf_tui_activity_stop
@@ -58,11 +58,11 @@ sf_tui_action message_end
 sf_tui_action execution_update call_1 tool 'shell · make test'
 view
 assert_tail $'⛭ shell · make test\n╰ ⠃'
-assert_equal 0 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 0 "$SF_TUI_SAFE_ROWS"
 sf_tui_action execution_end call_1 tool $'shell · failed\ndetail\nexit 1'
 view
 assert_tail $'⛭ shell · failed\n│ detail\n╰ exit 1\n\n⠃'
-assert_equal 5 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 5 "$SF_TUI_SAFE_ROWS"
 sf_tui_activity_stop
 
 # Hook activity borrows the live tool block until the tool settles it.
@@ -112,8 +112,8 @@ sf_tui_activity_stop
 # Hook notices carry their own glyph and style.
 sf_tui_reset
 sf_tui_activity_start
-SF_PRESENT_STYLE[execution]='fg=#111111'
-SF_PRESENT_STYLE[activity]='fg=#222222'
+SF_TUI_STYLE[execution]='fg=#111111'
+SF_TUI_STYLE[activity]='fg=#222222'
 sf_tui_action execution_update h1 notice $'project · Inspecting\nfiles'
 view
 assert_equal $'ℹ project · Inspecting\n│ files\n╰ ⠃' "$REPLY"
@@ -122,8 +122,8 @@ has_style 'fg=#222222' || fail 'hook activity did not use the agent style'
 sf_tui_action execution_end h1 notice $'project · Ready\nresult'
 view
 assert_equal $'ℹ project · Ready\n╰ result\n\n⠃' "$REPLY"
-assert_equal 2 "$SF_PRESENT_SAFE_ROWS"
-unset 'SF_PRESENT_STYLE[execution]' 'SF_PRESENT_STYLE[activity]'
+assert_equal 2 "$SF_TUI_SAFE_ROWS"
+unset 'SF_TUI_STYLE[execution]' 'SF_TUI_STYLE[activity]'
 sf_tui_activity_stop
 
 # Empty completion retracts only its own running view.
@@ -145,32 +145,32 @@ sf_tui_reset
 sf_tui_action execution_end h1 notice $'prompt\nfirst\nsecond'
 view
 assert_equal $'ℹ prompt\n│ first\n╰ second' "$REPLY"
-assert_equal 3 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 3 "$SF_TUI_SAFE_ROWS"
 
 # Context output is clamped to the configured budget.
 sf_tui_reset
-SF_PRESENT_PREVIEW=1
+SF_TUI_PREVIEW=1
 sf_tui_action execution_end h1 context $'probe\nfirst\nsecond\nthird'
 view
 assert_equal $'↪ probe · ~5 tokens\n┆ first' "$REPLY"
 sf_tui_reset
-SF_PRESENT_PREVIEW=0
+SF_TUI_PREVIEW=0
 sf_tui_action execution_end h1 context $'prompt\nfirst\nsecond'
 view
 assert_equal $'↪ prompt · ~4 tokens' "$REPLY"
-SF_PRESENT_PREVIEW=full
+SF_TUI_PREVIEW=full
 
 # Every class takes that same budget; only a component override lifts it.
 sf_tui_reset
-SF_PRESENT_PREVIEW=1
+SF_TUI_PREVIEW=1
 sf_tui_action execution_end h1 notice $'prompt\nfirst\nsecond'
 view
 assert_equal $'ℹ prompt · ~4 tokens\n┆ first' "$REPLY"
-SF_PRESENT_PREVIEW=full
+SF_TUI_PREVIEW=full
 
 # Components may select a fixed limit or bypass the context default.
 sf_tui_reset
-SF_PRESENT_PREVIEW=2
+SF_TUI_PREVIEW=2
 sf_tui_action execution_end h1 tool $'probe\nfirst\nsecond\nthird' 1
 view
 assert_tail $'⛭ probe · ~5 tokens\n┆ first'
@@ -182,15 +182,15 @@ view 20
 assert_tail $'⛭ Read\n│ /a/long/file/path.\n│ txt · ~5 tokens\n┆ first'
 width 79
 sf_tui_reset
-SF_PRESENT_PREVIEW=0
+SF_TUI_PREVIEW=0
 sf_tui_action execution_end h1 tool $'probe\nfirst\nsecond' full
 view
 assert_tail $'⛭ probe\n│ first\n╰ second'
-SF_PRESENT_PREVIEW=full
+SF_TUI_PREVIEW=full
 
 # A hunk header marks output as a diff; its rows fill the width so backgrounds span it.
 sf_tui_reset
-SF_PRESENT_STYLE=( execution fg=gray divider rail
+SF_TUI_STYLE=( execution fg=gray divider rail
   'syntax.added' 'fg=green,bg=darkgreen'
   'syntax.removed' 'fg=red,bg=darkred' )
 width 20
@@ -205,9 +205,9 @@ has_style 'fg=gray' || fail 'execution text lost its base style'
 # The rail keeps its own style; the background starts at the line itself.
 typeset removed='fg=red,bg=darkred'
 integer at
-at=${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$removed]}
-assert_equal '-' "${SF_PRESENT_VIEWPORT_TEXT[SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 2] + 1]}"
-assert_equal rail "$SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 6]"
+at=${SF_TUI_VIEWPORT_HIGHLIGHTS[(Ie)$removed]}
+assert_equal '-' "${SF_TUI_VIEWPORT_TEXT[SF_TUI_VIEWPORT_HIGHLIGHTS[at - 2] + 1]}"
+assert_equal rail "$SF_TUI_VIEWPORT_HIGHLIGHTS[at - 6]"
 
 # Output that merely resembles a diff stays plain.
 sf_tui_reset
@@ -216,11 +216,11 @@ sf_tui_action execution_end plain tool $'shell · run\n-old\n+new'
 view 20
 assert_tail $'⛭ shell · run\n│ -old\n╰ +new'
 ! has_style 'fg=red,bg=darkred' || fail 'plain execution received diff highlighting'
-SF_PRESENT_STYLE=()
+SF_TUI_STYLE=()
 
 # A sandbox bypass badge leads the identity row in its outcome's style.
 sf_tui_reset
-SF_PRESENT_STYLE=( permission fg=blue error fg=red )
+SF_TUI_STYLE=( permission fg=blue error fg=red )
 sf_tui_action execution_update call_1 tool 'shell · pwd' '' 'requested'
 view
 assert_tail $'⛭ [sandbox access requested] shell · pwd\n╰ ⠃'
@@ -229,21 +229,21 @@ sf_tui_action execution_end call_1 tool 'shell · pwd' '' '' 'denied'
 view
 assert_tail $'⛭ [sandbox access denied] shell · pwd'
 typeset badge='fg=red,bold'
-at=${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$badge]}
+at=${SF_TUI_VIEWPORT_HIGHLIGHTS[(Ie)$badge]}
 (( at )) || fail 'denied bypass badge was not styled'
-assert_equal 23 $(( SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 1] - SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 2] ))
-SF_PRESENT_STYLE=()
+assert_equal 23 $(( SF_TUI_VIEWPORT_HIGHLIGHTS[at - 1] - SF_TUI_VIEWPORT_HIGHLIGHTS[at - 2] ))
+SF_TUI_STYLE=()
 
 # A leading **label** in the header is bold; later asterisks are literal.
 styled() {
-  integer at=${SF_PRESENT_VIEWPORT_HIGHLIGHTS[(Ie)$1]}
+  integer at=${SF_TUI_VIEWPORT_HIGHLIGHTS[(Ie)$1]}
   (( at )) || fail "missing style: $1"
-  REPLY=${SF_PRESENT_VIEWPORT_TEXT[SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 2] + 1,
-    SF_PRESENT_VIEWPORT_HIGHLIGHTS[at - 1]]}
+  REPLY=${SF_TUI_VIEWPORT_TEXT[SF_TUI_VIEWPORT_HIGHLIGHTS[at - 2] + 1,
+    SF_TUI_VIEWPORT_HIGHLIGHTS[at - 1]]}
 }
 sf_tui_reset
 width 79
-SF_PRESENT_STYLE=( execution fg=gray divider rail syntax.strong bold error fg=red )
+SF_TUI_STYLE=( execution fg=gray divider rail syntax.strong bold error fg=red )
 sf_tui_action execution_end call_1 tool $'**Read-only shell** ls **/*.zsh\nok'
 view
 assert_tail $'⛭ Read-only shell ls **/*.zsh\n╰ ok'
@@ -262,7 +262,7 @@ sf_tui_action execution_end call_1 tool $'Shell false\nexit 1' '' '' '' 1
 view
 styled fg=red,bold
 assert_equal ⛭ "$REPLY"
-SF_PRESENT_STYLE=()
+SF_TUI_STYLE=()
 
 # Errors settle a pending execution and close the turn.
 sf_tui_reset
@@ -276,7 +276,7 @@ sf_tui_action message_delta 0 text partial ''
 sf_tui_action error Failed $'detail one\ndetail two'
 view
 assert_tail $'partial\n\n✕ Failed\n  detail one\n  detail two'
-assert_equal 7 "$SF_PRESENT_SAFE_ROWS"
+assert_equal 7 "$SF_TUI_SAFE_ROWS"
 message user retry
 view
 [[ $REPLY == *$'─ user '*$' 2 ─\n\nretry' ]] || fail "post-error section: $REPLY"
@@ -307,7 +307,7 @@ typeset drained=''
 integer batch
 for batch in 1 2 3; do
   sf_tui_transcript 20 4 || fail 'rendering a tall execution failed'
-  (( ! SF_PRESENT_SAFE_ROWS )) || {
+  (( ! SF_TUI_SAFE_ROWS )) || {
     sf_tui_terminal_stage || fail 'staging a tall execution failed'
     sf_tui_terminal_finish || fail 'committing a tall execution failed'
     drained+=$PREDISPLAY$'\n'

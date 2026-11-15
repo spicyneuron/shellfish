@@ -8,9 +8,9 @@ sf_test_source libexec/tui/render/main.zsh \
 sf_tui_heartbeat_arm() { return 0; }
 
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY='' POSTDISPLAY='' ZLE_CALL=''
-typeset -g SF_PRESENT_SESSION=session.jsonl
-typeset -g SF_PRESENT_STATE=idle
-typeset -g SF_PRESENT_FOOTER=test/model
+typeset -g SF_TUI_SESSION=session.jsonl
+typeset -g SF_TUI_STATE=idle
+typeset -g SF_TUI_FOOTER=test/model
 typeset -gi COLUMNS=80 LINES=10
 typeset -ga ZLE_CALLS=()
 zle() {
@@ -19,14 +19,14 @@ zle() {
 }
 # Submit prompts.
 BUFFER=prompt
-SF_PRESENT_DRAFT=prompt
-SF_PRESENT_DRAFT_CURSOR=6
-SF_PRESENT_DRAFT_SAVED=1
-SF_PRESENT_ACTION=''
+SF_TUI_DRAFT=prompt
+SF_TUI_DRAFT_CURSOR=6
+SF_TUI_DRAFT_SAVED=1
+SF_TUI_ACTION=''
 ZLE_CALL=''
 sf_tui_accept
-assert_equal submit "$SF_PRESENT_ACTION"
-assert_equal prompt "$SF_PRESENT_SUBMITTED"
+assert_equal submit "$SF_TUI_ACTION"
+assert_equal prompt "$SF_TUI_SUBMITTED"
 assert_equal accept-line "$ZLE_CALL"
 
 # Clear drafts on interrupt.
@@ -38,46 +38,46 @@ assert_equal -R "$ZLE_CALL"
 
 # Quit after a second interrupt.
 sf_tui_interrupt
-assert_equal quit "$SF_PRESENT_ACTION"
+assert_equal quit "$SF_TUI_ACTION"
 assert_equal accept-line "$ZLE_CALL"
-assert_equal 130 "$SF_PRESENT_EXIT_STATUS"
+assert_equal 130 "$SF_TUI_EXIT_STATUS"
 
 # Escape may prefix a longer key sequence.
-SF_PRESENT_STATE=working
-SF_PRESENT_ACTION=''
+SF_TUI_STATE=working
+SF_TUI_ACTION=''
 ZLE_CALL=''
 sf_tui_escape
-assert_equal working "$SF_PRESENT_STATE"
-assert_equal '' "$SF_PRESENT_ACTION"
+assert_equal working "$SF_TUI_STATE"
+assert_equal '' "$SF_TUI_ACTION"
 assert_equal -R "$ZLE_CALL"
 
 # Keep queued turns on interrupt.
-SF_PRESENT_STATE=queued
-SF_PRESENT_ACTION=''
+SF_TUI_STATE=queued
+SF_TUI_ACTION=''
 ZLE_CALLS=()
 sf_tui_interrupt
-assert_equal queued "$SF_PRESENT_STATE"
-assert_equal '' "$SF_PRESENT_ACTION"
+assert_equal queued "$SF_TUI_STATE"
+assert_equal '' "$SF_TUI_ACTION"
 assert_equal -R "$ZLE_CALLS[-1]"
 
 # Quit while cancelling.
-SF_PRESENT_STATE=cancelling
-SF_PRESENT_ACTION=''
+SF_TUI_STATE=cancelling
+SF_TUI_ACTION=''
 BUFFER=draft
 ZLE_CALLS=()
 sf_tui_interrupt
 assert_equal draft "$BUFFER"
-assert_equal quit "$SF_PRESENT_ACTION"
-assert_equal 130 "$SF_PRESENT_EXIT_STATUS"
+assert_equal quit "$SF_TUI_ACTION"
+assert_equal 130 "$SF_TUI_EXIT_STATUS"
 assert_equal accept-line "$ZLE_CALLS[-1]"
 
 # Map permission keys and their numbers.
 typeset -a permission_decisions=()
 integer permission_holds=0
 sf_tui_transport_reply() { [[ $2 == hold ]] && (( ++permission_holds )); }
-sf_tui_answer_permission() { permission_decisions+=( "$1" ); SF_PRESENT_STATE=working; }
+sf_tui_answer_permission() { permission_decisions+=( "$1" ); SF_TUI_STATE=working; }
 for KEYS in a d x 1 2; do
-  SF_PRESENT_STATE=permission
+  SF_TUI_STATE=permission
   WIDGET=self-insert
   sf_tui_input
 done
@@ -87,22 +87,22 @@ assert_equal -R "$ZLE_CALL"
 
 # Stop cancels the turn and restores the draft.
 for KEYS in s 3; do
-  SF_PRESENT_STATE=permission
-  SF_PRESENT_PERMISSION_DRAFT=draft
-  SF_PRESENT_PERMISSION_CURSOR=3
+  SF_TUI_STATE=permission
+  SF_TUI_PERMISSION_DRAFT=draft
+  SF_TUI_PERMISSION_CURSOR=3
   BUFFER=''
   WIDGET=self-insert
   sf_tui_input
-  assert_equal cancelling "$SF_PRESENT_STATE"
+  assert_equal cancelling "$SF_TUI_STATE"
   assert_equal draft "$BUFFER"
 done
 
 # Accept client commands.
-SF_PRESENT_ACTION=''
-SF_PRESENT_STATE=idle
+SF_TUI_ACTION=''
+SF_TUI_STATE=idle
 BUFFER=/quit
 sf_tui_accept
-assert_equal quit "$SF_PRESENT_ACTION"
+assert_equal quit "$SF_TUI_ACTION"
 
 # Insert literal newlines.
 LBUFFER=first
@@ -112,17 +112,17 @@ assert_equal $'first\n' "$LBUFFER"
 # Manage queued prompts.
 sf_tui_reset
 sf_tui_terminal_reset
-SF_PRESENT_STATE=working
-SF_PRESENT_QUEUE=()
-SF_PRESENT_HISTORY=()
+SF_TUI_STATE=working
+SF_TUI_QUEUE=()
+SF_TUI_HISTORY=()
 COLUMNS=43
 LINES=15
 BUFFER=$'first queued\ncontinued'
 CURSOR=${#BUFFER}
 sf_tui_accept
 assert_equal '' "$BUFFER"
-assert_equal 1 "${#SF_PRESENT_QUEUE}"
-assert_equal $'first queued\ncontinued' "$SF_PRESENT_QUEUE[1]"
+assert_equal 1 "${#SF_TUI_QUEUE}"
+assert_equal $'first queued\ncontinued' "$SF_TUI_QUEUE[1]"
 
 BUFFER='second queued'
 CURSOR=${#BUFFER}
@@ -130,47 +130,47 @@ sf_tui_accept
 BUFFER='/queue drop 1'
 CURSOR=${#BUFFER}
 sf_tui_accept
-assert_equal 'second queued' "$SF_PRESENT_QUEUE[1]"
+assert_equal 'second queued' "$SF_TUI_QUEUE[1]"
 BUFFER='/queue clear'
 CURSOR=${#BUFFER}
 sf_tui_accept
-assert_equal 0 "${#SF_PRESENT_QUEUE}"
+assert_equal 0 "${#SF_TUI_QUEUE}"
 
 # Send now resumes the oldest pending prompt without recording it twice.
-SF_PRESENT_STATE=idle
-SF_PRESENT_ACTION=''
-SF_PRESENT_QUEUE=( first second )
-SF_PRESENT_HISTORY=( first second )
+SF_TUI_STATE=idle
+SF_TUI_ACTION=''
+SF_TUI_QUEUE=( first second )
+SF_TUI_HISTORY=( first second )
 BUFFER=''
 ZLE_CALL=''
 sf_tui_send
-assert_equal submit "$SF_PRESENT_ACTION"
-assert_equal first "$SF_PRESENT_SUBMITTED"
-assert_equal second "${(j:,:)SF_PRESENT_QUEUE}"
-assert_equal first,second "${(j:,:)SF_PRESENT_HISTORY}"
+assert_equal submit "$SF_TUI_ACTION"
+assert_equal first "$SF_TUI_SUBMITTED"
+assert_equal second "${(j:,:)SF_TUI_QUEUE}"
+assert_equal first,second "${(j:,:)SF_TUI_HISTORY}"
 assert_equal accept-line "$ZLE_CALL"
 
 # A draft takes priority over the paused queue.
-SF_PRESENT_STATE=idle
-SF_PRESENT_ACTION=''
+SF_TUI_STATE=idle
+SF_TUI_ACTION=''
 BUFFER=now
 sf_tui_send
-assert_equal submit "$SF_PRESENT_ACTION"
-assert_equal now "$SF_PRESENT_SUBMITTED"
-assert_equal second "${(j:,:)SF_PRESENT_QUEUE}"
+assert_equal submit "$SF_TUI_ACTION"
+assert_equal now "$SF_TUI_SUBMITTED"
+assert_equal second "${(j:,:)SF_TUI_QUEUE}"
 assert_equal '' "$BUFFER"
 
 # Queued client commands still dispatch through their normal boundary.
-SF_PRESENT_STATE=idle
-SF_PRESENT_ACTION=''
-SF_PRESENT_QUEUE=( /quit )
+SF_TUI_STATE=idle
+SF_TUI_ACTION=''
+SF_TUI_QUEUE=( /quit )
 sf_tui_send
-assert_equal quit "$SF_PRESENT_ACTION"
-assert_equal 0 "${#SF_PRESENT_QUEUE}"
+assert_equal quit "$SF_TUI_ACTION"
+assert_equal 0 "${#SF_TUI_QUEUE}"
 assert_equal accept-line "$ZLE_CALL"
 
 # Navigate history and multiline display rows.
-SF_PRESENT_HISTORY=()
+SF_TUI_HISTORY=()
 sf_tui_record_prompt first
 sf_tui_record_prompt second
 BUFFER=draft
@@ -190,7 +190,7 @@ sf_tui_up
 assert_equal 20 "$CURSOR"
 
 # Permission state gates editing even when ZLE decoded the key beforehand.
-SF_PRESENT_STATE=permission
+SF_TUI_STATE=permission
 BUFFER=''
 ZLE_CALLS=()
 for WIDGET in sf_tui_up sf_tui_down sf_tui_accept sf_tui_insert_newline \
@@ -205,13 +205,13 @@ assert_equal '.bracketed-paste paste' "$ZLE_CALL"
 
 # Idle and working states share normal editing.
 WIDGET=self-insert
-for SF_PRESENT_STATE in idle working; do
+for SF_TUI_STATE in idle working; do
   sf_tui_input
   assert_equal '.self-insert --' "$ZLE_CALL"
 done
 
 # Wrapped kills keep appending to the cutbuffer.
-SF_PRESENT_STATE=idle
+SF_TUI_STATE=idle
 ZLE_CALLS=()
 WIDGET=backward-kill-word
 sf_tui_input
@@ -223,7 +223,7 @@ CURSOR=10
 sf_tui_complete_range 7 10 '$code-review'
 assert_equal $'前文\nUse $code-review later' "$BUFFER"
 assert_equal 19 "$CURSOR"
-assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+assert_equal 0 "${#SF_TUI_COMPLETIONS}"
 
 # Shared prefixes extend the typed text, a single match replaces it, and other
 # matches leave it for the list.
@@ -232,21 +232,21 @@ CURSOR=8
 sf_tui_complete_range 5 8 @src/editor.zsh @src/controller.zsh
 assert_equal 'Read @src/ then' "$BUFFER"
 assert_equal 10 "$CURSOR"
-assert_equal '@src/editor.zsh,@src/controller.zsh' "${(j:,:)SF_PRESENT_COMPLETIONS}"
+assert_equal '@src/editor.zsh,@src/controller.zsh' "${(j:,:)SF_TUI_COMPLETIONS}"
 BUFFER='Read @edi then'
 CURSOR=9
 sf_tui_complete_range 5 9 @src/editor.zsh @tests/editor.zsh
 assert_equal 'Read @edi then' "$BUFFER"
 assert_equal 9 "$CURSOR"
-assert_equal '@src/editor.zsh,@tests/editor.zsh' "${(j:,:)SF_PRESENT_COMPLETIONS}"
+assert_equal '@src/editor.zsh,@tests/editor.zsh' "${(j:,:)SF_TUI_COMPLETIONS}"
 sf_tui_complete_range 5 9 @src/editor.zsh
 assert_equal 'Read @src/editor.zsh then' "$BUFFER"
 assert_equal 20 "$CURSOR"
-assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+assert_equal 0 "${#SF_TUI_COMPLETIONS}"
 sf_tui_complete_range 5 20
 assert_equal 'Read @src/editor.zsh then' "$BUFFER"
 assert_equal 20 "$CURSOR"
-assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+assert_equal 0 "${#SF_TUI_COMPLETIONS}"
 
 # Empty ranges support insertion, including at either buffer edge.
 BUFFER='tail'
@@ -261,18 +261,18 @@ assert_equal 15 "$CURSOR"
 
 # Any input dismisses completion candidates before handling the key.
 for WIDGET in self-insert backward-char sf_tui_escape sf_tui_accept; do
-  SF_PRESENT_COMPLETIONS=( /queue /quit )
+  SF_TUI_COMPLETIONS=( /queue /quit )
   BUFFER=''
   sf_tui_input
-  assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+  assert_equal 0 "${#SF_TUI_COMPLETIONS}"
 done
-SF_PRESENT_COMPLETIONS=( /queue /quit )
+SF_TUI_COMPLETIONS=( /queue /quit )
 sf_tui_editor_permission open
-assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+assert_equal 0 "${#SF_TUI_COMPLETIONS}"
 sf_tui_editor_permission restore
 
 # Tab cycles an open list and shift+tab reverses, wrapping and keeping later text.
-SF_PRESENT_COMMANDS=( /queue /quit /refresh )
+SF_TUI_COMMANDS=( /queue /quit /refresh )
 BUFFER='/q tail'
 CURSOR=2
 for WIDGET match number in sf_tui_complete /qu 0 sf_tui_complete /queue 1 \
@@ -280,13 +280,13 @@ for WIDGET match number in sf_tui_complete /qu 0 sf_tui_complete /queue 1 \
   sf_tui_input
   assert_equal "$match tail" "$BUFFER"
   assert_equal ${#match} "$CURSOR"
-  assert_equal $number "$SF_PRESENT_COMPLETION_NO"
-  assert_equal '/queue,/quit' "${(j:,:)SF_PRESENT_COMPLETIONS}"
+  assert_equal $number "$SF_TUI_COMPLETION_NO"
+  assert_equal '/queue,/quit' "${(j:,:)SF_TUI_COMPLETIONS}"
 done
 WIDGET=self-insert
 sf_tui_input
 assert_equal '/quit tail' "$BUFFER"
-assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
+assert_equal 0 "${#SF_TUI_COMPLETIONS}"
 
 # Shift+tab starts at the last match, and does nothing without a list.
 BUFFER='/q'
@@ -299,8 +299,8 @@ sf_tui_input
 WIDGET=sf_tui_complete_back
 sf_tui_input
 assert_equal '/quit' "$BUFFER"
-assert_equal 2 "$SF_PRESENT_COMPLETION_NO"
-SF_PRESENT_COMPLETIONS=()
+assert_equal 2 "$SF_TUI_COMPLETION_NO"
+SF_TUI_COMPLETIONS=()
 
 # An @path completes one folder at a time under the session's directory, marking
 # folders and showing hidden files only after a typed dot. A bare name also
@@ -312,7 +312,7 @@ touch "$tmp/project/"{README.md,.hidden} "$tmp/project/lib/"{cli.zsh,session.zsh
   "$tmp/plain/sub/editor.zsh"
 print -r -- 'build/' >"$tmp/project/.gitignore"
 git -C "$tmp/project" init -q
-SF_PRESENT_CWD=$tmp/project
+SF_TUI_CWD=$tmp/project
 WIDGET=sf_tui_complete
 for before after matches in \
   'Read @li' 'Read @lib' '@lib/,@libexec/' \
@@ -329,28 +329,28 @@ for before after matches in \
   'say /qu' 'say /qu' ''; do
   BUFFER="$before then"
   CURSOR=${#before}
-  SF_PRESENT_COMPLETIONS=()
+  SF_TUI_COMPLETIONS=()
   sf_tui_input
   assert_equal "$after then" "$BUFFER"
   assert_equal ${#after} "$CURSOR"
-  assert_equal "$matches" "${(j:,:)${(@o)SF_PRESENT_COMPLETIONS}}"
+  assert_equal "$matches" "${(j:,:)${(@o)SF_TUI_COMPLETIONS}}"
 done
 
 # Outside Git, only the current folder level matches.
-SF_PRESENT_CWD=$tmp/plain
+SF_TUI_CWD=$tmp/plain
 BUFFER='@edi'
 CURSOR=4
 sf_tui_input
 assert_equal '@edi' "$BUFFER"
-assert_equal 0 "${#SF_PRESENT_COMPLETIONS}"
-SF_PRESENT_CWD=$tmp/project
+assert_equal 0 "${#SF_TUI_COMPLETIONS}"
+SF_TUI_CWD=$tmp/project
 
 # Completion needs the cursor at the end of a word.
 BUFFER='@li then'
 CURSOR=2
 sf_tui_input
 assert_equal '@li then' "$BUFFER"
-SF_PRESENT_COMPLETIONS=()
+SF_TUI_COMPLETIONS=()
 
 # Bind documented editor keys.
 bindkey -e
@@ -391,15 +391,15 @@ done
 typeset saved_stage=$functions[sf_tui_terminal_stage]
 typeset saved_repaint=$functions[sf_tui_repaint_checked]
 sf_tui_terminal_stage() { return 1; }
-sf_tui_repaint_checked() { SF_PRESENT_SAFE_ROWS=1; }
-SF_PRESENT_STATE=idle
-SF_PRESENT_ERROR=''
-SF_PRESENT_ACTION=''
+sf_tui_repaint_checked() { SF_TUI_SAFE_ROWS=1; }
+SF_TUI_STATE=idle
+SF_TUI_ERROR=''
+SF_TUI_ACTION=''
 BUFFER=unstageable
 sf_tui_accept || fail 'accept reported a failure'
-assert_equal '' "$SF_PRESENT_ACTION"
-assert_equal stopped "$SF_PRESENT_STATE"
-assert_equal 'cannot stage chat rows' "$SF_PRESENT_ERROR"
+assert_equal '' "$SF_TUI_ACTION"
+assert_equal stopped "$SF_TUI_STATE"
+assert_equal 'cannot stage chat rows' "$SF_TUI_ERROR"
 functions[sf_tui_terminal_stage]=$saved_stage
 functions[sf_tui_repaint_checked]=$saved_repaint
 
