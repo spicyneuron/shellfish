@@ -245,7 +245,7 @@ mkdir -p "$tmp/project/dir" "$tmp/home/share"
 jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
   .profile.tools=["@tools/shell","@tools/read_file"] |
   .profile.sandbox={enabled:true, tools:{
-    shell:{read:["@system"], write:[$cwd + "/dir","~/share"],domains:["*.example.com"]}}}' \
+    shell:{filesystem:{allowRead:["@system"],allowWrite:[$cwd + "/dir","~/share"]},network:{allowedDomains:["*.example.com"]}}}}' \
   "$SF_TEST_SESSIONS/header_only.jsonl" >"$sandbox_session"
 (
   builtin cd -- "$tmp/project"; export HOME="$tmp/home"
@@ -256,37 +256,31 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
   }
   call '/sandbox ' >/dev/null
   assert_equal "Sandbox: enabled
-Additional grants (tool policy still applies):
+Tool policies (merged unless replace is true):
 shell:
-  read:
-    @system
-  write:
-    ${tmp:A}/project/dir
-    ~/share
-  domains:
-    *.example.com" "$(<"$tmp/sandbox.err")" 'sandbox listing includes only granted tools and access'
+  {\"filesystem\":{\"allowRead\":[\"@system\"],\"allowWrite\":[\"${tmp:A}/project/dir\",\"~/share\"]},\"network\":{\"allowedDomains\":[\"*.example.com\"]}}" "$(<"$tmp/sandbox.err")" 'sandbox listing includes tool policies'
   call '/sandbox read_file' >/dev/null
   assert_equal 'Sandbox: enabled
-Additional grants (tool policy still applies):
+Tool policies (merged unless replace is true):
   (none)' "$(<"$tmp/sandbox.err")" 'sandbox inspection summarizes empty grants'
   # A bundled grant matches by "@" or by its absolute path.
   [[ $(call "/sandbox shell +read $ROOT/share/system" | jq -r .action) == null ]] ||
     fail 'bundled grant duplicated'
   call "/sandbox shell -read $ROOT/share/system" | jq -e '.action == "session_update" and
-    .profile.sandbox.tools.shell.read == []' >/dev/null || fail 'bundled grant removal by path failed'
+    .profile.sandbox.tools.shell.filesystem.allowRead == []' >/dev/null || fail 'bundled grant removal by path failed'
   call '/sandbox shell -read @system' | jq -e '.action == "session_update" and
-    .profile.sandbox.tools.shell.read == []' >/dev/null || fail 'bundled grant removal by @ failed'
+    .profile.sandbox.tools.shell.filesystem.allowRead == []' >/dev/null || fail 'bundled grant removal by @ failed'
   [[ $(call '/sandbox shell +write dir' | jq -r .action) == null ]] || fail 'absolute grant duplicated'
   [[ $(call '/sandbox shell +write ~/share' | jq -r .action) == null ]] || fail 'home grant duplicated'
   call '/sandbox shell -write dir' | jq -e '.action == "session_update" and
-    .profile.sandbox.tools.shell.write == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
+    .profile.sandbox.tools.shell.filesystem.allowWrite == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
   call '/sandbox shell -write ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
-    .action == "session_update" and .profile.sandbox.tools.shell.write == [$path]' >/dev/null ||
+    .action == "session_update" and .profile.sandbox.tools.shell.filesystem.allowWrite == [$path]' >/dev/null ||
     fail 'home grant removal failed'
   call '/sandbox read_file +read dir' | jq -e --arg path "${tmp:A}/project/dir" '
-    .profile.sandbox.tools.read_file == {read:[$path],write:[],domains:[]} and
-    .profile.sandbox.tools.shell.read == ["@system"] and
-    .profile.sandbox.tools.shell.write == [$path,"~/share"]
+    .profile.sandbox.tools.read_file == {filesystem:{allowRead:[$path]}} and
+    .profile.sandbox.tools.shell.filesystem.allowRead == ["@system"] and
+    .profile.sandbox.tools.shell.filesystem.allowWrite == [$path,"~/share"]
   ' >/dev/null || fail 'tool-specific grant changed another tool'
   [[ $(call '/sandbox shell' | jq -r .action) == null ]] || fail 'tool inspection mutated grants'
   grep -q '^shell:$' "$tmp/sandbox.err" && ! grep -q '^read_file:$' "$tmp/sandbox.err" ||
@@ -301,14 +295,14 @@ Additional grants (tool policy still applies):
   [[ $(call '/sandbox shell +r dir' | jq -r .action) == null ]] &&
     grep -q '^usage: /sandbox' "$tmp/sandbox.err" || fail 'an operation alias was accepted'
   call '/sandbox read_file +domain GitHub.COM' | jq -e '
-    .profile.sandbox.tools.read_file == {read:[],write:[],domains:["github.com"]} and
-    .profile.sandbox.tools.shell.domains == ["*.example.com"]
+    .profile.sandbox.tools.read_file == {network:{allowedDomains:["github.com"]}} and
+    .profile.sandbox.tools.shell.network.allowedDomains == ["*.example.com"]
   ' >/dev/null || fail 'domain grant changed another tool or kept its case'
   [[ $(call '/sandbox shell +domain *.Example.com' | jq -r .action) == null ]] ||
     fail 'wildcard domain grant duplicated'
   call '/sandbox shell -domain *.example.com' | jq -e '
-    .profile.sandbox.tools.shell.domains == [] and
-    .profile.sandbox.tools.shell.read == ["@system"]
+    .profile.sandbox.tools.shell.network.allowedDomains == [] and
+    .profile.sandbox.tools.shell.filesystem.allowRead == ["@system"]
   ' >/dev/null || fail 'domain removal changed a path grant'
   for domain in 'https://github.com' 'github.com:443' '*' 'a..com' $'example.\ncom'; do
     [[ $(call "/sandbox shell +domain $domain" | jq -r .action) == null ]] ||

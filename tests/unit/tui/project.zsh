@@ -201,8 +201,8 @@ usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"
 # The header also describes its components and sandbox by name.
 typeset equipped=$(jq -c '.profile += {tools:["@tools/read_file","/x/tools/shell"],
   hooks:["@hooks/project/environment"],sandbox:{enabled:true,tools:{
-    read_file:{read:["~/a"],write:[],domains:[]},
-    shell:{read:["~/b"],write:["~/c"],domains:["github.com"]}}}}' \
+    read_file:{filesystem:{allowRead:["~/a"],allowWrite:[]},network:{allowedDomains:[]}},
+    shell:{filesystem:{allowRead:["~/b"],allowWrite:["~/c"]},network:{allowedDomains:["github.com"]}}}}}' \
   <<<"$header")
 project live "$equipped"
 assert_equal 'cwd | /fixture

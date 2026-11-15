@@ -67,9 +67,7 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
    max_capture:(if $manifest.max_capture_kb then $manifest.max_capture_kb * 1024 else $max_capture end),
    execution_input:$operation,
    sandbox:$sandboxable,
-   read_paths:($profile.sandbox.tools[$name].read // [] | join("\n")),
-   write_paths:($profile.sandbox.tools[$name].write // [] | join("\n")),
-   domains:($profile.sandbox.tools[$name].domains // [])};
+   policy:($profile.sandbox.tools[$name] // {})};
 
 def tool_refusal($reason; $exit_code):
   {output:{stdout:$reason,stderr:$reason,exit_code:$exit_code},ran:false};

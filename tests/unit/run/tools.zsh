@@ -455,7 +455,7 @@ sf_test_shell_tool '.environment=["TMPPREFIX"]'
 jq '.network.allowedDomains=["baseline.example.com"] |
   .network.deniedDomains=["blocked.invalid"]' "$tmp/tools/shell/fence.jsonc" >"$tmp/policy.json"
 mv "$tmp/policy.json" "$tmp/tools/shell/fence.jsonc"
-SF_TEST_PROFILE=$(jq -c '.sandbox.tools.shell={read:[],write:[],domains:["blocked.invalid"]}' \
+SF_TEST_PROFILE=$(jq -c '.sandbox.tools.shell={filesystem:{allowRead:[],allowWrite:[]},network:{allowedDomains:["blocked.invalid"]}}' \
   <<<"$SF_TEST_PROFILE")
 session="$tmp/sandbox-network.jsonl"
 sf_test_session "$session"
@@ -475,6 +475,7 @@ cat >"$fence" <<'ZSH'
 #!/usr/bin/env zsh
 log='' settings=''
 base=${0:A:h:h}
+[[ ${1-} != config ]] || exit 1
 print -rl -- "$@" >"$base/fence-arguments"
 while (( $# )); do
   case $1 in
@@ -500,8 +501,8 @@ export SANDBOX_OUTPUT=$sandbox_output
 sf_test_bind_hooks post_tool_use "$sandbox_post"
 SF_TEST_PROFILE=$(jq -c --arg reader "$ROOT/share/tools/read_file" '
   .tools += [$reader] | .sandbox.tools={
-    shell:{read:["/shell/read"],write:["/shell/write"],domains:["github.com","*.npmjs.org","blocked.invalid"]},
-    read_file:{read:["/reader/read"],write:["/reader/write"],domains:["reader.example.com"]}}
+    shell:{filesystem:{allowRead:["/shell/read"],allowWrite:["/shell/write"]},network:{allowedDomains:["github.com","*.npmjs.org","blocked.invalid"]}},
+    read_file:{filesystem:{allowRead:["/reader/read"],allowWrite:["/reader/write"]},network:{allowedDomains:["reader.example.com"]}}}
 ' <<<"$SF_TEST_PROFILE")
 session="$tmp/sandbox-denied.jsonl"
 sf_test_session "$session"
@@ -521,14 +522,9 @@ jq -e --slurpfile output "$sandbox_output" '
 ' < <(jq -c 'select(.type == "tool_result")' "$stream") >/dev/null ||
   fail 'post_tool_use did not receive the rendered sandbox output'
 SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
-jq -eRn '
-  [inputs] as $args |
-  ($args | index("/shell/read") != null and index("/shell/write") != null and
-    index("/reader/read") == null and index("/reader/write") == null)
-' <"$fence_arguments" >/dev/null || fail 'tool execution mixed sandbox grants between tools'
 jq -e --arg base "$tmp/tools/shell/fence.jsonc" '
   .extends == $base and
-  .filesystem == {allowRead:["/shell/read","/shell/write"],allowWrite:["/shell/write"]} and
+  .filesystem == {allowRead:["/shell/read"],allowWrite:["/shell/write"]} and
   .network.allowedDomains == ["github.com","*.npmjs.org","blocked.invalid"]
 ' "$tmp/fence-policy.json" >/dev/null || fail 'domain policy did not extend the selected tool'
 jq -e '
@@ -544,13 +540,13 @@ policy_path=$(jq -rRn '[inputs] | .[index("--settings") + 1]' <"$fence_arguments
 [[ ! -e $policy_path ]] || fail 'temporary sandbox policy survived tool cleanup'
 
 # Path grants need policy permissions even without any domain grants.
-SF_TEST_PROFILE=$(jq -c '.sandbox.tools.shell.domains=[]' <<<"$SF_TEST_PROFILE")
+SF_TEST_PROFILE=$(jq -c '.sandbox.tools.shell.network.allowedDomains=[]' <<<"$SF_TEST_PROFILE")
 session="$tmp/sandbox-path-grants.jsonl"
 sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run paths "$session" >"$stream" ||
   fail 'path-only sandbox grants failed the turn'
-jq -e '.filesystem == {allowRead:["/shell/read","/shell/write"],allowWrite:["/shell/write"]} and
-  (has("network") | not)' "$tmp/fence-policy.json" >/dev/null ||
+jq -e '.filesystem == {allowRead:["/shell/read"],allowWrite:["/shell/write"]} and
+  .network.allowedDomains == []' "$tmp/fence-policy.json" >/dev/null ||
   fail 'path-only grants did not reach the sandbox policy'
 
 SF_TEST_PROFILE=$(jq -c '.tools |= map(select(endswith("/read_file") | not)) |
@@ -584,6 +580,49 @@ jq -eRn '
 jq -e 'has("extends") | not' "$tmp/fence-policy.json" >/dev/null ||
   fail 'a tool without domain grants received a temporary policy'
 
+# Replacement skips the bundled policy, including its denies and network list.
+typeset native_profile=$SF_TEST_PROFILE policy_fixture="$tmp/policy-fixture"
+mkdir "$policy_fixture"
+for replacement in false true; do
+  SF_TEST_PROFILE=$(jq -c --arg dir "$policy_fixture" --argjson replace "$replacement" '
+    .sandbox.tools.shell={replace:$replace, filesystem:{defaultDenyRead:true,
+      allowRead:[$dir],denyRead:[$dir + "/*.key"]},command:{useDefaults:false}}
+  ' <<<"$native_profile")
+  session="$tmp/policy-$replacement.jsonl"
+  sf_test_session "$session"
+  SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run policy "$session" >"$stream" ||
+    fail 'custom policy turn failed'
+  jq -e --argjson replace "$replacement" --arg dir "$policy_fixture" '
+    (has("replace") | not) and .command.useDefaults == false and
+    (.filesystem.denyRead | index($dir + "/*.key") != null) and
+    ((.filesystem.denyRead | index("**/.env") == null) == $replace) and
+    ((.network.allowedDomains // [] | index("baseline.example.com") == null) == $replace)
+  ' "$tmp/fence-resolved.json" >/dev/null || fail 'policy replacement or native merge changed'
+done
+typeset parent_policy="$tmp/parent-policy.json"
+jq -n --arg dir "$policy_fixture" '{filesystem:{allowRead:[$dir]},
+  network:{allowedDomains:["parent.example.com"]}}' >"$parent_policy"
+SF_TEST_PROFILE=$(jq -c --arg parent "$parent_policy" '
+  .sandbox.tools.shell={replace:true,extends:$parent,
+    filesystem:{allowRead:["/custom/read-*"],allowExecute:["/custom/bin"]},
+    network:{allowedDomains:["child.example.com"]}}
+' <<<"$native_profile")
+session="$tmp/inherited.jsonl"
+sf_test_session "$session"
+SF_TEST_PROVIDER_TOOL_CALL=1 sf_test_run inherited "$session" >"$stream" ||
+  fail 'inherited policy turn failed'
+jq -e --arg dir "$policy_fixture" '
+  (.filesystem.allowRead | index($dir) != null) and
+  .filesystem.allowExecute == ["/custom/bin"] and
+  (.network.allowedDomains | index("parent.example.com") != null and
+    index("child.example.com") != null) and
+  (.network.allowedDomains | index("baseline.example.com") == null)
+' "$tmp/fence-resolved.json" >/dev/null || fail 'native extends lost a policy layer'
+if grep -Fxq "$policy_fixture" "$fence_arguments" || grep -Fxq '/custom/read-*' "$fence_arguments"; then
+  fail 'native policy paths received duplicate host-path mounts'
+fi
+SF_TEST_PROFILE=$native_profile
+
 # An approved grant request runs the call sandboxed with the extra access.
 typeset granted="$tmp/granted" grant_input
 mkdir "$granted"
@@ -609,18 +648,17 @@ jq -eRn --arg dir "$granted" '
     .exit_code == 0 and .model_text == "granted\nexit 0" and .sandbox_access == "approved") and
   ($events | any(.type == "_session_update") | not)
 ' <"$stream" >/dev/null || fail 'grant approval produced the wrong records'
-jq -eRn --arg dir "$granted" '[inputs] as $args |
-  any(range(0; $args | length); $args[.] == "--expose-host-path-rw" and $args[. + 1] == $dir)
-' <"$fence_arguments" >/dev/null || fail 'grant did not reach the sandbox'
-# Linux enforcement needs path grants in the policy, not only exposed.
+# Approved access belongs in the policy, not in overriding host-path mounts.
 jq -e --arg dir "$granted" '.network.allowedDomains == ["grant.example.com"] and
-  .filesystem == {allowRead:[$dir],allowWrite:[$dir]}' "$tmp/fence-policy.json" >/dev/null ||
+  .filesystem == {allowRead:[],allowWrite:[$dir]}' "$tmp/fence-policy.json" >/dev/null ||
   fail 'grant did not reach the sandbox policy'
 head -1 "$session" | jq -e '.profile.sandbox.tools == {}' >/dev/null ||
   fail 'a one-call grant changed the session profile'
 assert_canonical_session "$session"
 
 # A session approval keeps the grant, so later calls have it without asking.
+SF_TEST_PROFILE=$(jq -c '.sandbox.tools.shell={replace:true,
+  filesystem:{denyWrite:["**/protected"]}}' <<<"$SF_TEST_PROFILE")
 session="$tmp/grant-session.jsonl"
 sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
@@ -636,16 +674,16 @@ jq -eRn '
     (.model_text | startswith("kept\nexit 0\n<sandbox_notice>This access is granted")))
 ' <"$stream" >/dev/null || fail 'session grant produced the wrong records'
 head -1 "$session" | jq -e --arg dir "$granted" '.profile.sandbox.tools.shell ==
-  {read:[],write:[$dir],domains:["grant.example.com"]}' >/dev/null ||
+  {replace:true,filesystem:{denyWrite:["**/protected"],allowRead:[],allowWrite:[$dir]},
+    network:{allowedDomains:["grant.example.com"]}}' >/dev/null ||
   fail 'session grant did not join the session profile'
 : >"$fence_arguments"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- again' \
   sf_test_run again "$session" >"$stream" || fail 'turn after a session grant failed'
 jq -eRn '[inputs | fromjson] | all(.type != "_tool_permission_request")' <"$stream" >/dev/null ||
   fail 'a kept grant asked again'
-jq -eRn --arg dir "$granted" '[inputs] as $args |
-  any(range(0; $args | length); $args[.] == "--expose-host-path-rw" and $args[. + 1] == $dir)
-' <"$fence_arguments" >/dev/null || fail 'a kept grant did not reach a later call'
+jq -e --arg dir "$granted" '.filesystem.allowWrite == [$dir]' \
+  "$tmp/fence-resolved.json" >/dev/null || fail 'a kept grant did not reach a later call'
 assert_canonical_session "$session"
 
 # Explicit requests for kept access run without another review, including
@@ -671,7 +709,7 @@ jq -e '.messages | any(.type == "tool_result" and
 rm -f -- "$permission_input"
 typeset review_session="$tmp/grant-review.jsonl"
 SF_TEST_PROFILE=$(jq -c --arg dir "$granted" --arg hook "$permission" '
-  .hooks=[$hook] | .sandbox.tools.shell={read:[],write:[$dir],domains:[]}
+  .hooks=[$hook] | .sandbox.tools.shell={filesystem:{allowRead:[],allowWrite:[$dir]},network:{allowedDomains:[]}}
 ' <<<"$SF_TEST_PROFILE") sf_test_session "$review_session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$(jq -cn --arg dir "$granted" \
   '{request_sandbox_access:{read:["notes",$dir],reason:"Read the notes"}}') \
@@ -698,7 +736,7 @@ jq -eRn --arg dir "$granted" '[inputs | fromjson] as $events |
 # Read grants cover children, and domain wildcards cover subdomains, not the apex.
 typeset grant_profile=$SF_TEST_PROFILE
 SF_TEST_PROFILE=$(jq -c --arg dir "$granted" '.sandbox.tools.shell =
-  {read:[$dir],write:[],domains:["*.grant.example.com"]}' <<<"$SF_TEST_PROFILE")
+  {filesystem:{allowRead:[$dir],allowWrite:[]},network:{allowedDomains:["*.grant.example.com"]}}' <<<"$SF_TEST_PROFILE")
 session="$tmp/grant-covered.jsonl"
 sf_test_session "$session"
 grant_input=$(jq -cn --arg dir "$granted" '{request_sandbox_access:{
@@ -723,6 +761,22 @@ jq -eRn --arg dir "$granted" '[inputs | fromjson] as $events |
     [{read:[],write:[$dir],domains:["grant.example.com","evilgrant.example.com"]}] and
   ($events | map(select(.type == "tool_result"))[0].exit_code == 126)
 ' <"$stream" >/dev/null || fail 'read grant or wildcard silently escalated access'
+SF_TEST_PROFILE=$grant_profile
+
+# Native relative paths and an unrestricted domain allowlist cover requests.
+SF_TEST_PROFILE=$(jq -c '.sandbox.tools.shell={filesystem:{allowRead:["."],allowWrite:["."]},
+  network:{allowedDomains:["*"]}}' <<<"$SF_TEST_PROFILE")
+session="$tmp/native-covered.jsonl"
+sf_test_session "$session"
+grant_input=$(jq -cn --arg cwd "$PWD" '{request_sandbox_access:{
+  read:[$cwd + "/child"],write:[$cwd + "/child"],domains:["any.example.com"],
+  reason:"Already allowed by the native policy"}}')
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_EXTRA=$grant_input \
+  sf_test_run covered "$session" >"$stream" || fail 'native coverage failed the turn'
+jq -eRn '[inputs | fromjson] as $events |
+  ($events | all(.type != "_tool_permission_request")) and
+  ($events | map(select(.type == "tool_result"))[0].sandbox_access == "session")
+' <"$stream" >/dev/null || fail 'native paths or the domain allowlist asked for approval'
 SF_TEST_PROFILE=$grant_profile
 
 # The core refuses malformed grant requests without asking.

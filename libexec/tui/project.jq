@@ -45,7 +45,8 @@ def details_actions:
     [.profile[kind][]? | sub("^.*" + kind + "/"; "")] | join(", ");
   [["details", names("tools"), names("commands"), names("hooks")] +
     (.profile.sandbox |
-      if .enabled then [[.tools[].read[]], [.tools[].write[]], [.tools[].domains[]] | length | tostring]
+      if .enabled then [[.tools[].filesystem.allowRead[]?], [.tools[].filesystem.allowWrite[]?],
+        [.tools[].network.allowedDomains[]?] | length | tostring]
       else ["", "", ""] end)];
 
 # A result or draft carries its own preview hint.

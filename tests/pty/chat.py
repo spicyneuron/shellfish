@@ -43,7 +43,12 @@ def test_sandbox_updates_without_reload():
             while time.monotonic() < end:
                 records = [json.loads(line) for line in path.read_text().splitlines()]
                 grants = records[0]["profile"]["sandbox"]["tools"].get("shell", {})
-                if value in grants.get(kind, []):
+                section, field = {
+                    "read": ("filesystem", "allowRead"),
+                    "write": ("filesystem", "allowWrite"),
+                    "domains": ("network", "allowedDomains"),
+                }[kind]
+                if value in grants.get(section, {}).get(field, []):
                     return records, grants
                 session.pump()
             raise AssertionError(f"session header did not gain {kind} grant {value}")
@@ -72,8 +77,8 @@ def test_sandbox_updates_without_reload():
             session.wait_after(mark, "Sandbox shell domain grant added", timeout=5)
             session.wait_ready(mark, timeout=5)
             _, grants = wait_grant("domains", "github.com")
-            assert grants["domains"] == ["github.com"]
-            assert grants["write"] == [grant_path]
+            assert grants["network"]["allowedDomains"] == ["github.com"]
+            assert grants["filesystem"]["allowWrite"] == [grant_path]
         finally:
             session.close()
 
@@ -502,7 +507,7 @@ def test_permission_grant_for_session():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["sandbox_access"] == "session"
-        assert records[0]["profile"]["sandbox"]["tools"]["shell"]["read"] == [
+        assert records[0]["profile"]["sandbox"]["tools"]["shell"]["filesystem"]["allowRead"] == [
             str(Path(granted).resolve())
         ]
     finally:

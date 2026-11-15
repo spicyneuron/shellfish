@@ -79,13 +79,13 @@ print -r -- 'kit' >"$kit/system/kit.md"
 cp -R "$ROOT/tests/fixtures/provider" "$tmp/tests-provider"
 print -r -- '{"provider": "./../../tests-provider", "request": {"model": "kit"}}' \
   >"$kit/models/kit.jsonc"
-print -r -- '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["./data", "../system"]}}},
+print -r -- '{"tools":["shell"], "sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["./data", "../system"]}}}},
   "system":["../system/kit.md"]}' \
   >"$kit/profiles/kit.jsonc"
 sf_profile_resolve_args -p "$kit/profiles/kit.jsonc" -m "$kit/models/kit.jsonc"
 jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
   .model.provider == $provider and .profile.system == [{text:"kit"}] and
-  .profile.sandbox.tools.shell.read == [$kit + "/profiles/data", $kit + "/system"]
+  .profile.sandbox.tools.shell.filesystem.allowRead == [$kit + "/profiles/data", $kit + "/system"]
 ' <<<"$REPLY" >/dev/null || fail 'config-relative references did not resolve from their files'
 (
   cd "$kit"
@@ -95,14 +95,14 @@ jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
 
 # Sandbox settings live in the profile, system files freeze into one text,
 # and a frozen profile and model resolve to themselves.
-sf_test_profile inline '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["./data"]}}},
+sf_test_profile inline '{"tools":["shell"], "sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["./data"]}}}},
   "system": [{"text": "hello"}, "prompt.md"],
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 sf_profile_resolve_args -p inline -m '{"provider": "'"$fixture_provider"'", "request": {"model": "inline"},
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 profile=$REPLY
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
-  .model.request.model == "inline" and .profile.sandbox.tools.shell.read == [$root + "/profiles/data"] and
+  .model.request.model == "inline" and .profile.sandbox.tools.shell.filesystem.allowRead == [$root + "/profiles/data"] and
   .profile.system == [{text:"hello\n\nnested"}] and
   .profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}} and
   .model.config == .profile.config
@@ -115,8 +115,8 @@ sf_profile_resolve_args -p "$(jq -c '.profile' <<<"$profile")" -m "$tmp/frozen-m
 [[ $REPLY == "$profile" ]] || fail 'an inline frozen profile did not resolve to itself'
 
 # An inline profile resolves relative paths against the working directory.
-sf_profile_resolve_args -p '{"sandbox":{"tools":{"shell":{"read":["./data"]}}}}' -t shell -m fixture
-jq -e --arg cwd "${PWD:A}" '.profile.sandbox.tools.shell.read == [$cwd + "/data"]' <<<"$REPLY" >/dev/null ||
+sf_profile_resolve_args -p '{"sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["./data"]}}}}}' -t shell -m fixture
+jq -e --arg cwd "${PWD:A}" '.profile.sandbox.tools.shell.filesystem.allowRead == [$cwd + "/data"]' <<<"$REPLY" >/dev/null ||
   fail 'inline profile paths did not resolve against the working directory'
 if sf_profile_resolve_args -p '{broken' -m fixture; then
   fail 'malformed inline profile was accepted'
@@ -320,18 +320,16 @@ fi
 mkdir -p "$tmp/flag"
 sf_test_profile boxed '{"tools":["shell","read_file"],
   "sandbox":{"enabled":false, "user_approval_timeout":30,
-    "tools":{"shell":{"read":["~/my reference", "/opt/ref"], "write":["~/output"],
-      "domains":["github.com"]},
-      "read_file":{"read":["~/reference"]}}}}'
+    "tools":{"shell":{"filesystem":{"allowRead":["~/my reference", "/opt/ref"],"allowWrite":["~/output"]},"network":{"allowedDomains":["github.com"]}},
+      "read_file":{"filesystem":{"allowRead":["~/reference"]}}}}}'
 (cd "$tmp" && sf_profile_resolve_args -p boxed -m work \
-  --sandbox '{"tools":{"shell":{"read":["@system"]}}}' \
-  --sandbox '{"tools":{"shell":{"write":["./flag"],"domains":["*.NPMjs.org"]}}}' &&
+  --sandbox '{"tools":{"shell":{"filesystem":{"allowRead":["@system"]}}}}' \
+  --sandbox '{"tools":{"shell":{"filesystem":{"allowWrite":["./flag"]},"network":{"allowedDomains":["*.NPMjs.org"]}}}}' &&
   print -r -- "$REPLY") | read -r REPLY
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
   .profile.sandbox == {enabled:false, user_approval_timeout:30, tools:{
-    shell:{read:[$home + "/my reference", "/opt/ref", $share + "/system"],
-      write:[$home + "/output", $flag],domains:["github.com","*.npmjs.org"]},
-    read_file:{read:[$home + "/reference"],write:[],domains:[]}}}
+    shell:{filesystem:{allowRead:[$home + "/my reference", "/opt/ref", $share + "/system"],allowWrite:[$home + "/output", $flag]},network:{allowedDomains:["github.com","*.npmjs.org"]}},
+    read_file:{filesystem:{allowRead:[$home + "/reference"]}}}}
 ' <<<"$REPLY" >/dev/null || fail 'sandbox options did not extend profile grants'
 sf_profile_resolve_args -p boxed -m work \
   --sandbox '{"enabled":false,"user_approval_timeout":15}' --sandbox '{"enabled":true}'
@@ -339,20 +337,22 @@ jq -e '.profile.sandbox.enabled and .profile.sandbox.user_approval_timeout == 15
   <<<"$REPLY" >/dev/null || fail 'later sandbox options did not replace settings'
 
 # Invalid sandbox settings name the profile and entry.
-sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["/ok", "relative"]}}}}'
+sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"replace":"yes"}}}}'
 if sf_profile_resolve_args -p boxed -m work; then
   fail 'an invalid sandbox path was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid configuration: profile boxed $["sandbox"]["tools"]["shell"]["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
-for value in '{"enabled": "yes"}' '{"tools":{"shell":{"write":"/x"}}}' '{"paths": []}' \
+[[ $SF_PROFILE_ERROR == 'invalid configuration: profile boxed $["sandbox"]["tools"]["shell"]: must be a Fence policy with an optional boolean replace; extends requires replace: true' ]]
+for value in '{"enabled": "yes"}' '{"tools":{"shell":{"filesystem":{"allowWrite":"/x"}}}}' '{"paths": []}' \
     '{"tools":null}' '{"tools":[]}' '{"tools":{"*":{}}}' '{"tools":{"shell":null}}' \
-    '{"tools":{"shell":{"read":null}}}' '{"tools":{"shell":{"extra":[]}}}' \
-    '{"tools":{"shell":{"domains":null}}}' '{"tools":{"shell":{"domains":"github.com"}}}' \
-    '{"tools":{"shell":{"domains":["https://github.com"]}}}' \
-    '{"tools":{"shell":{"domains":["github.com:443"]}}}' \
-    '{"tools":{"shell":{"domains":["*"]}}}' '{"tools":{"shell":{"domains":[3]}}}' \
-    '{"tools":{"shell":{"domains":["example.com\n"]}}}' \
-    '{"tools":{"shell":{"domains":["a..com"]}}}' \
+    '{"tools":{"shell":{"filesystem":{"allowRead":null}}}}' '{"tools":{"shell":{"extra":[]}}}' \
+    '{"tools":{"shell":{"network":{"allowedDomains":null}}}}' '{"tools":{"shell":{"network":{"allowedDomains":"github.com"}}}}' \
+    '{"tools":{"shell":{"replace":null}}}' \
+    '{"tools":{"shell":{"filesystem":[]}}}' \
+    '{"tools":{"shell":{"read":["/old"]}}}' '{"tools":{"shell":{"network":{"allowedDomains":[3]}}}}' \
+    '{"tools":{"shell":{"network":{"allowedDomains":["example.com\n"]}}}}' \
+    '{"tools":{"shell":{"extends":3}}}' \
+    '{"tools":{"shell":{"extends":"code"}}}' \
+    '{"tools":{"shell":{"replace":false,"extends":"code"}}}' \
     '{"user_approval_timeout": 0}' '{"user_approval_timeout": 1.5}' null false 1; do
   sf_test_profile boxed "{\"sandbox\":$value}"
   if sf_profile_resolve_args -p boxed -m work; then
@@ -362,12 +362,12 @@ for value in '{"enabled": "yes"}' '{"tools":{"shell":{"write":"/x"}}}' '{"paths"
     fail "sandbox option accepted $value"
   fi
 done
-sf_test_profile boxed '{"sandbox":{"tools":{"missing":{"read":["/reference"]}}}}'
+sf_test_profile boxed '{"sandbox":{"tools":{"missing":{"filesystem":{"allowRead":["/reference"]}}}}}'
 if sf_profile_resolve_args -p boxed -m work; then
   fail 'sandbox grants for an unselected tool were accepted'
 fi
 [[ $SF_PROFILE_ERROR == *'sandbox grants name an unselected tool: missing'* ]]
-sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["~/reference"]}}}}'
+sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["~/reference"]}}}}}'
 (
   unset HOME
   if sf_profile_resolve_args -p boxed -m work; then
@@ -394,7 +394,7 @@ sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":[
   sf_profile_resolve_args
   jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null
   print -r -- '{"system":[{"text":"mine"}],"tools":["read_file"],
-    "sandbox":{"tools":{"read_file":{"read":["~/reference"]}}}}' \
+    "sandbox":{"tools":{"read_file":{"filesystem":{"allowRead":["~/reference"]}}}}}' \
     >"$SHELLFISH_DIR/profiles/default.jsonc"
   print -r -- 'My read-only policy.' >"$SHELLFISH_DIR/system/readonly.md"
   "$ROOT/bin/shellfish" init >"$tmp/init.out"
@@ -406,7 +406,7 @@ sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":[
   sf_profile_resolve_args
   jq -e --arg home "${HOME:A}" '.profile.system == [{text:"mine"}] and
     (.profile.tools | map(split("/") | last)) == ["read_file"] and
-    .profile.sandbox.tools.read_file.read == [$home + "/reference"]' <<<"$REPLY" >/dev/null
+    .profile.sandbox.tools.read_file.filesystem.allowRead == [$home + "/reference"]' <<<"$REPLY" >/dev/null
   sf_profile_resolve_args -p @profiles/default.jsonc
   jq -e '.profile.system[0].text | startswith("You are a CLI agent.")' <<<"$REPLY" >/dev/null
 )

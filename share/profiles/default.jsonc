@@ -13,9 +13,13 @@
     "enabled": true,
     // Seconds to wait for user approval of a sandbox access request.
     "user_approval_timeout": 120,
-    // Extra grants keyed by selected tool name.
+    // Fence policies keyed by selected tool name. Lists extend the tool policy.
+    // Set "replace": true inside a tool entry to use only your policy instead.
     "tools": {
-      // "shell": {"read": ["~/.cargo"], "write": ["~/.cache/uv"], "domains": ["github.com"]}
+      // "shell": {
+      //   "filesystem": {"allowRead": ["~/.cargo"], "allowWrite": ["~/.cache/uv"]},
+      //   "network": {"allowedDomains": ["github.com"]}
+      // }
     }
   },
 

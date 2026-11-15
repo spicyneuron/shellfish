@@ -54,14 +54,14 @@ mv "$session.saved" "$session"
 
 # Runtime replacement is atomic and leaves every durable record unchanged.
 before=$(tail -n +2 "$session")
-profile=$(jq -c '.sandbox.tools.shell={read:["/tmp/reference"],write:["/tmp/reference"],domains:[]}' \
+profile=$(jq -c '.sandbox.tools.shell={filesystem:{allowRead:["/tmp/reference"],allowWrite:["/tmp/reference"]},network:{allowedDomains:[]}}' \
   <<<"$SF_TEST_PROFILE")
 model=$(jq -c '.context_window=1234' <<<"$SF_TEST_MODEL")
 sf_session_update "$session" "$(jq -cn --argjson profile "$profile" --argjson model "$model" \
   '{profile:$profile,model:$model}')" || fail "$SF_SESSION_ERROR"
 head -n 1 "$session" | jq -e '
-  .profile.sandbox.tools.shell.read == ["/tmp/reference"] and
-  .profile.sandbox.tools.shell.write == ["/tmp/reference"] and .model.context_window == 1234
+  .profile.sandbox.tools.shell.filesystem.allowRead == ["/tmp/reference"] and
+  .profile.sandbox.tools.shell.filesystem.allowWrite == ["/tmp/reference"] and .model.context_window == 1234
 ' >/dev/null
 assert_equal "$before" "$(tail -n +2 "$session")"
 assert_mode 600 "$session"
@@ -75,7 +75,7 @@ done
 assert_equal "$unchanged" "$(cat "$session")"
 
 sf_session_read_config "$session" || fail "$SF_SESSION_ERROR"
-jq -e '.profile.sandbox.tools.shell.read == ["/tmp/reference"] and .model.context_window == 1234' \
+jq -e '.profile.sandbox.tools.shell.filesystem.allowRead == ["/tmp/reference"] and .model.context_window == 1234' \
   <<<"$REPLY" >/dev/null
 
 print -r -- ok

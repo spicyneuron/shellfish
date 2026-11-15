@@ -25,7 +25,7 @@ shellfish -p '{"tools": ["read_file"], "system": [{"text": "Review without editi
 
 | Field | Meaning | Append from the command line |
 | --- | --- | --- |
-| `sandbox` | Sandbox settings and extra grants | `--sandbox JSON` |
+| `sandbox` | Sandbox settings and per-tool policies | `--sandbox JSON` |
 | `system` | Prompt files or inline `{"text": "..."}`, concatenated in order | `--system REF\|JSON` |
 | `tools` | Tools exposed to the model | `-t, --tool REF` |
 | `commands` | Commands the user runs as `/NAME` instead of submitting a prompt | `--command REF` |
@@ -37,7 +37,7 @@ Sandbox settings live directly in the profile. Profiles do not inherit from each
 List options repeat and append to the selected profile for one session. Repeated `system`, `tools`, `commands`, and `hooks` references collapse to the first.
 
 ```sh
-shellfish --sandbox '{"tools":{"shell":{"write":["./build"]}}}'  # Grant shell access
+shellfish --sandbox '{"tools":{"shell":{"filesystem":{"allowWrite":["./build"]}}}}'
 shellfish --system ./review.md -t shell_readonly                   # Add a prompt and a tool
 ```
 
@@ -57,11 +57,13 @@ The profile's `sandbox` object holds standing settings:
 "sandbox": {
   "tools": {
     "shell": {
-      "read": ["~/.cargo", "~/go/pkg"],
-      "write": ["~/.cache/uv"],
-      "domains": ["github.com", "*.npmjs.org"]
+      "filesystem": {
+        "allowRead": ["~/.cargo", "~/go/pkg"],
+        "allowWrite": ["~/.cache/uv"]
+      },
+      "network": {"allowedDomains": ["github.com", "*.npmjs.org"]}
     },
-    "read_file": {"read": ["~/reference"]}
+    "read_file": {"filesystem": {"allowRead": ["~/reference"]}}
   }
 }
 ```
@@ -70,19 +72,36 @@ The profile's `sandbox` object holds standing settings:
 | --- | --- |
 | `enabled` | Defaults to `true`. `false` runs every tool with user permissions |
 | `user_approval_timeout` | Seconds to wait for user approval of a sandbox request, default `120` |
-| `tools.NAME.read` | Extra read grants for the selected tool `NAME` |
-| `tools.NAME.write` | Extra read-write grants for that tool |
-| `tools.NAME.domains` | Extra allowed hostnames or `*.hostname` patterns for that tool |
+| `tools.NAME` | A [Fence configuration](https://github.com/fencesandbox/fence/blob/main/docs/configuration.md) for the selected tool |
+| `tools.NAME.replace` | Defaults to `false`. Set `true` to replace the tool's policy instead of extending it |
 
-Each tool receives only its own grants, keyed by its selected name, such as `shell` or `read_file`. Grants cannot target unselected tools, tools whose manifest disables sandboxing, or `*`. Domains are case-insensitive. Paths need not exist, so one profile can serve several machines. A profile without sandbox settings is sandboxed with no extra grants. See [`profile.schema.json`](../share/profile.schema.json) for the exact fields.
+Each tool receives only its own policy, keyed by its selected name, such as `shell` or `read_file`. Policies cannot target unselected tools, tools whose manifest disables sandboxing, or `*`. Paths need not exist, so one profile can serve several machines. Explicit `./` and `../` paths resolve against the profile's directory, while `.` and bare Fence patterns are relative to the session directory. A profile without sandbox settings uses the tool policies unchanged. See [`profile.schema.json`](../share/profile.schema.json) for Shellfish settings and Fence's documentation for policy fields.
 
-Tool policies and platform temp access set the baseline. Grants extend access, but policy deny rules still win. A tool policy can `extend` another policy, as `shell_readonly` extends `shell` while denying writes. Bundled policies prevent tools from creating or changing `.shellfish` directories because their contents run outside the sandbox. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
+By default, your configuration extends the tool's policy using Fence's native merge rules: lists append and deduplicate, ordinary booleans combine with OR, and optional settings such as `command.useDefaults` override when supplied. Empty lists do not clear inherited rules. Deny rules still win over access grants.
 
-Domain grants extend the tool's network allowlist, not other tools' access. Supply hostnames, not URLs or ports. A bare `*` is not supported. Domain grants do not enable local binding or local outbound access restricted by the tool policy.
+To remove or narrow bundled denies, use `replace: true` and supply the policy you want. Omitted fields use Fence's defaults, not the bundled tool's defaults:
 
-`--sandbox JSON` takes the contents of the profile's `sandbox` object and adds grants or changes settings for one session. Repeated options accumulate grants per tool, while later `enabled` or `user_approval_timeout` values replace earlier ones.
+```jsonc
+"shell": {
+  "replace": true,
+  "filesystem": {
+    "defaultDenyRead": true,
+    "allowRead": ["."],
+    "allowWrite": ["."],
+    "denyRead": ["**/*.key", "**/*.pem"],
+    "denyWrite": ["**/.shellfish", "**/.shellfish/**"]
+  },
+  "command": {"useDefaults": true}
+}
+```
 
-`/sandbox` lists additional grants grouped by selected tool, and `/sandbox shell` inspects one tool. `/sandbox shell +read ~/reference` adds a directory grant, and `/sandbox shell +domain github.com` adds a domain grant. Use `-read` or `-domain` to remove a session addition. These commands update the frozen profile, not the source configuration or the tool's baseline policy.
+Fence's `extends` requires `replace: true` and can share configuration files or templates. Fence's mandatory protections remain in force, and tools retain platform temporary-directory access. Bundled policies block writes to `.shellfish` directories because their contents run outside the sandbox. Replacing those policies can remove that protection. A `SHELLFISH_DIR` with another name inside a writable path is not protected.
+
+`network.allowedDomains` accepts Fence's hostname patterns, including `*`. Allowing every domain relaxes network isolation, so prefer specific hosts. Local binding and outbound access remain separate Fence settings.
+
+`--sandbox JSON` takes the contents of the profile's `sandbox` object for one session. Repeated options accumulate lists per tool and replace scalar settings with later values. `replace` controls inheritance from the tool's policy, not whether earlier command-line options are discarded.
+
+`/sandbox` lists configured policies grouped by selected tool, and `/sandbox shell` inspects one tool. `/sandbox shell +read ~/reference` adds to `filesystem.allowRead`, and `/sandbox shell +domain github.com` adds to `network.allowedDomains`. Use `-read` or `-domain` to remove a session addition. These commands update the frozen profile, preserving `replace` and other policy settings. They do not change the source configuration or the tool's baseline policy.
 
 ### Sandbox access approval
 
@@ -140,7 +159,7 @@ The bundled commands are selected by the profile:
 | `/compact_tools` | Clear older tool results into a child session without summarizing |
 | `/copy [N]` | Copy a conversation section |
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
-| `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox grants |
+| `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox policy |
 
 Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. Prompts submitted during a turn queue behind it. Ctrl-C cancels the active turn and leaves queued prompts pending. Ctrl-X sends the draft, or else the first queued prompt, interrupting an active turn and waiting for cancellation to settle first. Ctrl-Return and Cmd-Return also send now when supported by the terminal. The remaining queue is preserved and resumes automatically after the new turn. Use `/queue drop N` or `/queue clear` to remove pending prompts. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
 

@@ -261,15 +261,21 @@ sf_run_access_prepare() {
       --args "${paths[@]}" <<<"$access") || { REPLY='cannot resolve sandbox access'; return 1; }
   done
   SF_TOOL_PLAN[access]=$(jq -c --argjson profile "$SF_RUN[profile]" \
-      --arg name "$SF_TOOL_PLAN[name]" '
+      --arg name "$SF_TOOL_PLAN[name]" --arg cwd "$SF_RUN[cwd]" '
     def covered($paths):
-      . as $target | any($paths[]; . as $grant |
-        . == $target or ($target | startswith(($grant | rtrimstr("/")) + "/")));
-    ($profile.sandbox.tools[$name] // {read:[],write:[],domains:[]}) as $grants |
+      . as $target | any($paths[];
+        (if startswith("/") then . else $cwd + "/" + . end |
+          reduce split("/")[] as $part ([];
+            if $part == "" or $part == "." then . elif $part == ".." then .[:-1]
+            else . + [$part] end) | "/" + join("/")) as $grant |
+        $grant == $target or ($target | startswith(($grant | rtrimstr("/")) + "/")));
+    ($profile.sandbox.tools[$name] // {}) as $policy |
+    {read:($policy.filesystem.allowRead // []), write:($policy.filesystem.allowWrite // []),
+      domains:($policy.network.allowedDomains // [])} as $grants |
     .read |= map(select(covered($grants.read + $grants.write) | not)) |
     .write |= map(select(covered($grants.write) | not)) |
     .domains |= map(. as $target | select(any($grants.domains[]; . as $grant |
-      . == $target or (startswith("*.") and ($target | endswith($grant[1:])))) | not))
+      . == "*" or . == $target or (startswith("*.") and ($target | endswith($grant[1:])))) | not))
   ' <<<"$access") || { REPLY='cannot inspect sandbox access'; return 1; }
   if jq -e 'all(.[]; length == 0)' <<<"$SF_TOOL_PLAN[access]" >/dev/null; then
     SF_TOOL_PLAN[access_status]=covered
@@ -278,20 +284,16 @@ sf_run_access_prepare() {
 
 # Extend this call and optionally keep its approved access in the session.
 sf_run_access_grant() {
-  local session=$1 keep=$2 access=$SF_TOOL_PLAN[access] kind config entries
-  for kind in read write; do
-    entries=$(jq -r --arg kind "$kind" '.[$kind] | join("\n")' <<<"$access") ||
-      { REPLY='cannot resolve sandbox access'; return 1; }
-    [[ -z $entries ]] ||
-      SF_TOOL_PLAN[${kind}_paths]+=${SF_TOOL_PLAN[${kind}_paths]:+$'\n'}$entries
-  done
-  SF_TOOL_PLAN[domains]=$(jq -c --argjson access "$access" '. + ($access.domains - .)' \
-    <<<"$SF_TOOL_PLAN[domains]") || { REPLY='cannot resolve sandbox access'; return 1; }
+  local session=$1 keep=$2 access=$SF_TOOL_PLAN[access] config
+  SF_TOOL_PLAN[policy]=$(jq -c --argjson access "$access" '
+    .filesystem.allowRead = ((.filesystem.allowRead // []) + $access.read | unique) |
+    .filesystem.allowWrite = ((.filesystem.allowWrite // []) + $access.write | unique) |
+    .network.allowedDomains = ((.network.allowedDomains // []) + $access.domains | unique)
+  ' <<<"$SF_TOOL_PLAN[policy]") || { REPLY='cannot resolve sandbox access'; return 1; }
   [[ $keep == true ]] || return 0
-  config=$(jq -c --arg name "$SF_TOOL_PLAN[name]" --argjson access "$access" \
+  config=$(jq -c --arg name "$SF_TOOL_PLAN[name]" --argjson policy "$SF_TOOL_PLAN[policy]" \
       --argjson model "$SF_RUN[model]" '
-    .sandbox.tools[$name] //= {read:[], write:[], domains:[]} |
-    .sandbox.tools[$name] |= with_entries(.value += ($access[.key] - .value)) |
+    .sandbox.tools[$name] = $policy |
     {profile:., model:$model}
   ' <<<"$SF_RUN[profile]") || { REPLY='cannot keep sandbox access'; return 1; }
   sf_session_update "$session" "$config" || { REPLY=$SF_SESSION_ERROR; return 1; }

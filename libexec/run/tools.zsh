@@ -43,8 +43,7 @@ sf_run_tool_execute() {
   local selected=$SF_TOOL_PLAN[environment]
   local config_dir
   local execution_input=$SF_TOOL_PLAN[execution_input] sandbox=$SF_TOOL_PLAN[sandbox]
-  local read_paths=$SF_TOOL_PLAN[read_paths] write_paths=$SF_TOOL_PLAN[write_paths]
-  local domains=$SF_TOOL_PLAN[domains] policy=${command:h}/fence.jsonc
+  local override=$SF_TOOL_PLAN[policy] policy=${command:h}/fence.jsonc
   local cwd=$SF_RUN[cwd] capture stdin
   local expose darwin_temp='' temp_dir=${TMPDIR:-/tmp}
   local -a arguments content process_command sandbox_arguments temp_paths
@@ -94,17 +93,12 @@ sf_run_tool_execute() {
   [[ -z ${XDG_CONFIG_HOME-} ]] || arguments+=( "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" )
   arguments+=( "TMPDIR=$temp_dir" "TMPPREFIX=$temp_dir/zsh" )
   if [[ $sandbox == true ]]; then
-    # Exposure only mounts a path. Linux enforcement also needs it in the policy.
-    if [[ $domains != '[]' || -n $read_paths$write_paths ]]; then
-      jq -n --arg base "$policy" --argjson domains "$domains" \
-          --arg read "$read_paths" --arg write "$write_paths" '
-        ($read | split("\n") | map(select(. != ""))) as $read |
-        ($write | split("\n") | map(select(. != ""))) as $write |
-        {extends:$base} +
-        (if $domains == [] then {} else {network:{allowedDomains:$domains}} end) +
-        (if $read + $write == [] then {} else
-          {filesystem:{allowRead:($read + $write), allowWrite:$write}} end)
-      ' >"$capture.fence.json" || { SF_RUN_TOOL_ERROR='cannot prepare sandbox policy'; return 1; }
+    if [[ $override != '{}' ]]; then
+      jq --arg base "$policy" '
+        .replace as $replace | del(.replace) | if $replace then . else .extends=$base end
+      ' <<<"$override" >"$capture.fence.json" || {
+          SF_RUN_TOOL_ERROR='cannot prepare sandbox policy'; return 1
+        }
       policy=$capture.fence.json
     fi
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
@@ -113,12 +107,6 @@ sf_run_tool_execute() {
     [[ -z $darwin_temp ]] || temp_paths+=( "$darwin_temp" )
     for expose in ${(u)temp_paths}; do
       [[ -d $expose ]] && sandbox_arguments+=( --expose-host-path-rw "$expose" )
-    done
-    for expose in ${(f)read_paths}; do
-      sandbox_arguments+=( --expose-host-path "$expose" )
-    done
-    for expose in ${(f)write_paths}; do
-      sandbox_arguments+=( --expose-host-path-rw "$expose" )
     done
     # Fence adds proxy variables after host environment filtering.
     process_command=( /usr/bin/env -i "${arguments[@]}" "$commands[fence]" "${sandbox_arguments[@]}" -- "$command" )

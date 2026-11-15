@@ -36,18 +36,18 @@ jq -es 'length == 1' "$explicit" >/dev/null || fail 'create did not populate --s
 # Freeze forwarded sandbox grants.
 typeset granted="$tmp/granted.jsonl"
 zsh -f "$entry" run --session-create --session-out "$granted" \
-  -t shell --sandbox "{\"tools\":{\"shell\":{\"read\":[\"${system:A}\"],\"write\":[\"~/work\"]}}}" >/dev/null || \
+  -t shell --sandbox "{\"tools\":{\"shell\":{\"filesystem\":{\"allowRead\":[\"${system:A}\"],\"allowWrite\":[\"~/work\"]}}}}" >/dev/null || \
   fail 'create rejected forwarded sandbox grants'
 jq -e --arg read "${system:A}" '
   select(.type == "session") |
-  (.profile.sandbox.tools.shell.read | index($read)) != null and
-  (.profile.sandbox.tools.shell.write | index("~/work")) != null
+  (.profile.sandbox.tools.shell.filesystem.allowRead | index($read)) != null and
+  (.profile.sandbox.tools.shell.filesystem.allowWrite | index("~/work")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # Grants for a tool that never runs sandboxed fail creation.
 typeset unsandboxed="$tmp/unsandboxed.jsonl" unsandboxed_error="$tmp/unsandboxed.err"
 if zsh -f "$entry" run --session-create --session-out "$unsandboxed" \
-    -t subagent --sandbox '{"tools":{"subagent":{"read":["/x"]}}}' 2>"$unsandboxed_error"; then
+    -t subagent --sandbox '{"tools":{"subagent":{"filesystem":{"allowRead":["/x"]}}}}' 2>"$unsandboxed_error"; then
   fail 'create accepted grants for an unsandboxed tool'
 fi
 grep -q 'sandbox grants name an unsandboxed tool: subagent' "$unsandboxed_error" ||
