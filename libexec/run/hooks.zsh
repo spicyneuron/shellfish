@@ -5,8 +5,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_run_component_begin] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
-typeset -g SF_RUN_HOOK_ERROR=''
-
 # The lifecycle's invocation plan. A prompt naming a command runs only that
 # command, with its arguments as input.
 typeset -gA SF_HOOK_PLAN=()
@@ -61,7 +59,7 @@ sf_run_hook_manifest() {
       entry("max_capture"; $component.max_capture | tostring)
     else entry("component"; "") end,
     ("ok" | field)
-  ' || { REPLY="invalid hook manifest: $command"; return 1; }
+  ' || { sf_fail "invalid hook manifest: $command"; return; }
 }
 
 # The last action wins. It is validated when the hook settles.
@@ -114,7 +112,7 @@ sf_run_hook_complete() {
     entry("action"; $control.action // ""), entry("reason"; $control.reason // ""),
     entry("payload"; $control | .argv // .profile | if . == null then "" else tojson end),
     ("ok" | field)
-  ' || { REPLY="$lifecycle hook returned invalid control or result: $command"; return 1; }
+  ' || { sf_fail "$lifecycle hook returned invalid control or result: $command"; return; }
   settled=( "${reply[@]}" )
   action=$settled[action] reason=$settled[reason] payload=$settled[payload]
   if [[ -n $settled[result] ]]; then
@@ -138,24 +136,20 @@ sf_run_hooks() {
   local -A SF_COMPONENT=() prepared
   integer max_capture model_feedback=0 max_content=$SF_RUN[max_content] content_bytes=0
 
-  SF_RUN_HOOK_ERROR=''
   reply=( action '' reason '' payload '' )
   [[ " $SF_RUN[lifecycles] " == *" $lifecycle "* ]] || return 0
   sf_run_hook_project "$lifecycle" "$input_text" || {
-    SF_RUN_HOOK_ERROR="cannot inspect $lifecycle hooks"
-    return 1
+    sf_fail "cannot inspect $lifecycle hooks"
+    return
   }
   hooks=( ${(f)SF_HOOK_PLAN[hooks]} )
   if [[ -n $SF_HOOK_PLAN[command] ]]; then
     kind=commands hooks=( "$SF_HOOK_PLAN[command]" ) input_text=$SF_HOOK_PLAN[arguments]
   fi
   (( ${#hooks} )) || return 0
-  sf_environment_load || {
-    SF_RUN_HOOK_ERROR=$SF_ERROR
-    return 1
-  }
+  sf_environment_load || return
   config_dir=$REPLY
-  sf_scratch hook-input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
+  sf_scratch hook-input || { sf_fail "cannot prepare $lifecycle hook input"; return; }
   input=${REPLY:A}
   # Core values follow configured values so that they win.
   environment=(
@@ -184,7 +178,7 @@ sf_run_hooks() {
         break
       }
       sf_run_hook_manifest "$command" "$lifecycle" "$input_text" \
-        "$SF_RUN[hook_id]" "$SF_RUN[max_capture]" "$SF_RUN[$kind]" || { error=$REPLY; break; }
+        "$SF_RUN[hook_id]" "$SF_RUN[max_capture]" "$SF_RUN[$kind]" || { error=$SF_ERROR; break; }
       prepared=( "${reply[@]}" )
       [[ -n $prepared[component] ]] || continue
       max_capture=$prepared[max_capture]
@@ -200,7 +194,7 @@ sf_run_hooks() {
           "$max_content" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_KB=$(( max_capture / 1024 ))" \
           "SHELLFISH_MAX_CONTENT_KB=$(( max_content / 1024 ))" \
           "$command/run" "$@"; then
-        error=$REPLY
+        error=$SF_ERROR
       else
         [[ $reply[1] != ok ]] || (( content_bytes <= max_content )) || reply[1]=overflow
         case $reply[1] in
@@ -215,7 +209,7 @@ sf_run_hooks() {
               error="$lifecycle hook failed with status $reply[2]: $command"
               [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
             else
-              sf_run_hook_complete "$lifecycle" "$REPLY" "$command" || error=$REPLY
+              sf_run_hook_complete "$lifecycle" "$REPLY" "$command" || error=$SF_ERROR
             fi ;;
         esac
       fi
@@ -228,6 +222,6 @@ sf_run_hooks() {
       (( ! model_feedback )); then
     error='stop hook denied without model feedback'
   fi
-  [[ -z $error ]] || { SF_RUN_HOOK_ERROR=$error; return 1; }
+  [[ -z $error ]] || { sf_fail "$error"; return; }
   reply=( action "$action" reason "$reason" payload "$payload" )
 }

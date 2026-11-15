@@ -130,6 +130,8 @@ sf_test_session "$broken"
 integer broken_status=0
 sf_test_run broken "$broken" >"$stream" 2>"$tmp/broken.stderr" || broken_status=$?
 (( broken_status == 1 )) || fail 'turn continued after its session became unavailable'
+[[ $(<"$tmp/broken.stderr") == *"cannot append session record: $broken"* ]] ||
+  fail 'cleanup lost the session write diagnostic'
 [[ -d $broken && -z $(find "$broken" -mindepth 1 -print -quit) ]] ||
   fail 'turn mutated the unavailable session after its first write failure'
 jq -es 'length == 1 and .[0].type == "session"' "$broken.saved" >/dev/null ||

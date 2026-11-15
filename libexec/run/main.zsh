@@ -188,7 +188,7 @@ sf_run_main() {
   fi
   trap '(( SF_RUN[signal_status] )) || SF_RUN[signal_status]=143;
     sf_run_interrupt "$SF_RUN[signal_status]"; exit $SF_RUN[signal_status]' TERM
-  sf_run_limits || { sf_die "$REPLY"; return 1; }
+  sf_run_limits || { sf_die "$SF_ERROR"; return 1; }
   local session
   if [[ -n $requested_session ]]; then
     sf_session_select_path "$requested_session" || { sf_die "$SF_ERROR"; return 1; }

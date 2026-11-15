@@ -26,10 +26,10 @@ sf_run_limits() {
     SHELLFISH_MAX_CAPTURE_KB 32
     SHELLFISH_MAX_CONTENT_KB 5120
   )
-  sf_environment_settings "${(k)limits}" || { REPLY=$SF_ERROR; return 1; }
+  sf_environment_settings "${(k)limits}" || return
   for name in ${(k)limits}; do
     limits[$name]=${SF_ENVIRONMENT_SETTINGS[$name]:-$limits[$name]}
-    [[ $limits[$name] == <1-2147483647> ]] || { REPLY="$name must be a positive integer"; return 1; }
+    [[ $limits[$name] == <1-2147483647> ]] || { sf_fail "$name must be a positive integer"; return; }
   done
   SF_RUN[max_requests]=$(( limits[SHELLFISH_MAX_REQUESTS_PER_TURN] ))
   SF_RUN[max_tool_calls]=$(( limits[SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST] ))
@@ -38,18 +38,17 @@ sf_run_limits() {
 }
 
 sf_run_emit() {
-  (( ! SF_RUN[jsonl] )) || print -r -- "$1"
+  (( ! SF_RUN[jsonl] )) || print -r -- "$1" || sf_fail 'cannot emit turn event'
 }
 
 sf_run_append() {
   local session=$1 record=$2
-  (( ! SF_RUN[write_failed] )) || { REPLY='session writing has stopped'; return 1; }
+  (( ! SF_RUN[write_failed] )) || { sf_fail 'session writing has stopped'; return; }
   if ! sf_session_append "$session" "$record"; then
     SF_RUN[write_failed]=1
-    REPLY=$SF_ERROR
     return 1
   fi
-  sf_run_emit "$record" || { REPLY='cannot emit session record'; return 1; }
+  sf_run_emit "$record" || { sf_fail 'cannot emit session record'; return; }
 }
 
 typeset -gr SF_RUN_REDUCTIONS=$(<"$SF_ROOT/libexec/run/turn.jq")
@@ -69,7 +68,7 @@ sf_run_step() {
   local session=$1
   local body=${2:-'($log | session_records) as $r | step($r; $share; $home; $tools; $max_capture)'}
   sf_run_reduce "$body" --rawfile log "$session" ||
-    { REPLY="cannot read session: $session"; return 1; }
+    { sf_fail "cannot read session: $session"; return; }
   SF_RUN_STEP=( "${reply[@]}" )
 }
 
@@ -84,7 +83,7 @@ sf_run_settle() {
   ' --rawfile log "$session" --argjson active "${${SF_COMPONENT[values]:+true}:-false}" \
     --arg reason "$reason" --arg message "$message" \
     --jsonargs "${SF_PROVIDER_PARTIAL_EVENTS[@]}" ||
-    { REPLY='cannot settle the turn'; return 1; }
+    { sf_fail 'cannot settle the turn'; return; }
   for record in "${reply[@]}"; do
     sf_run_append "$session" "$record" || return
   done
@@ -94,7 +93,7 @@ sf_run_settle() {
 # Commands run at user_prompt_submit. Every component reads the profile config.
 sf_run_components() {
   local profile=$1
-  sf_profile_components "$profile" || { REPLY=$SF_ERROR; return 1; }
+  sf_profile_components "$profile" || return
   sf_jq_fields -cn --argjson components "$REPLY" --argjson profile "$profile" '
     include "lib/fields";
     ($components | to_entries[] | entry(.key; .value | tojson)),
@@ -103,7 +102,7 @@ sf_run_components() {
       [.hooks[].manifest.on] + if .commands == [] then [] else ["user_prompt_submit"] end |
       unique | join(" ")),
     ("ok" | field)
-  ' || { REPLY='cannot prepare components'; return 1; }
+  ' || { sf_fail 'cannot prepare components'; return; }
   SF_RUN+=( "${reply[@]}" )
 }
 
@@ -111,8 +110,8 @@ sf_run_open() {
   local session=$1
   integer catalog_ready=${2:-0}
   [[ $session == /* && -f $session && ! -L $session && -r $session ]] || {
-    REPLY="invalid session path: $session"
-    return 1
+    sf_fail "invalid session path: $session"
+    return
   }
   sf_run_step "$session" '($log | session_records) as $r | opened($r; $share; $home)' || return
   SF_RUN[profile]=$SF_RUN_STEP[profile]
@@ -193,7 +192,7 @@ sf_run_permission() {
   request=$(jq -c --argjson access "$SF_TOOL_PLAN[access]" \
     --arg reason "$SF_TOOL_PLAN[permission_reason]" \
     '.sandbox_access = $access + {reason:$reason}' <<<"$SF_TOOL_PLAN[request]") ||
-    { REPLY='cannot prepare permission request'; return 1; }
+    { sf_fail 'cannot prepare permission request'; return; }
   sf_run_emit "$(jq -cn --arg id "$permission_id" --arg name "$SF_TOOL_PLAN[name]" \
     --argjson input "$SF_TOOL_PLAN[execution_input]" --arg reason "$SF_TOOL_PLAN[permission_reason]" \
     --argjson access "$SF_TOOL_PLAN[access]" --argjson reviewing $reviewing \
@@ -206,7 +205,7 @@ sf_run_permission() {
           "$request" "$turn_state" "$SF_TOOL_PLAN[name]" "$SF_TOOL_PLAN[id]"; then
         review=( "${reply[@]}" )
       elif [[ -z $permission_decision && -z $permission_error ]]; then
-        (( ! SF_RUN[signal_status] && ! SF_RUN[write_failed] )) || permission_error=$SF_RUN_HOOK_ERROR
+        (( ! SF_RUN[signal_status] && ! SF_RUN[write_failed] )) || permission_error=$SF_ERROR
         review=( action '' reason 'Review failed; waiting for your decision.' )
       fi
       # An answer that arrived with the verdict still wins.
@@ -236,7 +235,7 @@ sf_run_permission() {
     sf_run_emit "$(jq -cn --arg id "$permission_id" '{type:"_tool_permission_end",id:$id}')" ||
       permission_error='cannot end permission request'
   }
-  [[ -z $permission_error ]] || { REPLY=$permission_error; return 1; }
+  [[ -z $permission_error ]] || { sf_fail "$permission_error"; return; }
   reply=( "$permission_decision" "$permission_reason" )
 }
 
@@ -258,7 +257,7 @@ sf_run_access_prepare() {
       paths+=( ${entry:A} )
     done
     access=$(jq -c --arg kind $kind '.[$kind] = $ARGS.positional' \
-      --args "${paths[@]}" <<<"$access") || { REPLY='cannot resolve sandbox access'; return 1; }
+      --args "${paths[@]}" <<<"$access") || { sf_fail 'cannot resolve sandbox access'; return; }
   done
   SF_TOOL_PLAN[access]=$(jq -c --argjson profile "$SF_RUN[profile]" \
       --arg name "$SF_TOOL_PLAN[name]" --arg cwd "$SF_RUN[cwd]" '
@@ -276,7 +275,7 @@ sf_run_access_prepare() {
     .write |= map(select(covered($grants.write) | not)) |
     .domains |= map(. as $target | select(any($grants.domains[]; . as $grant |
       . == "*" or . == $target or (startswith("*.") and ($target | endswith($grant[1:])))) | not))
-  ' <<<"$access") || { REPLY='cannot inspect sandbox access'; return 1; }
+  ' <<<"$access") || { sf_fail 'cannot inspect sandbox access'; return; }
   if jq -e 'all(.[]; length == 0)' <<<"$SF_TOOL_PLAN[access]" >/dev/null; then
     SF_TOOL_PLAN[access_status]=covered
   fi
@@ -289,17 +288,17 @@ sf_run_access_grant() {
     .filesystem.allowRead = ((.filesystem.allowRead // []) + $access.read | unique) |
     .filesystem.allowWrite = ((.filesystem.allowWrite // []) + $access.write | unique) |
     .network.allowedDomains = ((.network.allowedDomains // []) + $access.domains | unique)
-  ' <<<"$SF_TOOL_PLAN[policy]") || { REPLY='cannot resolve sandbox access'; return 1; }
+  ' <<<"$SF_TOOL_PLAN[policy]") || { sf_fail 'cannot resolve sandbox access'; return; }
   [[ $keep == true ]] || return 0
   config=$(jq -c --arg name "$SF_TOOL_PLAN[name]" --argjson policy "$SF_TOOL_PLAN[policy]" \
       --argjson model "$SF_RUN[model]" '
     .sandbox.tools[$name] = $policy |
     {profile:., model:$model}
-  ' <<<"$SF_RUN[profile]") || { REPLY='cannot keep sandbox access'; return 1; }
-  sf_session_update "$session" "$config" || { REPLY=$SF_ERROR; return 1; }
+  ' <<<"$SF_RUN[profile]") || { sf_fail 'cannot keep sandbox access'; return; }
+  sf_session_update "$session" "$config" || return
   SF_RUN[profile]=$(jq -c .profile <<<"$config")
   sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" ||
-    { REPLY='cannot emit session update'; return 1; }
+    { sf_fail 'cannot emit session update'; return; }
 }
 
 # Settle authorization before changing execution mode. reply is (authorization,
@@ -319,14 +318,14 @@ sf_run_authorize() {
     authorization=allowed_session
   else
     sf_run_component_draft "$SF_TOOL_PLAN[component]" ||
-      { REPLY='cannot emit tool draft'; return 1; }
+      { sf_fail 'cannot emit tool draft'; return; }
     sf_run_permission "$session" "$turn_state" || return 1
     action=$reply[1]
     if [[ $action == deny ]]; then
       authorization=denied
       sf_run_tool_refused "$reply[2]" 126
       outcome=$(jq -c '.output.stdout |= "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: \(.)\n</sandbox_notice>"' <<<"$REPLY") ||
-        { REPLY='cannot decode tool result'; return 1; }
+        { sf_fail 'cannot decode tool result'; return; }
     else
       authorization=allowed
       if [[ $(jq -r '.unrestricted // false' <<<"$SF_TOOL_PLAN[access]") == true ]]; then
@@ -342,7 +341,7 @@ sf_run_authorize() {
   SF_TOOL_PLAN[component]=$(jq -c --arg authorization "$authorization" '
     .draft.sandbox_access = ({allowed:"approved",allowed_session:"session",denied:"denied"}[$authorization])
   ' <<<"$SF_TOOL_PLAN[component]") ||
-    { REPLY='cannot settle sandbox access request'; return 1; }
+    { sf_fail 'cannot settle sandbox access request'; return; }
   reply=( "$authorization" "$outcome" )
 }
 
@@ -363,7 +362,7 @@ sf_run_turn() {
   integer begun=0 run_status catalog_ready=${4:-0}
 
   {
-    sf_run_open "$session" $catalog_ready || { print -r -u2 -- "$REPLY"; return 1; }
+    sf_run_open "$session" $catalog_ready || { print -r -u2 -- "$SF_ERROR"; return 1; }
     begun=1
     [[ -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
       failure="session working directory is unavailable: $SF_RUN[cwd]"
@@ -376,7 +375,7 @@ sf_run_turn() {
       if sf_run_hooks "$session" user_prompt_submit "$prompt" "$turn_state"; then
         hook_result=( "${reply[@]}" )
       else
-        failure=$SF_RUN_HOOK_ERROR
+        failure=$SF_ERROR
       fi
     fi
     if [[ -z $failure ]]; then
@@ -389,8 +388,11 @@ sf_run_turn() {
           ;;
         session_update)
           config=$(jq -cn --argjson profile "$hook_result[payload]" \
-            --argjson model "$SF_RUN[model]" '{profile:$profile,model:$model}') &&
-            sf_session_update "$session" "$config" || failure=${SF_ERROR:-invalid session update}
+            --argjson model "$SF_RUN[model]" '{profile:$profile,model:$model}') ||
+            failure='invalid session update'
+          if [[ -z $failure ]]; then
+            sf_session_update "$session" "$config" || failure=$SF_ERROR
+          fi
           if [[ -z $failure ]]; then
             sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" && return 0
             failure='cannot emit session update'
@@ -400,10 +402,10 @@ sf_run_turn() {
       esac
     fi
     if [[ -z $failure ]]; then
-      sf_run_append "$session" "$user_record" || failure=$REPLY
+      sf_run_append "$session" "$user_record" || failure=$SF_ERROR
     fi
     while [[ -z $failure ]] && (( ! SF_RUN[signal_status] )); do
-      sf_run_step "$session" || { failure=$REPLY; break; }
+      sf_run_step "$session" || { failure=$SF_ERROR; break; }
       case $SF_RUN_STEP[next] in
         request)
           if (( SF_RUN_STEP[requests] >= SF_RUN[max_requests] )); then
@@ -436,7 +438,7 @@ sf_run_turn() {
             sf_run_status $run_status "$SF_ERROR"
             break
           }
-          sf_run_append "$session" "$REPLY" || { failure=$REPLY; break; }
+          sf_run_append "$session" "$REPLY" || { failure=$SF_ERROR; break; }
           ;;
         tool)
           SF_TOOL_PLAN=( "${(@kv)SF_RUN_STEP}" )
@@ -447,7 +449,7 @@ sf_run_turn() {
             outcome=$REPLY
           else
             sf_run_hooks "$session" pre_tool_use "$SF_TOOL_PLAN[request]" \
-              "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
+              "$turn_state" "$name" "$id" || { failure=$SF_ERROR; break; }
             hook_result=( "${reply[@]}" )
             if [[ $hook_result[action] == deny ]]; then
               sf_run_tool_refused "${hook_result[reason]:-tool call denied by pre_tool_use hook}" 126
@@ -456,7 +458,7 @@ sf_run_turn() {
               sf_run_tool_refused "tool is not allowed: $name" 127
               outcome=$REPLY
             else
-              sf_run_authorize "$session" "$turn_state" || { failure=$REPLY; break; }
+              sf_run_authorize "$session" "$turn_state" || { failure=$SF_ERROR; break; }
               authorization=$reply[1]
               if [[ $authorization == denied ]]; then
                 outcome=$reply[2]
@@ -467,7 +469,7 @@ sf_run_turn() {
               fi
               if [[ -z $outcome ]]; then
                 sf_run_tool_execute "$session" ||
-                  { sf_run_status $? "${SF_RUN_TOOL_ERROR:-cannot execute tool}"; break; }
+                  { sf_run_status $? "$SF_ERROR"; break; }
                 outcome=$REPLY
                 if [[ $authorization == allowed_session ]]; then
                   outcome=$(jq -c '.output.stdout += "\n<sandbox_notice>This access is granted for the rest of this session. Later calls of this tool have it without asking. Do not request it again.</sandbox_notice>"' <<<"$outcome") ||
@@ -476,18 +478,18 @@ sf_run_turn() {
               fi
             fi
           fi
-          sf_run_tool_complete "$outcome" || { failure=$SF_RUN_TOOL_ERROR; break; }
+          sf_run_tool_complete "$outcome" || { failure=$SF_ERROR; break; }
           completed=( "${reply[@]}" )
-          sf_run_append "$session" "$completed[result]" || { failure=$REPLY; break; }
+          sf_run_append "$session" "$completed[result]" || { failure=$SF_ERROR; break; }
           # The call is settled, so an interruption from here on cancels the next one.
           SF_COMPONENT=()
           sf_run_hooks "$session" post_tool_use "$completed[post_request]" \
-            "$turn_state" "$name" "$id" || { failure=$SF_RUN_HOOK_ERROR; break; }
+            "$turn_state" "$name" "$id" || { failure=$SF_ERROR; break; }
           ;;
         user)
           # The latest response called no tools, so stop hooks may continue it.
           sf_run_hooks "$session" stop "$SF_RUN_STEP[text]" "$turn_state" \
-            "$SF_RUN_STEP[requests]" || { failure=$SF_RUN_HOOK_ERROR; break; }
+            "$SF_RUN_STEP[requests]" || { failure=$SF_ERROR; break; }
           hook_result=( "${reply[@]}" )
           [[ $hook_result[action] != deny ]] || continue
           SF_RUN[answer]=$SF_RUN_STEP[text]

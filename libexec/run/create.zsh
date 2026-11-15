@@ -50,7 +50,7 @@ sf_run_create() {
   fi
   SF_RUN[profile]=$(jq -c '.profile' <<<"$config") &&
     SF_RUN[model]=$(jq -c '.model' <<<"$config") || { sf_die 'cannot read configuration'; return 1; }
-  sf_run_components "$SF_RUN[profile]" || { sf_die "$REPLY"; return 1; }
+  sf_run_components "$SF_RUN[profile]" || { sf_die "$SF_ERROR"; return 1; }
   # Grants are inert for tools whose manifest disables sandboxing.
   REPLY=$(jq -rn --argjson profile "$SF_RUN[profile]" --argjson tools "$SF_RUN[tools]" '
     [$tools[] | select(.manifest.sandbox | not) | .name] as $open |
@@ -89,7 +89,7 @@ sf_run_create() {
   fi
   sf_run_hooks "$session" session_start '' '' || {
     (( ! SF_RUN[signal_status] )) || return $SF_RUN[signal_status]
-    sf_die "$SF_RUN_HOOK_ERROR"
+    sf_die "$SF_ERROR"
     return 1
   }
   REPLY=$session

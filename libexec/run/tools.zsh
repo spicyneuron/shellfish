@@ -6,8 +6,6 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 (( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_run_component_execute] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
-typeset -g SF_RUN_TOOL_ERROR=''
-
 # The call being executed, as the turn's step planned it.
 typeset -gA SF_TOOL_PLAN=()
 
@@ -40,13 +38,9 @@ sf_run_tool_execute() {
   integer max_capture=$SF_TOOL_PLAN[max_capture] max_content=$SF_RUN[max_content]
   integer content_bytes=0
 
-  SF_RUN_TOOL_ERROR=''
-  sf_environment_load "$selected" || {
-    SF_RUN_TOOL_ERROR=$SF_ERROR
-    return 1
-  }
+  sf_environment_load "$selected" || return
   config_dir=$REPLY
-  [[ -d $temp_dir ]] || { SF_RUN_TOOL_ERROR='temporary directory is unavailable'; return 1; }
+  [[ -d $temp_dir ]] || { sf_fail 'temporary directory is unavailable'; return; }
   temp_dir=${temp_dir:A}
   if [[ $OSTYPE == darwin* && -x /usr/bin/getconf ]]; then
     darwin_temp=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null) || darwin_temp=''
@@ -56,17 +50,17 @@ sf_run_tool_execute() {
       darwin_temp=''
     fi
   fi
-  sf_scratch tool-input || { SF_RUN_TOOL_ERROR='cannot prepare tool input'; return 1; }
+  sf_scratch tool-input || { sf_fail 'cannot prepare tool input'; return; }
   stdin=$REPLY
   print -r -- "$execution_input" >"$stdin" || {
     rm -f -- "$stdin"
-    SF_RUN_TOOL_ERROR='cannot prepare tool input'
-    return 1
+    sf_fail 'cannot prepare tool input'
+    return
   }
   sf_scratch -d tool || {
     rm -f -- "$stdin"
-    SF_RUN_TOOL_ERROR='cannot prepare tool capture'
-    return 1
+    sf_fail 'cannot prepare tool capture'
+    return
   }
   capture=$REPLY
   {
@@ -89,7 +83,7 @@ sf_run_tool_execute() {
       .filesystem.allowRead = ((.filesystem.allowRead // []) + [$library]) |
       if $replace then . else .extends=$base end
     ' <<<"$override" >"$capture.fence.json" || {
-        SF_RUN_TOOL_ERROR='cannot prepare sandbox policy'; return 1
+        sf_fail 'cannot prepare sandbox policy'; return
       }
     policy=$capture.fence.json
     sandbox_arguments=( --monitor --fence-log-file "$capture/sandbox.log"
@@ -106,25 +100,25 @@ sf_run_tool_execute() {
   fi
   sf_run_component_begin "$session" "$SF_TOOL_PLAN[component]"
   sf_run_component_draft "$SF_TOOL_PLAN[component]" || {
-    SF_RUN_TOOL_ERROR='cannot emit tool draft'
-    return 1
+    sf_fail 'cannot emit tool draft'
+    return
   }
   sf_run_component_execute "$capture" "${cwd:A}" "${stdin:A}" "$max_capture" "$max_content" \
-    sf_run_tool_line "${process_command[@]}" || { SF_RUN_TOOL_ERROR=$REPLY; return 1; }
+    sf_run_tool_line "${process_command[@]}" || return
   # Only a completed call can overflow, so interruption and invalid data win.
   [[ $reply[1] != ok ]] || (( content_bytes <= max_content )) || reply[1]=overflow
   case $reply[1] in
     (interrupted) return $reply[2] ;;
-    (invalid) SF_RUN_TOOL_ERROR='tool returned invalid control data'; return 1 ;;
+    (invalid) sf_fail 'tool returned invalid control data'; return ;;
     (overflow) sf_run_tool_refused 'tool result exceeds content limit' 1 true; return ;;
   esac
   if (( $#content )); then
     REPLY=$(print -rl -- "$REPLY" "${content[@]}" | jq -cs '.[0] + {content:.[1:]}') ||
-      { SF_RUN_TOOL_ERROR='cannot decode tool content'; return 1; }
+      { sf_fail 'cannot decode tool content'; return; }
   fi
   if (( reply[2] )) && grep -qs $'✗' "$capture/sandbox.log"; then
     REPLY=$(jq -c '.output.stdout += "\n<sandbox_notice>A denial was detected during this tool call. This does not necessarily mean the tool failed. If the call needs more access, retry it with request_sandbox_access.</sandbox_notice>"' <<<"$REPLY") ||
-      { SF_RUN_TOOL_ERROR='cannot decode tool result'; return 1; }
+      { sf_fail 'cannot decode tool result'; return; }
   fi
   } always {
     rm -rf -- "$capture"
@@ -140,5 +134,5 @@ sf_run_tool_complete() {
     entry("post_request"; $request + {tool_response:$outcome.output} | tojson)
   ' --argjson component "$SF_TOOL_PLAN[component]" \
     --argjson request "$SF_TOOL_PLAN[request]" <<<"$1" ||
-    { SF_RUN_TOOL_ERROR="cannot finish tool result: $SF_TOOL_PLAN[name]"; return 1; }
+    { sf_fail "cannot finish tool result: $SF_TOOL_PLAN[name]"; return; }
 }

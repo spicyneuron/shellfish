@@ -41,7 +41,7 @@ sf_run_component_line() {
   line=( "${reply[@]}" )
   for record in ${(f)line[state_updates]}; do
     sf_run_append "$SF_COMPONENT[session]" "$record" ||
-      { SF_COMPONENT[error]=$REPLY; return 1; }
+      { SF_COMPONENT[error]=$SF_ERROR; return 1; }
   done
   REPLY=$line[rest]
 }
@@ -64,14 +64,13 @@ sf_run_component_content() {
 # Run a prepared command into CAPTURE, streaming fd 3 lines of at most
 # MAX_CONTROL bytes to the supplied handler. reply is (status exit_code) with
 # status ok, interrupted, cancelled, invalid, or overflow; ok leaves the outcome in
-# REPLY. Failure leaves a message in REPLY.
+# REPLY. Failure leaves a message in SF_ERROR.
 sf_run_component_execute() {
   local -a watch=()
   if [[ $1 == --poll ]]; then watch=( "$1" "$2" ); shift 2; fi
   local capture=$1 limit=$4 max_control=$5 state=ok
   local -A process
-  sf_process_run "${watch[@]}" "$@" ||
-    { REPLY=$SF_ERROR; return 1; }
+  sf_process_run "${watch[@]}" "$@" || return
   process=( "${reply[@]}" )
   if (( process[interrupted] )); then
     state=interrupted
@@ -80,8 +79,8 @@ sf_run_component_execute() {
   elif [[ $SF_COMPONENT[error] == invalid ]]; then
     state=invalid
   elif [[ -n $SF_COMPONENT[error] ]]; then
-    REPLY=$SF_COMPONENT[error]
-    return 1
+    sf_fail "$SF_COMPONENT[error]"
+    return
   elif (( process[control_bytes] > max_control )); then
     state=overflow
   else
@@ -90,7 +89,7 @@ sf_run_component_execute() {
       REPLY=$(jq -cn --rawfile stdout "$capture/stdout.bounded" \
         --rawfile stderr "$capture/stderr.bounded" --argjson exit_code "$process[exit_code]" '
         {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},ran:true}') ||
-      { REPLY='cannot capture component output'; return 1; }
+      { sf_fail 'cannot capture component output'; return; }
   fi
   reply=( $state $process[exit_code] )
 }

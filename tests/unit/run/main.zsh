@@ -318,4 +318,14 @@ print -r -- prompt | zsh -f "$entry" run --session-create \
   >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'session creation accepted a prompt on stdin'
 
+if SHELLFISH_MAX_REQUESTS_PER_TURN=bad \
+    SF_TEST_PROVIDER_REQUEST="$tmp/invalid-limit-request" \
+    zsh -f "$entry" run --session "$stream_session" prompt \
+    >/dev/null 2>"$tmp/invalid-limit.err"; then
+  fail 'invalid request limit succeeded'
+fi
+assert_equal 'shellfish: SHELLFISH_MAX_REQUESTS_PER_TURN must be a positive integer' \
+  "$(<"$tmp/invalid-limit.err")"
+[[ ! -e $tmp/invalid-limit-request ]] || fail 'invalid request limit invoked the provider'
+
 print -r -- 'ok'
