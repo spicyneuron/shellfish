@@ -191,7 +191,7 @@ sf_run_main() {
   sf_run_limits || { sf_die "$REPLY"; return 1; }
   local session
   if [[ -n $requested_session ]]; then
-    sf_session_select_path "$requested_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+    sf_session_select_path "$requested_session" || { sf_die "$SF_ERROR"; return 1; }
     session=$REPLY
     [[ -s $session ]] || { sf_die "no session at $session"; return 1; }
   else

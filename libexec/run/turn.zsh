@@ -46,7 +46,7 @@ sf_run_append() {
   (( ! SF_RUN[write_failed] )) || { REPLY='session writing has stopped'; return 1; }
   if ! sf_session_append "$session" "$record"; then
     SF_RUN[write_failed]=1
-    REPLY=$SF_SESSION_ERROR
+    REPLY=$SF_ERROR
     return 1
   fi
   sf_run_emit "$record" || { REPLY='cannot emit session record'; return 1; }
@@ -296,7 +296,7 @@ sf_run_access_grant() {
     .sandbox.tools[$name] = $policy |
     {profile:., model:$model}
   ' <<<"$SF_RUN[profile]") || { REPLY='cannot keep sandbox access'; return 1; }
-  sf_session_update "$session" "$config" || { REPLY=$SF_SESSION_ERROR; return 1; }
+  sf_session_update "$session" "$config" || { REPLY=$SF_ERROR; return 1; }
   SF_RUN[profile]=$(jq -c .profile <<<"$config")
   sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" ||
     { REPLY='cannot emit session update'; return 1; }
@@ -390,7 +390,7 @@ sf_run_turn() {
         session_update)
           config=$(jq -cn --argjson profile "$hook_result[payload]" \
             --argjson model "$SF_RUN[model]" '{profile:$profile,model:$model}') &&
-            sf_session_update "$session" "$config" || failure=${SF_SESSION_ERROR:-invalid session update}
+            sf_session_update "$session" "$config" || failure=${SF_ERROR:-invalid session update}
           if [[ -z $failure ]]; then
             sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" && return 0
             failure='cannot emit session update'
@@ -424,7 +424,7 @@ sf_run_turn() {
               failure='cannot update model context window'
               break
             }
-            sf_session_update "$session" "$config" || { failure=$SF_SESSION_ERROR; break; }
+            sf_session_update "$session" "$config" || { failure=$SF_ERROR; break; }
             sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" || {
               failure='cannot emit session update'
               break

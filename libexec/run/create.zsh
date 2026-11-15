@@ -37,8 +37,8 @@ sf_run_create() {
       sf_die 'profile overrides cannot be used with --session-from'
       return 2
     }
-    sf_session_select_path "$source_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
-    sf_session_read_config "$REPLY" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+    sf_session_select_path "$source_session" || { sf_die "$SF_ERROR"; return 1; }
+    sf_session_read_config "$REPLY" || { sf_die "$SF_ERROR"; return 1; }
     config=$REPLY
   else
     sf_profile_resolve_args "${forwarded[@]}" || {
@@ -57,7 +57,7 @@ sf_run_create() {
     first($profile.sandbox.tools | keys[] | select(IN($open[])))
   ') || { sf_die 'cannot read configuration'; return 1; }
   [[ -z $REPLY ]] || { sf_die "sandbox grants name an unsandboxed tool: $REPLY"; return 1; }
-  sf_session_select_path "$requested_out" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+  sf_session_select_path "$requested_out" || { sf_die "$SF_ERROR"; return 1; }
   session=$REPLY
   cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
     sf_die 'cannot prepare session header'

@@ -11,12 +11,11 @@ sf_resume_find() {
   local -a candidates headers readable fields
   local -A header_by_file
   integer decoded=0 index
-  SF_SESSION_ERROR=''
   SF_RESUME_MATCHES=()
   sf_session_directory || return
   directory=$REPLY
   cwd=$(pwd -P) || {
-    sf_session_fail 'cannot resolve the working directory'
+    sf_fail 'cannot resolve the working directory'
     return
   }
   candidates=( $directory/*.jsonl(N.om) )
@@ -59,9 +58,9 @@ sf_resume_find() {
       ' "${candidates[@]}" 2>/dev/null)
     (( decoded )) || {
       SF_RESUME_MATCHES=()
-      sf_session_fail "cannot inspect sessions in $directory"
+      sf_fail "cannot inspect sessions in $directory"
       return
     }
   fi
-  (( ${#SF_RESUME_MATCHES} )) || sf_session_fail "no sessions match $cwd"
+  (( ${#SF_RESUME_MATCHES} )) || sf_fail "no sessions match $cwd"
 }

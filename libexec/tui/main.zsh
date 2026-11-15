@@ -97,7 +97,7 @@ sf_tui_main() {
     }
     source "$SF_ROOT/lib/session.zsh"
     sf_session_select_path "$requested_session" || {
-      sf_die "$SF_SESSION_ERROR"
+      sf_die "$SF_ERROR"
       return 1
     }
     session=$REPLY
