@@ -113,10 +113,70 @@ mkdir -p "$tmp/folder"
 assert_equal 'write_file: folder is a directory' \
   "$(run_tool write_file '{"file_path":"folder","content":"x"}' || true)"
 
+# Empty files and trailing newlines survive creation and replacement.
+assert_equal '' "$(run_tool write_file '{"file_path":"new-empty.txt","content":""}')"
+[[ -f $tmp/new-empty.txt && ! -s $tmp/new-empty.txt ]]
+assert_equal 'write_file: new-empty.txt is already up to date' \
+  "$(run_tool write_file '{"file_path":"new-empty.txt","content":""}')"
+run_tool write_file '{"file_path":"nested/parent/file.txt","content":"one\n\n"}' >/dev/null
+printf 'one\n\n' >"$tmp/expected"
+cmp -s "$tmp/expected" "$tmp/nested/parent/file.txt"
+run_tool edit_file '{"file_path":"nested/parent/file.txt","old_string":"one","new_string":"two"}' >/dev/null
+printf 'two\n\n' >"$tmp/expected"
+cmp -s "$tmp/expected" "$tmp/nested/parent/file.txt"
+
+# A rejected binary target is unchanged by either tool.
+cp "$tmp/blob.bin" "$tmp/before.bin"
+typeset tool input
+integer exit_code
+for tool in edit_file write_file; do
+  if [[ $tool == edit_file ]]; then
+    input='{"file_path":"blob.bin","old_string":"GIF","new_string":"x"}'
+  else
+    input='{"file_path":"blob.bin","content":"x"}'
+  fi
+  exit_code=0
+  output=$(run_tool "$tool" "$input") || exit_code=$?
+  assert_equal 2 "$exit_code"
+  assert_equal "$tool: blob.bin is not a text file" "$output"
+  cmp -s "$tmp/before.bin" "$tmp/blob.bin"
+done
+
+# Diff failures retain the write but clean up its temporary files.
+mkdir "$tmp/fail-bin" "$tmp/scratch"
+printf '#!/bin/sh\nexit 2\n' >"$tmp/fail-bin/diff"
+chmod +x "$tmp/fail-bin/diff"
+for tool in edit_file write_file; do
+  print -rn -- old >"$tmp/fail.txt"
+  if [[ $tool == edit_file ]]; then
+    input='{"file_path":"fail.txt","old_string":"old","new_string":"new"}'
+  else
+    input='{"file_path":"fail.txt","content":"new"}'
+  fi
+  exit_code=0
+  output=$(PATH="$tmp/fail-bin:$PATH" TMPDIR="$tmp/scratch" run_tool "$tool" "$input") || exit_code=$?
+  assert_equal 2 "$exit_code"
+  assert_equal "$tool: cannot render diff for fail.txt" "$output"
+  assert_equal new "$(<"$tmp/fail.txt")"
+  [[ -z $(find "$tmp/scratch" -mindepth 1 -print -quit) ]] || fail "$tool leaked temporary files"
+done
+
 # File changes show their complete diff.
+sf_test_frozen_profile
+mkdir "$tmp/copied"
+cp "$tools/base.fence.jsonc" "$tmp/copied/"
 for tool in edit_file write_file; do
   jq -e '.user_preview_lines == "full"' "$tools/$tool/manifest.json" >/dev/null ||
     fail "$tool lost its full preview"
+  cp -R "$tools/$tool" "$tmp/copied/"
+  SF_TEST_PROFILE=$(jq -c --arg tool "$tmp/copied/$tool" \
+    '.tools=[$tool] | .sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
+  sf_test_session "$tmp/$tool.jsonl"
+  SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_TOOL_BYPASS=false \
+    sf_test_run "${tool%_file}" "$tmp/$tool.jsonl" >"$tmp/$tool.stream"
+  jq -eRn '[inputs | fromjson | select(.type == "tool_result")] |
+    length == 1 and .[0].exit_code == 0 and (.[0].model_text | startswith("@@"))' \
+    <"$tmp/$tool.stream" >/dev/null || fail "copied sandboxed $tool failed"
 done
 
 # Every bundled tool runs, and a sandboxed one carries its own policy.
