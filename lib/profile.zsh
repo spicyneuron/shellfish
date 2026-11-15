@@ -229,7 +229,7 @@ sf_profile_resolve() {
     entry("profile"; tojson),
     entry("models"; .model | tojson),
     ("ok" | field)
-  ' || { sf_profile_validation_error "$REPLY" 'invalid configuration'; return; }
+  ' || { sf_profile_validation_error "$SF_ERROR" 'invalid configuration'; return; }
   decoded=( "${reply[@]}" )
   profile=$decoded[profile]
   if [[ $decoded[models] == '["default"]' ]] &&
@@ -250,7 +250,7 @@ sf_profile_resolve() {
         map(join(" ")) | join("\n")),
       ("ok" | field)
   ' || {
-    sf_profile_validation_error "$REPLY" 'invalid configuration'
+    sf_profile_validation_error "$SF_ERROR" 'invalid configuration'
     return
   }
   decoded=( "${reply[@]}" )

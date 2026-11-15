@@ -3,6 +3,15 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/profile.zsh lib/environment.zsh lib/session.zsh
 
+SF_ERROR='earlier failure'
+sf_jq_fields -n '"value\u0000ok\u0000"'
+assert_equal value "$reply[1]"
+assert_equal 'earlier failure' "$SF_ERROR"
+if sf_jq_fields -n 'error("projection failed")'; then fail 'invalid projection succeeded'; fi
+[[ $SF_ERROR == *'projection failed'* ]] || fail 'projection omitted its diagnostic'
+if sf_jq_fields -n '"partial\u0000"'; then fail 'incomplete projection succeeded'; fi
+[[ $SF_ERROR == *partial* ]] || fail 'incomplete projection omitted its diagnostic'
+
 typeset profile tool_name
 typeset -r fixture_provider="$ROOT/tests/fixtures/provider"
 sf_test_tmp profile
