@@ -62,9 +62,10 @@ sf_run_component_content() {
 }
 
 # Run a prepared command into CAPTURE, streaming fd 3 lines of at most
-# MAX_CONTROL bytes to the supplied handler. reply is (status exit_code) with
-# status ok, interrupted, cancelled, invalid, or overflow; ok leaves the outcome in
-# REPLY. Failure leaves a message in SF_ERROR.
+# MAX_CONTROL bytes to the supplied handler. reply is (status code), with the
+# signal status when interrupted and the child exit status otherwise. Status is
+# ok, interrupted, cancelled, invalid, or overflow; ok leaves the outcome in REPLY.
+# Failure leaves a message in SF_ERROR.
 sf_run_component_execute() {
   local -a watch=()
   if [[ $1 == --poll ]]; then watch=( "$1" "$2" ); shift 2; fi
@@ -73,7 +74,8 @@ sf_run_component_execute() {
   sf_process_run "${watch[@]}" "$@" || return
   process=( "${reply[@]}" )
   if (( process[interrupted] )); then
-    state=interrupted
+    reply=( interrupted $process[interrupted] )
+    return 0
   elif (( process[cancelled] )); then
     state=cancelled
   elif [[ $SF_COMPONENT[error] == invalid ]]; then

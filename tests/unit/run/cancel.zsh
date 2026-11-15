@@ -84,4 +84,31 @@ jq -eRn '
 ' <"$recovered_stream" >/dev/null || fail 'recovery did not settle through the tool owner'
 assert_canonical_session "$recovered"
 
+# TERM during capture must win over an already-written child exit status.
+(
+  sf_test_source libexec/run/component.zsh
+  interrupt_after_exit() {
+    integer polls=0
+    while kill -0 "$1" 2>/dev/null && (( polls++ < 100 )); do sleep 0.01; done
+    ! kill -0 "$1" 2>/dev/null || fail 'isolation wrapper did not exit'
+    kill -TERM $sysparams[pid]
+  }
+  integer code
+  for code in 0 130; do
+    mkdir "$tmp/late-$code"
+    sf_run_component_begin "$recovered" '{}'
+    sf_run_component_execute "$tmp/late-$code" "$tmp" /dev/null 128 128 \
+      interrupt_after_exit zsh -f -c 'print -r -u3 -- "$PPID"; exit "$1"' -- "$code" ||
+      fail "$SF_ERROR"
+    assert_equal interrupted "$reply[1]"
+    assert_equal 143 "$reply[2]"
+  done
+  mkdir "$tmp/exit-130"
+  sf_run_component_begin "$recovered" '{}'
+  sf_run_component_execute "$tmp/exit-130" "$tmp" /dev/null 128 128 : \
+    zsh -f -c 'exit 130' || fail "$SF_ERROR"
+  assert_equal ok "$reply[1]"
+  assert_equal 130 "$reply[2]"
+)
+
 print -r -- ok
