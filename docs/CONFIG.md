@@ -76,6 +76,14 @@ Sending now waits for cancellation to settle before starting the new turn. The r
 
 Clipboard images use `wl-paste` or `xclip` on Linux and shrink to at most 2000 pixels on the long edge when ImageMagick or `sips` is present. Sending a prompt attaches each marker's PNG, JPEG, GIF, or WebP file.
 
+### Conversation sections
+
+Numbered headings identify conversation sections, not display positions. Each accepted prompt starts a user section. The responses and tool activity answering it share an agent section, whose heading appears only on its first visible piece. Command and hook notices do not create numbered targets of their own.
+
+Use `/copy N` to copy a numbered section. `/fork N` and `/rewind N` restore the point before a user section, with its prompt as an editable draft, or the point after an agent section. Without a target, `/copy` selects the latest section with copyable text, `/fork` keeps the current history, and `/rewind` restores the last prompt.
+
+IDs are local to a session and never renumbered. Forks and compaction preserve IDs on retained sections. Rewind does not reuse removed IDs. A compaction summary gets fresh IDs, so headings may have gaps or appear out of numeric order. Removed targets are unavailable rather than redirected to different content.
+
 ## Rendering
 
 `tui.jsonc` merges over [`share/tui.jsonc`](../share/tui.jsonc) and is read on every run, so a reopened session renders with current settings.

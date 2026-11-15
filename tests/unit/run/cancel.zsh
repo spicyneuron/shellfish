@@ -36,7 +36,7 @@ jq -eRn --arg command "$command" '
       {id:"call_2",input:{command:$command},exit_code:126,
        model_text:"tool call cancelled"}
     ] and
-  $events[-1] == {type:"error",user_text:"Turn interrupted."}
+  $events[-1] == {type:"error",section:2,user_text:"Turn interrupted."}
 ' <"$stream" >/dev/null || fail 'tool interruption did not settle pending calls'
 assert_canonical_session "$session"
 
@@ -68,8 +68,8 @@ assert_canonical_session "$session"
 # Opening a session whose turn never finished settles its calls the same way.
 typeset recovered="$tmp/recovered.jsonl" recovered_stream="$tmp/recovered.stream"
 sf_test_session "$recovered"
-jq -cn '{type:"user",content:[{type:"text",text:"interrupted"}]}' >>"$recovered"
-jq -cn '{type:"assistant",stop:"tool_calls",
+jq -cn '{type:"user",section:1,content:[{type:"text",text:"interrupted"}]}' >>"$recovered"
+jq -cn '{type:"assistant",section:2,stop:"tool_calls",
   content:[{type:"tool_call",id:"call_1",name:"shell",input:{command:"true"}}]}' >>"$recovered"
 jq -cn '{type:"user",content:[{type:"text",text:"next"}]}' |
   "$ROOT/bin/shellfish" run --jsonl --session "$recovered" >"$recovered_stream" ||
@@ -78,7 +78,7 @@ jq -eRn '
   [inputs | fromjson] as $events |
   ($events[0] | .type == "tool_result" and .id == "call_1" and .exit_code == 126 and
     (has("executable") | not) and .model_text == "tool call outcome unknown") and
-  ($events[1] == {type:"error",user_text:"Turn interrupted."})
+  ($events[1] == {type:"error",section:2,user_text:"Turn interrupted."})
 ' <"$recovered_stream" >/dev/null || fail 'recovery did not settle through the tool owner'
 assert_canonical_session "$recovered"
 
@@ -155,11 +155,12 @@ for sig in (signal.SIGINT, signal.SIGUSR1, signal.SIGHUP, signal.SIGTERM):
             "session", "user", "assistant", "tool_result", "tool_result", "tool_result", "error"
         ], (sig, records, error)
         results = records[3:6]
+        assert all(r["section"] == 2 for r in results)
         assert [(r["id"], r["exit_code"]) for r in results] == [
-            ("call_1", 126), ("call_2", 126), ("call_3", 126)]
+            ("call_1", 126), ("call_2", 126), ("call_3", 126)], (sig, results, error)
         assert [r.get("sandbox_access") for r in results] == ["cancelled", None, None]
         assert all(r["model_text"] == "tool call cancelled" for r in results)
-        assert records[-1] == {"type": "error", "user_text":
+        assert records[-1] == {"type": "error", "section": 2, "user_text":
                                "Cancelled." if code == 130 else "Turn interrupted."}
         assert records[1:] == [e for e in events if not e["type"].startswith("_")]
         assert not marker.exists(), "cancelled permission ran a tool"

@@ -7,7 +7,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 # render fresh on every draw and commit only when they settle.
 
 typeset -g SF_TUI_LIVE_KIND='' SF_TUI_LIVE_TEXT=''
-typeset -g SF_TUI_LIVE_ROLE='' SF_TUI_LIVE_PRIOR='' SF_TUI_LIVE_SECTION=''
+typeset -g SF_TUI_LIVE_ROLE='' SF_TUI_LIVE_PRIOR='' SF_TUI_LIVE_SECTION='' SF_TUI_LIVE_PRIOR_SECTION=''
 typeset -g SF_TUI_LIVE_ID='' SF_TUI_LIVE_CLASS=''
 typeset -g SF_TUI_LIVE_PREVIEW='' SF_TUI_LIVE_BADGE='' SF_TUI_LIVE_FAILED=''
 # SHOWN: the block has committed rows. HIDDEN: its preview budget ran out.
@@ -21,14 +21,14 @@ typeset -g SF_TUI_LIVE_STATE=''
 typeset -g SF_TUI_LIVE_BLOCK=''
 
 # Role runs span formatters, so they outlive any one of them.
-typeset -g SF_TUI_LAST_ROLE=''
-typeset -gi SF_TUI_SECTION_ID=0
+typeset -g SF_TUI_LAST_ROLE='' SF_TUI_LAST_SECTION=''
 
 sf_tui_live_clear() {
   SF_TUI_LIVE_KIND=''
   SF_TUI_LIVE_TEXT=''
   SF_TUI_LIVE_ROLE=''
   SF_TUI_LIVE_PRIOR=''
+  SF_TUI_LIVE_PRIOR_SECTION=''
   SF_TUI_LIVE_SECTION=''
   SF_TUI_LIVE_ID=''
   SF_TUI_LIVE_CLASS=''
@@ -49,7 +49,7 @@ sf_tui_formatters_reset() {
   SF_TUI_LIVE_WORK=0
   SF_TUI_LIVE_BLOCK=''
   SF_TUI_LAST_ROLE=''
-  SF_TUI_SECTION_ID=0
+  SF_TUI_LAST_SECTION=''
 }
 
 # Committed rows are built at the width the transcript last drew, so they
@@ -62,26 +62,24 @@ sf_tui_row_width() {
   REPLY=$(( columns > 1 ? columns - 1 : 1 ))
 }
 
-# Only the first formatter of a role run owns its rule.
+# Only the first formatter of a core section owns its numbered rule.
 sf_tui_claim_role() {
-  local role=$1
-  [[ -n $role && $SF_TUI_LAST_ROLE != $role ]] || return 0
+  local role=$1 section=${2-}
+  [[ -n $role ]] || return 0
+  [[ $SF_TUI_LAST_ROLE != $role || $SF_TUI_LAST_SECTION != $section ]] || return 0
   SF_TUI_LIVE_ROLE=$role
   SF_TUI_LIVE_PRIOR=$SF_TUI_LAST_ROLE
-  SF_TUI_LIVE_SECTION=''
-  if [[ $role == (user|agent) ]]; then
-    (( ++SF_TUI_SECTION_ID ))
-    SF_TUI_LIVE_SECTION=$SF_TUI_SECTION_ID
-  fi
+  SF_TUI_LIVE_PRIOR_SECTION=$SF_TUI_LAST_SECTION
+  SF_TUI_LIVE_SECTION=$section
   SF_TUI_LAST_ROLE=$role
+  SF_TUI_LAST_SECTION=$section
 }
 
 # A formatter that never showed anything releases the role it claimed.
 sf_tui_retract() {
   if [[ -n $SF_TUI_LIVE_ROLE ]] && (( ! SF_TUI_LIVE_SHOWN )); then
-    [[ -z $SF_TUI_LIVE_SECTION ]] ||
-      SF_TUI_SECTION_ID=$(( SF_TUI_SECTION_ID - 1 ))
     SF_TUI_LAST_ROLE=$SF_TUI_LIVE_PRIOR
+    SF_TUI_LAST_SECTION=$SF_TUI_LIVE_PRIOR_SECTION
   fi
   sf_tui_live_clear
 }
@@ -129,12 +127,12 @@ sf_tui_message_open() {
   SF_TUI_LIVE_BLOCK=''
   sf_tui_live_close || return 1
   SF_TUI_LIVE_KIND=message
-  sf_tui_claim_role "$role"
+  sf_tui_claim_role "$role" "${2-}"
 }
 
 # Indexed blocks arrive in order; a new index or kind closes the block before it.
 sf_tui_message_stream() {
-  local index=$1 content=$2 text=${3-} tokens=${4-} kind=message
+  local index=$1 content=$2 text=${3-} tokens=${4-} kind=message section=$SF_TUI_LAST_SECTION
   [[ $content != reasoning ]] || kind=reasoning
   [[ -z $SF_TUI_LIVE_BLOCK || $SF_TUI_LIVE_BLOCK == $index ]] || sf_tui_live_close || return 1
   SF_TUI_LIVE_BLOCK=$index
@@ -148,7 +146,7 @@ sf_tui_message_stream() {
     if [[ $SF_TUI_LIVE_KIND != (message|reasoning) ]] || ! sf_tui_live_empty; then
       sf_tui_live_close || return 1
       sf_tui_live_clear
-      sf_tui_claim_role agent
+      sf_tui_claim_role agent "$section"
     fi
     SF_TUI_LIVE_KIND=$kind
   fi
@@ -175,13 +173,13 @@ sf_tui_reasoning_tokens() {
 # One mutable block covers an execution. Hook activity may replace a running
 # tool view; the latest visible event owns empty-result settlement.
 sf_tui_execution_update() {
-  local id=$1 class=${2:-tool} text=${3-} preview=${4-} badge=${5-}
+  local id=$1 class=${2:-tool} text=${3-} preview=${4-} badge=${5-} section=${6-}
   if [[ $SF_TUI_LIVE_KIND != execution ]]; then
     sf_tui_live_close || return 1
     SF_TUI_LIVE_KIND=execution
     SF_TUI_LIVE_CLASS=$class
     # A tool call belongs to the agent's turn; a hook notice stands on its own.
-    [[ $class != tool ]] || sf_tui_claim_role agent
+    [[ $class != tool ]] || sf_tui_claim_role agent "$section"
   fi
   SF_TUI_LIVE_ID=$id
   SF_TUI_LIVE_PREVIEW=$preview
@@ -192,15 +190,15 @@ sf_tui_execution_update() {
 
 sf_tui_execution_end() {
   local id=$1 class=${2:-tool} text=${3-} preview=${4-} role=${5-} badge=${6-}
-  local failed=${7-}
+  local failed=${7-} section=${8-}
   # A result with nothing to show leaves no trace, live or settled.
   if [[ -z $text ]]; then
     [[ $SF_TUI_LIVE_KIND != execution || $SF_TUI_LIVE_ID != $id ]] || sf_tui_retract
     sf_tui_activity_resume
     return 0
   fi
-  sf_tui_execution_update "$id" "$class" "$text" "$preview" "$badge" || return 1
-  [[ -z $role ]] || sf_tui_claim_role "$role"
+  sf_tui_execution_update "$id" "$class" "$text" "$preview" "$badge" "$section" || return 1
+  [[ -z $role ]] || sf_tui_claim_role "$role" "$section"
   # A result owns the identity and class of the block it settles.
   SF_TUI_LIVE_ID=$id
   SF_TUI_LIVE_CLASS=$class
@@ -223,6 +221,7 @@ sf_tui_error_append() {
   sf_tui_format_notice $columns "✕ $heading" ${#heading} "$detail" || return 1
   sf_tui_rows_settle
   SF_TUI_LAST_ROLE=error
+  SF_TUI_LAST_SECTION=''
 }
 
 # The session's frozen profile, labeled one setting per line.

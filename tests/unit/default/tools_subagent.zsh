@@ -283,12 +283,12 @@ jq -e -s --arg id "$id" '
 typeset cut_parent="$tmp/cut-parent.jsonl" cut_actions="$tmp/cut-actions" cut_copy mode
 for mode in fork rewind; do
   sf_test_session "$cut_parent"
-  print -r -- '{"type":"user","content":[{"type":"text","text":"one"}]}' >>"$cut_parent"
+  print -r -- '{"type":"user","section":1,"content":[{"type":"text","text":"one"}]}' >>"$cut_parent"
   print -r -- '{"type":"state_update","name":"subagents/a","value":true}' >>"$cut_parent"
-  print -r -- '{"type":"assistant","content":[{"type":"text","text":"started"}],"stop":"end"}' >>"$cut_parent"
-  print -r -- '{"type":"user","content":[{"type":"text","text":"two"}]}' >>"$cut_parent"
+  print -r -- '{"type":"assistant","section":2,"content":[{"type":"text","text":"started"}],"stop":"end"}' >>"$cut_parent"
+  print -r -- '{"type":"user","section":3,"content":[{"type":"text","text":"two"}]}' >>"$cut_parent"
   print -r -- '{"type":"state_update","name":"subagents/b","value":true}' >>"$cut_parent"
-  print -r -- '{"type":"assistant","content":[{"type":"text","text":"later"}],"stop":"end"}' >>"$cut_parent"
+  print -r -- '{"type":"assistant","section":4,"content":[{"type":"text","text":"later"}],"stop":"end"}' >>"$cut_parent"
   print -rn -- 3 | SHELLFISH_SESSION="$cut_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
     SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/commands/$mode/run" 3>|"$cut_actions" >/dev/null ||
     fail "$mode at a later turn failed"

@@ -7,12 +7,12 @@ sf_tui_action() {
   local type=$1
   shift
   case $type in
-    message_start) sf_tui_message_open "${1-}" ;;
+    message_start) sf_tui_message_open "${1-}" "${2-}" ;;
     message_delta) sf_tui_message_stream "${1-}" "${2-}" "${3-}" "${4-}" ;;
     message_end) sf_tui_message_close ;;
-    execution_update) sf_tui_execution_update "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" ;;
+    execution_update) sf_tui_execution_update "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" "${6-}" ;;
     execution_end)
-      sf_tui_execution_end "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" "${6-}" "${7-}" ;;
+      sf_tui_execution_end "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" "${6-}" "${7-}" "${8-}" ;;
     error) sf_tui_error_append "${1-}" "${2-}" ;;
     details) sf_tui_details "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" "${6-}" ;;
     identity) sf_tui_identity "${1-}" ;;

@@ -233,6 +233,9 @@ case $SF_TEST_INVALID_STREAM in
   response)
     print -r -- '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"partial"}]}'
     ;;
+  section)
+    print -r -- '{"type":"assistant","section":1,"stop":"end","content":[{"type":"text","text":"partial"}]}'
+    ;;
 esac
 ZSH
 chmod +x "$invalid_provider"
@@ -242,7 +245,7 @@ chmod +x "$invalid_provider"
   cat
 } <"$session" >"$invalid_session"
 typeset invalid_mode
-for invalid_mode in malformed late response; do
+for invalid_mode in malformed late response section; do
   if SF_TEST_INVALID_STREAM=$invalid_mode zsh -f "$entry" request \
       <"$invalid_session" >"$tmp/invalid-$invalid_mode.out" \
       2>"$tmp/invalid-$invalid_mode.err"; then

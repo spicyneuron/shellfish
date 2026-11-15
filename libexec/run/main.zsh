@@ -157,7 +157,7 @@ sf_run_main() {
     sf_jq_fields -re '
       include "lib/fields";
       include "lib/session";
-      select(canonical_user_message) |
+      select((has("section") | not) and canonical_user_message) |
       entry("record"; tojson), entry("prompt"; .content[0].text), ("ok" | field)
     ' <<<"$input" || {
       sf_die '--jsonl requires a canonical user message on stdin'

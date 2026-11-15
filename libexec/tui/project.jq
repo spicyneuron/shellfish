@@ -63,10 +63,11 @@ def badge:
   if .sandbox_access == "session" then "approved for session" else .sandbox_access // "" end;
 # A hook's deny is policy, not failure; commands deny every prompt they handle.
 def failed: if .exit_code != 0 then "1" else "" end;
+def section: [.section // empty | tostring];
 
 def message_actions($role; $text):
   if ($text | test("[^\n]")) then
-    [["message_start", $role], ["message_delta", "0", "text", $text, ""],
+    [["message_start", $role] + section, ["message_delta", "0", "text", $text, ""],
      ["message_end"]]
   else [] end;
 
@@ -84,7 +85,7 @@ def response_actions($drawn):
   . as $response |
   [.content | to_entries[] | select(.value.type | IN("text", "reasoning")) | .key] as $readable |
   ([.content[] | select(.type == "reasoning" and (.text | test("[^\n]")))] | length) as $thoughts |
-  (if $drawn == null then [["message_start", "agent"]] else [] end) +
+  (if $drawn == null then [["message_start", "agent"] + section] else [] end) +
   [.content | to_entries[] | . as $block |
     if (.value.type | IN("text", "reasoning")) then
       ($readable | index($block.key)) as $n |
@@ -113,10 +114,10 @@ def record_actions($mode; $window; $drawn):
     (.user_text | split("\n")) as $lines |
     [["error", $lines[0], ($lines[1:] | join("\n"))]]
   elif .type == "tool_result" then
-    [["execution_end", .id, "tool", result_text, preview, "", badge, failed]]
+    [["execution_end", .id, "tool", result_text, preview, "", badge, failed] + section]
   elif .type == "hook_result" then
     [["execution_end", .id, hook_class, result_text, preview,
-      ({session_start:"system", user_prompt_submit:"user"}[.lifecycle] // "agent")]]
+      (if has("section") then "agent" elif .lifecycle == "session_start" then "system" else "" end)] + section]
   elif .type == "session" then
     [.cwd // empty | ["cwd", .]] + commands_actions + details_actions + model_actions +
     if $mode == "load" then message_actions("system"; .profile.system[0].text // "") else [] end
@@ -126,13 +127,13 @@ def record_actions($mode; $window; $drawn):
 
 # $drawn already includes this event.
 def event_actions($window; $drawn):
-  if .type == "_assistant_start" then [["message_start", "agent"]]
+  if .type == "_assistant_start" then [["message_start", "agent"] + section]
   elif .type | IN("_assistant_message_delta", "_assistant_reasoning_delta") then
     [["message_delta", ($drawn | length - 1 | tostring), delta_kind, .text, ""]]
   # A tool draft names its tool.
   elif .type == "_draft" then
     [["execution_update", .id, (if has("name") then "tool" else "notice" end), result_text,
-      preview, badge]]
+      preview, badge] + section]
   # Bound operation and access separately so neither hides the other.
   elif .type == "_tool_permission_request" then
     (.access.unrestricted // false) as $bypass |

@@ -64,6 +64,8 @@ rmdir "$session"
 mv "$session.saved" "$session"
 
 # Runtime replacement is atomic and leaves every durable record unchanged.
+jq -c 'if .type == "session" then .section_floor=53 else . end' "$session" >"$tmp/reserved"
+mv "$tmp/reserved" "$session"
 before=$(tail -n +2 "$session")
 profile=$(jq -c '.sandbox.tools.shell={filesystem:{allowRead:["/tmp/reference"],allowWrite:["/tmp/reference"]},network:{allowedDomains:[]}}' \
   <<<"$SF_TEST_PROFILE")
@@ -71,7 +73,7 @@ model=$(jq -c '.context_window=1234' <<<"$SF_TEST_MODEL")
 sf_session_update "$session" "$(jq -cn --argjson profile "$profile" --argjson model "$model" \
   '{profile:$profile,model:$model}')" || fail "$SF_ERROR"
 head -n 1 "$session" | jq -e '
-  .profile.sandbox.tools.shell.filesystem.allowRead == ["/tmp/reference"] and
+  .section_floor == 53 and .profile.sandbox.tools.shell.filesystem.allowRead == ["/tmp/reference"] and
   .profile.sandbox.tools.shell.filesystem.allowWrite == ["/tmp/reference"] and .model.context_window == 1234
 ' >/dev/null
 assert_equal "$before" "$(tail -n +2 "$session")"

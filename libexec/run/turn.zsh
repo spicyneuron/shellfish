@@ -44,11 +44,30 @@ sf_run_emit() {
 sf_run_append() {
   local session=$1 record=$2
   (( ! SF_RUN[write_failed] )) || { sf_fail 'session writing has stopped'; return; }
+  if [[ -n ${3-} ]]; then
+    record=$(jq -ce --argjson section "$3" '. + {section:$section}' <<<"$record") ||
+      { sf_fail 'cannot assign section'; return; }
+  fi
   if ! sf_session_append "$session" "$record"; then
     SF_RUN[write_failed]=1
     return 1
   fi
   sf_run_emit "$record" || { sf_fail 'cannot emit session record'; return; }
+}
+
+sf_run_section() {
+  (( SF_RUN[next_section] <= 999999999 )) || { sf_fail 'section IDs exhausted'; return; }
+  REPLY=$SF_RUN[next_section]
+  (( SF_RUN[next_section] += 1 ))
+}
+
+sf_run_assistant_emit() {
+  local event=$1
+  if [[ $event == '{"type":"_assistant_start"}' ]]; then
+    event=$(jq -cn --argjson section "$SF_RUN[agent_section]" \
+      '{type:"_assistant_start",section:$section}') || return 1
+  fi
+  sf_run_emit "$event"
 }
 
 sf_run_update() {
@@ -86,9 +105,9 @@ sf_run_settle() {
   local session=$1 message=$2 reason=$3 record
   sf_run_reduce '
     settle($log; $share; $home; $tools; $max_capture; $active; $ARGS.positional;
-      $reason; $message)
+      $section; $reason; $message)
   ' --rawfile log "$session" --argjson active "${${SF_COMPONENT[values]:+true}:-false}" \
-    --arg reason "$reason" --arg message "$message" \
+    --argjson section "${SF_RUN[agent_section]:-0}" --arg reason "$reason" --arg message "$message" \
     --jsonargs "${SF_PROVIDER_PARTIAL_EVENTS[@]}" ||
     { sf_fail 'cannot settle the turn'; return; }
   for record in "${reply[@]}"; do
@@ -127,11 +146,19 @@ sf_run_open() {
   SF_RUN[user_approval_timeout]=$SF_RUN_STEP[user_approval_timeout]
   SF_RUN[turn_id]=$SF_RUN_STEP[turn_id]
   SF_RUN[hook_id]=$SF_RUN_STEP[hook_id]
+  SF_RUN[next_section]=$SF_RUN_STEP[next_section]
+  SF_RUN[agent_section]=0
   if (( ! catalog_ready )); then
     sf_run_components "$SF_RUN[profile]" || return
   fi
   [[ $SF_RUN_STEP[pending] == true ]] || return 0
-  sf_run_settle "$session" 'Turn interrupted.' 'tool call outcome unknown'
+  SF_RUN[agent_section]=$SF_RUN_STEP[agent_section]
+  if (( ! SF_RUN[agent_section] )); then
+    sf_run_section || return
+    SF_RUN[agent_section]=$REPLY
+  fi
+  sf_run_settle "$session" 'Turn interrupted.' 'tool call outcome unknown' || return
+  SF_RUN[agent_section]=0
 }
 
 sf_run_interrupt() {
@@ -242,6 +269,7 @@ sf_run_permission() {
     sf_run_emit "$(jq -cn --arg id "$permission_id" '{type:"_tool_permission_end",id:$id}')" ||
       permission_error='cannot end permission request'
   }
+  (( ! SF_RUN[signal_status] )) || return $SF_RUN[signal_status]
   [[ -z $permission_error ]] || { sf_fail "$permission_error"; return; }
   reply=( "$permission_decision" "$permission_reason" )
 }
@@ -404,7 +432,11 @@ sf_run_turn() {
       esac
     fi
     if [[ -z $failure ]]; then
-      sf_run_append "$session" "$user_record" || failure=$SF_ERROR
+      if sf_run_section; then
+        sf_run_append "$session" "$user_record" "$REPLY" || failure=$SF_ERROR
+      else
+        failure=$SF_ERROR
+      fi
     fi
     while [[ -z $failure ]] && (( ! SF_RUN[signal_status] )); do
       sf_run_step "$session" || { failure=$SF_ERROR; break; }
@@ -430,13 +462,17 @@ sf_run_turn() {
             }
             sf_run_update "$session" "$config" || { failure=$SF_ERROR; break; }
           fi
-          sf_provider_run sf_run_emit || {
+          if (( ! SF_RUN[agent_section] )); then
+            sf_run_section || { failure=$SF_ERROR; break; }
+            SF_RUN[agent_section]=$REPLY
+          fi
+          sf_provider_run sf_run_assistant_emit || {
             run_status=$?
             (( ! SF_RUN[signal_status] )) || run_status=$SF_RUN[signal_status]
             sf_run_status $run_status "$SF_ERROR"
             break
           }
-          sf_run_append "$session" "$REPLY" || { failure=$SF_ERROR; break; }
+          sf_run_append "$session" "$REPLY" "$SF_RUN[agent_section]" || { failure=$SF_ERROR; break; }
           ;;
         tool)
           SF_TOOL_PLAN=( "${(@kv)SF_RUN_STEP}" )

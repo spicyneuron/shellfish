@@ -18,7 +18,9 @@ assert_tail() { [[ $REPLY == *"$1" ]] || fail "expected tail: $1" "actual: $REPL
 width() { COLUMNS=$(( $1 + 1 )) }
 has_style() { (( ${SF_TUI_VIEWPORT_HIGHLIGHTS[(Ie)$1]} )) }
 message() {
-  sf_tui_action message_start "$1" &&
+  local section=${3-}
+  [[ $1 == system ]] || section=${3:-1}
+  sf_tui_action message_start "$1" "$section" &&
     sf_tui_action message_delta 0 text "$2" '' &&
     sf_tui_action message_end || fail "cannot present a $1 message"
 }
@@ -30,7 +32,7 @@ sf_tui_activity_start
 view
 assert_equal '⠃' "$REPLY"
 assert_equal 0 "$SF_TUI_SAFE_ROWS"
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 sf_tui_action message_end
 sf_tui_activity_stop
 view
@@ -38,7 +40,7 @@ assert_equal '' "$REPLY"
 
 # Visible blocks replace activity; inert blocks resume it.
 sf_tui_activity_start
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 sf_tui_action message_delta 0 text before ''
 sf_tui_action message_delta 1 inert '' ''
 view
@@ -52,7 +54,7 @@ sf_tui_activity_stop
 # A call is one live entry whose text is replaced by its result.
 sf_tui_reset
 sf_tui_activity_start
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 sf_tui_action message_delta 0 inert '' ''
 sf_tui_action message_end
 sf_tui_action execution_update call_1 tool 'shell · make test'
@@ -68,7 +70,7 @@ sf_tui_activity_stop
 # Hook activity borrows the live tool block until the tool settles it.
 sf_tui_reset
 sf_tui_activity_start
-sf_tui_action execution_update hooked tool $'shell\nmake test'
+sf_tui_action execution_update hooked tool $'shell\nmake test' '' '' 1
 sf_tui_action execution_update h1 notice $'guard\nchecking'
 view
 assert_tail $'⛭ guard\n│ checking\n╰ ⠃'
@@ -82,8 +84,8 @@ sf_tui_activity_stop
 
 # A hook settling a tool draft keeps the heading the draft already claimed.
 sf_tui_reset
-sf_tui_action execution_update hooked tool $'shell\nmake test'
-sf_tui_action execution_end h1 context 'guard approved' default agent
+sf_tui_action execution_update hooked tool $'shell\nmake test' '' '' 1
+sf_tui_action execution_end h1 context 'guard approved' default agent '' '' 1
 view
 [[ $REPLY == $'─ agent '*$' 1 ─\n\n↪ guard approved' ]] ||
   fail "hook result lost the tool draft heading: $REPLY"
@@ -271,13 +273,13 @@ sf_tui_action error Failed broken
 view
 assert_tail $'⛭ shell · run\n\n✕ Failed\n  broken'
 sf_tui_reset
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 sf_tui_action message_delta 0 text partial ''
 sf_tui_action error Failed $'detail one\ndetail two'
 view
 assert_tail $'partial\n\n✕ Failed\n  detail one\n  detail two'
 assert_equal 7 "$SF_TUI_SAFE_ROWS"
-message user retry
+message user retry 2
 view
 [[ $REPLY == *$'─ user '*$' 2 ─\n\nretry' ]] || fail "post-error section: $REPLY"
 
@@ -286,7 +288,7 @@ sf_tui_reset
 width 79
 message system $'\n\nsystem\n\n'
 message user $'\nuser\n'
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 sf_tui_action message_delta 0 reasoning thought 3
 sf_tui_action message_end
 sf_tui_action execution_end hook notice $'hook\nok'
@@ -301,7 +303,7 @@ view
 sf_tui_reset
 sf_tui_terminal_reset
 width 20
-sf_tui_action execution_update tall tool 'shell · one'
+sf_tui_action execution_update tall tool 'shell · one' '' '' 1
 sf_tui_action execution_end tall tool $'shell · one\ntwo\nthree\nfour\nfive'
 typeset drained=''
 integer batch

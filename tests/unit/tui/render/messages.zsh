@@ -22,7 +22,9 @@ view() {
 # Content commits at the terminal width, so a narrow case sets it up front.
 width() { COLUMNS=$(( $1 + 1 )) }
 message() {
-  sf_tui_action message_start "$1" &&
+  local section=${3-}
+  [[ $1 == system ]] || section=${3:-1}
+  sf_tui_action message_start "$1" "$section" &&
     sf_tui_action message_delta 0 text "$2" '' &&
     sf_tui_action message_end || fail "cannot present a $1 message"
 }
@@ -38,7 +40,7 @@ assert_equal 79 "${#${REPLY%%$'\n'*}}"
 sf_tui_repaint || fail 'rendering the prompt failed'
 [[ $PREDISPLAY == *$'hello\n\n─'* ]] || fail "prompt boundary: $PREDISPLAY"
 
-# Repeated roles omit the rule.
+# Consecutive pieces of the same section omit the rule.
 message user again
 view 79 20
 assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\nhello\n\nagain' "$REPLY"
@@ -46,7 +48,7 @@ assert_equal $'─ user ──────────────────�
 # Role changes open a new numbered rule.
 sf_tui_reset
 message user first
-message agent reply
+message agent reply 2
 view 79 20
 [[ $REPLY == *$'\n\n─ agent ─'*$' 2 ─\n\nreply' ]] || fail "agent rule: $REPLY"
 
@@ -56,14 +58,14 @@ message user $'\n\n  spaced  \n\n\n'
 view 79 20
 [[ $REPLY == *$'\n\n  spaced  ' ]] || fail "trimmed body: $REPLY"
 
-# Blank records claim neither rows nor a section number.
+# Blank records hide their heading without renumbering later sections.
 sf_tui_reset
 message user $'\n\n'
 view 79 20
 assert_equal '' "$REPLY"
-message user visible
+message user visible 2
 view 79 20
-[[ $REPLY == $'─ user '*$' 1 ─\n\nvisible' ]] || fail "blank record consumed a section: $REPLY"
+[[ $REPLY == $'─ user '*$' 2 ─\n\nvisible' ]] || fail "blank record consumed a section: $REPLY"
 
 # Settled rows keep the width they were formatted at.
 sf_tui_reset
@@ -90,7 +92,7 @@ assert_equal $'three\nfour' "$REPLY"
 sf_tui_reset
 sf_tui_terminal_reset
 width 8
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text 'hello world'
 view 8 20
 assert_equal $'─ agent \n\n⠃' "$REPLY"
@@ -107,7 +109,7 @@ assert_equal $'─ agent \n\nhello\nworld\nagain\nnext' "$REPLY"
 sf_tui_reset
 sf_tui_terminal_reset
 width 20
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text $'one\n\n'
 view 20 20
 assert_equal one "${SF_TUI_SAFE_TEXT##*$'\n'}"
@@ -118,10 +120,10 @@ sf_tui_action message_end
 
 # A newline-closed line settles with its role.
 sf_tui_reset
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text $'answer\n'
 sf_tui_action message_end
-message user next
+message user next 2
 view 20 20
 [[ $REPLY == *$'─ agent '*$' 1 ─\n\nanswer\n\n─ user '*$' 2 ─\n\nnext' ]] ||
   fail "settled assistant role retracted: $REPLY"
@@ -129,29 +131,29 @@ view 20 20
 # An empty response retracts its chrome and releases its section.
 sf_tui_reset
 width 12
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 view 12 20
 assert_equal $'─ agent  1 ─\n\n⠃' "$REPLY"
 assert_equal 0 "$SF_TUI_SAFE_ROWS"
 sf_tui_action message_end
-message user next
+message user next 2
 view 12 20
-[[ $REPLY == $'─ user '*$' 1 ─\n\nnext' ]] || fail "empty response retraction: $REPLY"
+[[ $REPLY == $'─ user '*$' 2 ─\n\nnext' ]] || fail "empty response retraction: $REPLY"
 sf_tui_reset
 width 79
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text $'\n'
 stream 1 reasoning $'\n\n'
 sf_tui_action message_end
-message user visible
+message user visible 2
 view 79 20
-[[ $REPLY == $'─ user '*$' 1 ─\n\nvisible' ]] || fail "newline-only retraction: $REPLY"
+[[ $REPLY == $'─ user '*$' 2 ─\n\nvisible' ]] || fail "newline-only retraction: $REPLY"
 
 # Only committed rows leave the queue, and each row commits once.
 sf_tui_reset
 sf_tui_terminal_reset
 width 8
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text $'one\ntail\n'
 sf_tui_transcript 8 20
 sf_tui_terminal_stage
@@ -178,7 +180,7 @@ assert_equal '' "$SF_TUI_VIEWPORT_TEXT"
 sf_tui_reset
 sf_tui_terminal_reset
 width 20
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text $'```json\n{}\n```\n'
 sf_tui_transcript 20 20
 sf_tui_terminal_stage
@@ -195,7 +197,7 @@ assert_equal $'\n```jsonc' "$SF_TUI_SAFE_TEXT"
 sf_tui_reset
 sf_tui_terminal_reset
 width 8
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text $'alpha beta\ngamma delta'
 sf_tui_transcript 8 20
 sf_tui_terminal_stage
@@ -215,7 +217,7 @@ assert_equal $'gamma\ndelta' "$REPLY"
 SF_TUI_STYLE=( message 'fg=1' syntax.strong bold )
 sf_tui_reset
 sf_tui_terminal_reset
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text $'界\t**bold** tail\n'
 sf_tui_transcript 10 20
 [[ $SF_TUI_SAFE_TEXT == *'界      '* ]] ||
@@ -227,7 +229,7 @@ SF_TUI_STYLE=()
 # Blocks settle in index order; inert blocks only close the one before them.
 sf_tui_reset
 width 79
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text first
 stream 1 text second
 view 79 20
@@ -249,7 +251,7 @@ sf_tui_reset
 sf_tui_terminal_reset
 SF_TUI_PREVIEW_REASONING=full
 width 13
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 reasoning $'a reasoning block long enough to wrap\nand a second line\n'
 sf_tui_transcript 14 20
 [[ $SF_TUI_SAFE_TEXT == *$'✎ Reasoning\n│ a reasoning\n│ '* &&
@@ -267,7 +269,7 @@ width 79
 sf_tui_reset
 sf_tui_terminal_reset
 SF_TUI_PREVIEW_REASONING=1
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 reasoning $'first\nsecond\nthird'
 view 79 20
 [[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning\n┆ first\n╰ ⠃' ]] ||
@@ -287,7 +289,7 @@ sf_tui_terminal_reset
 # Collapsed reasoning settles as one row.
 sf_tui_reset
 SF_TUI_PREVIEW_REASONING=0
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 reasoning $'thought\nmore'
 view 79 20
 [[ $REPLY == *$'✎ Reasoning\n╰ ⠃' && $REPLY != *thought* ]] ||
@@ -323,7 +325,7 @@ SF_TUI_PREVIEW=full
 
 # Lines inside an open fence commit as they complete.
 sf_tui_reset
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 stream 0 text $'```js\nconst x = 1;\ntail'
 view 20 20
 [[ $SF_TUI_SAFE_TEXT == *$'```js\nconst x = 1;' ]] ||
@@ -336,7 +338,7 @@ typeset source=$'# A **bold heading** that wraps\n\n```js\nconst x = 1; /* open\
 integer cut
 sf_tui_reset
 width 12
-sf_tui_action message_start agent
+sf_tui_action message_start agent 1
 for (( cut = 1; cut <= ${#source}; cut += 7 )); do
   stream 0 text "${source[cut,cut + 6]}"
   view 12 40

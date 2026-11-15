@@ -67,7 +67,7 @@ jq -eRn '
   [inputs | fromjson] as $events |
   ($events[-2] | .type == "assistant" and .stop == "cancelled" and
     (.content | any(.type == "text" and .text != "")))
-  and $events[-1] == {type:"error",user_text:"Cancelled."}
+  and $events[-1] == {type:"error",section:2,user_text:"Cancelled."}
 ' <"$cancel_output" >/dev/null || fail 'cancelled run did not persist partial content'
 
 # Cancellation preserves streamed reasoning.
@@ -106,9 +106,9 @@ integer reasoning_status=0
 wait "$reasoning_pid" || reasoning_status=$?
 (( reasoning_status == 143 )) || fail 'cancelled reasoning turn did not report the signal'
 jq -e -s '
-  .[-2] == {type:"assistant",stop:"cancelled",content:[{
+  .[-2] == {type:"assistant",section:2,stop:"cancelled",content:[{
     type:"reasoning",text:"partial thought"
-  }]} and .[-1] == {type:"error",user_text:"Turn interrupted."}
+  }]} and .[-1] == {type:"error",section:2,user_text:"Turn interrupted."}
 ' "$reasoning_session" >/dev/null || fail 'cancelled reasoning was not recovered'
 
 # A request cancelled before any delta records nothing of the response.
@@ -134,8 +134,8 @@ while (( cancel_child_polls++ < 50 )) && kill -0 "$cancel_child_pid" 2>/dev/null
 done
 ! kill -0 "$cancel_child_pid" 2>/dev/null || fail 'cancelled provider grandchild survived'
 jq -e -s '
-  .[-2] == {type:"user",content:[{type:"text",text:"tool input"}]} and
-  .[-1] == {type:"error",user_text:"Turn interrupted."} and
+  .[-2] == {type:"user",section:1,content:[{type:"text",text:"tool input"}]} and
+  .[-1] == {type:"error",section:2,user_text:"Turn interrupted."} and
   ([.[] | .content[]? | select(.type == "tool_call")] | length) == 0
 ' "$tool_input_session" >/dev/null || fail 'a request cancelled before any delta recorded a response'
 
@@ -144,7 +144,7 @@ typeset recovered_session="$tmp/recovered.jsonl"
 zsh -f "$entry" run \
   --session-out "$recovered_session" seed >/dev/null || fail 'recovery seed failed'
 print -r -- \
-  '{"type":"user","content":[{"type":"text","text":"interrupted"}]}' \
+  '{"type":"user","section":3,"content":[{"type":"text","text":"interrupted"}]}' \
   >>"$recovered_session"
 typeset jsonl
 jsonl=$(print -r -- \
@@ -153,7 +153,7 @@ jsonl=$(print -r -- \
     --session "$recovered_session") || fail 'recovery run failed'
 print -r -- "$jsonl" | jq -eRn '
   [inputs | fromjson] as $events |
-  $events[0] == {type:"error",user_text:"Turn interrupted."} and
+  $events[0] == {type:"error",section:4,user_text:"Turn interrupted."} and
   ($events[1] | .type == "user")
 ' >/dev/null || fail 'run did not start after an unfinished turn'
 

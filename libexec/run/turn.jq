@@ -38,7 +38,7 @@ def requested_access($bypass_allowed):
   end;
 
 # Everything execution and settlement need for one call.
-def tool_plan($profile; $tools; $call; $turn; $max_capture):
+def tool_plan($profile; $tools; $call; $turn; $max_capture; $section):
   $call.id as $id | $call.name as $name | $call.input as $input |
   [$tools[] | select(.name == $name)][0] as $tool |
   ($tool.manifest // {}) as $manifest |
@@ -57,6 +57,7 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture):
    component:{template:$manifest.user_text, input:$input,
      draft:({type:"_draft",id:$id,name:$name,
        user_text:render_template($manifest.user_text; {input:$input})} +
+       (if $section == null then {} else {section:$section} end) +
        ($manifest | with_entries(select(.key == "user_preview_lines"))) +
        if $permission.status == "pending" then {sandbox_access:"requested"} else {} end)},
    access_status:$permission.status,
@@ -93,7 +94,7 @@ def tool_result($component; $outcome):
 # and their sandbox requests as cancelled.
 def settled_calls($state; $profile; $tools; $turn; $max_capture; $active; $reason):
   $state.calls | to_entries[] |
-  tool_plan($profile; $tools; .value; $turn; $max_capture) as $plan |
+  tool_plan($profile; $tools; .value; $turn; $max_capture; $state.agent_section) as $plan |
   if .key == 0 and $active then
     tool_result($plan.component; tool_refusal("tool call interrupted"; 126) | .ran = true)
   else
@@ -115,6 +116,7 @@ def value: if type == "string" then . else tojson end;
 # What a run needs from its session before the turn begins.
 def opened($records; $share; $home):
   ($records[0] | header_expand($share; $home)) as $header |
+  ($records[1:] | session_state) as $state |
   entry("profile"; $header.profile | tojson),
   entry("model"; $header.model | tojson),
   entry("cwd"; $header.cwd),
@@ -123,7 +125,10 @@ def opened($records; $share; $home):
   entry("hook_id";
     [$records[1:][] | select(.type == "hook_result") | .id | tonumber] |
     ((max // 0) + 1) | tostring),
-  entry("pending"; $records[1:] | session_state | .next != "user" | tostring);
+  entry("next_section"; [($header.section_floor // 0), $records[].section // empty] |
+    max + 1 | tostring),
+  entry("agent_section"; $state.agent_section // 0 | tostring),
+  entry("pending"; $state.next != "user" | tostring);
 
 # The log's next effect: request, tool, or user once the latest response called
 # nothing.
@@ -135,7 +140,7 @@ def step($records; $share; $home; $tools; $max_capture):
   if $state.next == "tool_result" then
     entry("next"; "tool"),
     entry("call_index"; $state.call_total - ($state.calls | length) + 1 | tostring),
-    (tool_plan($header.profile; $tools; $state.calls[0]; $turn; $max_capture) |
+    (tool_plan($header.profile; $tools; $state.calls[0]; $turn; $max_capture; $state.agent_section) |
       to_entries[] | entry(.key; .value | value))
   elif $state.next == "assistant" then
     (provider_request($header.model; ($header.profile.system[0].text // "");
@@ -154,10 +159,12 @@ def step($records; $share; $home; $tools; $max_capture):
   end;
 
 # Any partial response and a result for every pending call, then the error.
-def settle($log; $share; $home; $tools; $max_capture; $active; $partial; $reason; $message):
-  (($partial | provider_delta_response),
+def settle($log; $share; $home; $tools; $max_capture; $active; $partial; $section; $reason; $message):
+  (($partial | provider_delta_response |
+      if $section > 0 then .section = $section else . end),
    (($log | session_records) as $records |
      settled_calls($records[1:] | session_state;
        $records[0] | header_expand($share; $home) | .profile; $tools;
        [$records[1:][] | select(.type == "user")] | length; $max_capture; $active; $reason)),
-   {type:"error",user_text:$message}) | tojson | field;
+   ({type:"error",user_text:$message} |
+     if $section > 0 then .section = $section else . end)) | tojson | field;

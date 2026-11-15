@@ -424,20 +424,20 @@ assert_equal submit "$REPLY"
 sf_tui_transcript 79 20
 [[ $SF_TUI_VIEWPORT_TEXT != *'/help'* ]] ||
   fail 'submitted prompt rendered before the core accepted it'
-assert_equal 0 "$SF_TUI_SECTION_ID"
+assert_equal '' "$SF_TUI_LAST_SECTION"
 SF_TUI_STATE=working
 pump '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1","user_text":"Help notice"}'
 sf_tui_transcript 79 20
-[[ $SF_TUI_VIEWPORT_TEXT == *'─ user '*'Help notice'* &&
+[[ $SF_TUI_VIEWPORT_TEXT == *'Help notice'* && $SF_TUI_VIEWPORT_TEXT != *'─ user '* &&
     $SF_TUI_VIEWPORT_TEXT != *'/help'* ]] ||
-  fail 'blocked prompt did not group its notice under a user heading'
-assert_equal 1 "$SF_TUI_SECTION_ID"
-# The accepted prompt shares the submission notice's heading.
-pump '{"type":"user","content":[{"type":"text","text":"accepted"}]}'
+  fail 'blocked prompt claimed a numbered section'
+assert_equal '' "$SF_TUI_LAST_SECTION"
+# The accepted prompt owns the section assigned by the core.
+pump '{"type":"user","section":12,"content":[{"type":"text","text":"accepted"}]}'
 sf_tui_transcript 79 20
 [[ $SF_TUI_VIEWPORT_TEXT == *'Help notice'*'accepted'* ]] ||
   fail 'accepted prompt did not render from the core record'
-assert_equal 1 "$SF_TUI_SECTION_ID"
+assert_equal 12 "$SF_TUI_LAST_SECTION"
 
 # Stop on failed permission replies.
 sf_tui_reset

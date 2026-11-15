@@ -284,7 +284,9 @@ def canonical_profile:
 # boundary.
 def canonical_session_header:
   type == "object" and
-  keys == ["created", "cwd", "format_version", "model", "profile", "type"] and
+  (del(.section_floor) | keys == ["created", "cwd", "format_version", "model", "profile", "type"]) and
+  ((has("section_floor") | not) or (.section_floor |
+    type == "number" and floor == . and . >= 0 and . <= 999999999)) and
   .type == "session" and .format_version == 1 and
   (.cwd | stored_cwd) and (.created | type == "string") and
   (.profile | canonical_profile) and (.model | canonical_model);

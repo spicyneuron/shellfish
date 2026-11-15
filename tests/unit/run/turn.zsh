@@ -14,8 +14,8 @@ jq -eRn -L "$ROOT" '
   include "lib/session";
   [inputs | fromjson] as $events |
   ($events | map(select(.type == "user" or .type == "assistant"))) as $durable |
-  $durable[0] == {type:"user",content:[{type:"text",text:"two\nwords"}]} and
-  ($durable[1] | .type == "assistant" and .stop == "end" and
+  $durable[0] == {type:"user",section:1,content:[{type:"text",text:"two\nwords"}]} and
+  ($durable[1] | .type == "assistant" and .section == 2 and .stop == "end" and
     (.usage | token_usage)) and
   ($events | any(.type == "_assistant_message_delta"))
 ' <"$stream" >/dev/null || fail 'simple turn emitted the wrong objects'
@@ -23,6 +23,15 @@ jq -c 'select(.type | startswith("_") | not)' "$stream" >"$tmp/emitted"
 tail -n +$(( prefix + 1 )) "$session" | jq -c . >"$tmp/appended"
 cmp -s "$tmp/emitted" "$tmp/appended" ||
   fail 'durable events differ from appended records'
+
+# IDs survive reopening, stay out of provider requests, and skip retired IDs.
+SF_TEST_PROVIDER_REQUEST="$tmp/sections-request" sf_test_run next "$session" >"$stream"
+jq -es '[.[] | select(has("section")) | .section] == [1,2,3,4]' "$session" >/dev/null
+jq -e 'all(.messages[]; has("section") | not)' "$tmp/sections-request" >/dev/null
+jq -c 'if .type == "session" then .section_floor=100 else . end' "$session" >"$tmp/reserved"
+mv "$tmp/reserved" "$session"
+sf_test_run reserved "$session" >"$stream"
+jq -es '[.[] | select(has("section")) | .section] == [1,2,3,4,101,102]' "$session" >/dev/null
 
 # Complete calls execute in assistant order and all settle before continuation.
 typeset provider="$tmp/provider/run" tool="$tmp/ordered/run" order="$tmp/order"

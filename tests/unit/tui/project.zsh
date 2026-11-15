@@ -137,7 +137,7 @@ project live \
   '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_text":"context"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
 assert_equal 'execution_update | 1 | notice | guard · checking | 1 |
-execution_end | 1 | notice | guard · ok | full | agent
+execution_end | 1 | notice | guard · ok | full |
 execution_end | 2 | context | project · read | default | system
 execution_end | 3 | context |  | default | system' "$REPLY"
 
@@ -148,9 +148,9 @@ project load \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"3","model_text":"before"}' \
   '{"type":"hook_result","lifecycle":"stop","id":"4","model_text":"later"}'
 assert_equal 'execution_end | 1 | context |  | default | system
-execution_end | 2 | context |  | default | user
-execution_end | 3 | context |  | default | agent
-execution_end | 4 | context |  | default | agent' "$REPLY"
+execution_end | 2 | context |  | default |
+execution_end | 3 | context |  | default |
+execution_end | 4 | context |  | default |' "$REPLY"
 project load \
   '{"type":"hook_result","lifecycle":"session_start","id":"5","user_text":"startup notice"}'
 assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$REPLY"
@@ -158,7 +158,7 @@ assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$
 # A command denies the prompt it handles; that is not a failure.
 project load \
   '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"6","user_text":"**Shell** pwd","action":"deny"}'
-assert_equal 'execution_end | 6 | notice | **Shell** pwd | default | user' "$REPLY"
+assert_equal 'execution_end | 6 | notice | **Shell** pwd | default |' "$REPLY"
 
 # Permissions show the tool name, raw input, and configured timeout.
 project live \
@@ -241,5 +241,36 @@ project_status=0
 sf_tui_project live 'not json' || project_status=$?
 assert_equal 1 "$project_status"
 assert_equal 0 "${#SF_TUI_ACTIONS}"
+
+# Copy targets and headings use the same IDs, even around empty replies and notices.
+sf_test_tmp projection-sections
+sf_test_source libexec/tui/render/main.zsh
+typeset -a numbered=(
+  '{"type":"user","section":1,"content":[{"type":"text","text":"first"}]}'
+  '{"type":"assistant","section":2,"stop":"end","content":[]}'
+  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1","user_text":"Help notice"}'
+  '{"type":"user","section":10,"content":[{"type":"text","text":"second"}]}'
+  '{"type":"assistant","section":12,"stop":"end","content":[{"type":"text","text":"answer"}]}'
+)
+{ head -n 1 "$SF_TEST_SESSIONS/complete.jsonl"; print -rl -- "${numbered[@]}"; } >"$tmp/numbered.jsonl"
+assert_canonical_session "$tmp/numbered.jsonl"
+sf_tui_reset
+typeset -gi COLUMNS=80
+project load "${numbered[@]}"
+typeset action
+typeset -a fields
+for action in "${SF_TUI_ACTIONS[@]}"; do
+  fields=( "${(@ps:\0:)action}" )
+  [[ $fields[1] == prompt ]] || sf_tui_action "${fields[@]}"
+done
+sf_tui_transcript 79 50
+[[ $SF_TUI_VIEWPORT_TEXT == *' 1 ─'*' 10 ─'*' 12 ─'*answer* &&
+   $SF_TUI_VIEWPORT_TEXT != *' 2 ─'* ]] || fail 'headings renumbered core sections' "$SF_TUI_VIEWPORT_TEXT"
+mkdir "$tmp/bin"
+print -rl -- '#!/bin/sh' 'cat >"$COPY_TARGET"' >"$tmp/bin/pbcopy"
+chmod +x "$tmp/bin/pbcopy"
+print -rn -- 12 | COPY_TARGET="$tmp/copied" PATH="$tmp/bin:$PATH" \
+  SHELLFISH_SESSION="$tmp/numbered.jsonl" "$ROOT/share/commands/copy/run" 2>"$tmp/copy.err"
+assert_equal answer "$(<"$tmp/copied")"
 
 print -r -- ok

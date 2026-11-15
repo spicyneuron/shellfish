@@ -20,8 +20,8 @@ A session JSONL file is the agent's only durable state. Its first line is a head
 
 ```text
 {"type":"session","format_version":1,"cwd":"~/project","created":"...","profile":{...},"model":{...}}
-{"type":"user","content":[{"type":"text","text":"Fix the bug"}]}
-{"type":"assistant","stop":"end","content":[{"type":"text","text":"Done."}]}
+{"type":"user","section":1,"content":[{"type":"text","text":"Fix the bug"}]}
+{"type":"assistant","section":2,"stop":"end","content":[{"type":"text","text":"Done."}]}
 ```
 
 The header freezes the resolved profile and model, each in its config file's shape, so together they resolve to the same header. The profile holds the system prompt text, the tool, command, and hook lists, and per-tool sandbox configuration. The model holds the merged provider, endpoint, and request settings. System prompt files are frozen as their text, while executable components, manifests, and baseline policies remain live. Credentials, environment settings such as turn limits, and presentation settings remain external.
@@ -38,6 +38,8 @@ Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absol
 | `error` | Durable user-facing failure or cancellation, omitted from provider requests |
 
 Provider deltas, hook activity, permission requests, and presentation state are transient. Clients may display them but never write them to the transcript.
+
+The core assigns stable numeric section IDs to dialogue. A prompt starts a user section, and the responses and tools answering it share an agent section. Hooks can annotate a section but do not create one. Clients display these identities rather than counting visible entries. See [Conversation sections](CONFIG.md#conversation-sections) for command targets and how IDs survive history changes.
 
 One session reader defines record validity and ordering, then derives pending work and provider messages from that transcript. Recovery and request construction do not maintain competing session models.
 

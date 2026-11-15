@@ -272,7 +272,8 @@ for gate in sandbox-disabled unsupported no-reason reason-only blank-unrequested
       (( gate_status == 0 )) || fail 'bypass reason without a request failed the turn'
       jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
         [[0,"unreviewed\nexit 0"]]' \
-        "$session" >/dev/null || fail 'bypass reason without a request was not refused' ;;
+        "$session" >/dev/null || fail 'bypass reason without a request was not refused' \
+          "$(jq -c 'select(.type == "tool_result")' "$session")" ;;
     blank-unrequested)
       (( gate_status == 0 )) || fail 'unrequested bypass with a blank reason failed the turn'
       jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
@@ -300,7 +301,7 @@ jq -eRn --arg command "print -r -- ran >${(q)tool_marker}" '
   [inputs | fromjson] as $events |
   ([$events[] | select(.type == "_draft") | .sandbox_access] == ["requested"]) and
   ($events | map(select(.type == "hook_result"))[0] ==
-    {type:"hook_result",lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
+    {type:"hook_result",section:2,lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .sandbox_access == "denied" and
     .model_text == "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: review denied\n</sandbox_notice>" and
@@ -980,7 +981,7 @@ kill -USR1 "$flood_pid" 2>/dev/null
 wait "$flood_pid" || flood_status=$?
 (( flood_status == 130 )) || fail "cancelled overflow returned status $flood_status"
 jq -e -s '[.[] | select(.type == "tool_result") | .model_text] == ["tool call interrupted"] and
-  .[-1] == {type:"error",user_text:"Cancelled."} and
+  .[-1] == {type:"error",section:2,user_text:"Cancelled."} and
   ([.[] | select(.type == "assistant")] | length) == 1' "$session" >/dev/null ||
   fail 'cancelled overflow did not settle as a cancellation'
 assert_canonical_session "$session"

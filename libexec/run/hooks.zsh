@@ -116,7 +116,7 @@ sf_run_hook_complete() {
   settled=( "${reply[@]}" )
   action=$settled[action] reason=$settled[reason] payload=$settled[payload]
   if [[ -n $settled[result] ]]; then
-    sf_run_append "$SF_COMPONENT[session]" "$settled[result]" || return
+    sf_run_append "$SF_COMPONENT[session]" "$settled[result]" "${SF_RUN[agent_section]:#0}" || return
     (( SF_RUN[hook_id] += 1 ))
     [[ $settled[model_feedback] != true ]] || model_feedback=1
   fi

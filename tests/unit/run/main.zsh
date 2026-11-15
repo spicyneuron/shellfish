@@ -198,13 +198,19 @@ print -r -- "$image_record" |
   zsh -f "$entry" run --jsonl --session "$stream_session" >/dev/null ||
   fail 'JSONL run rejected an image prompt'
 jq -es --argjson record "$image_record" \
-  '[.[] | select(.type == "user")] | last == $record' "$stream_session" >/dev/null ||
+  '[.[] | select(.type == "user")] | last | del(.section) == $record' "$stream_session" >/dev/null ||
   fail 'the image prompt was not persisted exactly'
 jq -e '.messages[-1].content ==
   [{type:"text",text:"look"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]' \
   "$tmp/image-request" >/dev/null || fail 'the image prompt did not reach the provider'
 
 # A user message over the content limit fails before it is stored.
+integer chosen_section_status=0
+jq -cn --argjson record "$image_record" '$record + {section:999}' |
+  zsh -f "$entry" run --jsonl --session "$stream_session" \
+    >/dev/null 2>"$tmp/chosen-section.err" || chosen_section_status=$?
+assert_equal 2 "$chosen_section_status"
+
 typeset -i users=$(jq -es '[.[] | select(.type == "user")] | length' "$stream_session")
 jq -cn '{type:"user",content:[{type:"text",text:"look"},
   {type:"image",url:("data:image/png;base64," + ("A" * 2048))}]}' |

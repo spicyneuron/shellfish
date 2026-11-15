@@ -324,8 +324,8 @@ def test_steer_cancels_and_sends_draft():
             assert prompts == ["delay response", "steer now", "later"], prompts
             assert records[-1]["type"] == "assistant", records
             assert records[2] in (
-                {"type": "error", "user_text": "Cancelled."},
-                {"type": "error", "user_text": "Turn interrupted."},
+                {"type": "error", "section": 2, "user_text": "Cancelled."},
+                {"type": "error", "section": 2, "user_text": "Turn interrupted."},
             ), (key, records)
         finally:
             session.close()
@@ -349,7 +349,7 @@ def test_interrupt_preserves_queue_until_send_now():
             for record in records if record["type"] == "user"
         ]
         assert prompts == ["delay response"], prompts
-        assert records[-1] == {"type": "error", "user_text": "Cancelled."}, records
+        assert records[-1] == {"type": "error", "section": 2, "user_text": "Cancelled."}, records
 
         session.send(b"\x1b[13;5u")
         _, records = session.wait_session_records(7, path=path)
@@ -379,7 +379,7 @@ def test_interrupt_drains_partial_recovery():
         session.send(b"\x03")
         session.wait_after(mark, "Cancelled.", timeout=2)
         _, records = session.wait_session_records(4, path=path)
-        assert records[-1] == {"type": "error", "user_text": "Cancelled."}
+        assert records[-1] == {"type": "error", "section": 2, "user_text": "Cancelled."}
         recovered = records[-2]
         assert recovered["type"] == "assistant" and recovered["stop"] == "cancelled"
         assert any(
@@ -547,7 +547,7 @@ def test_permission_stop_cancels_pending_tools():
                 None,
                 None,
             ]
-            assert records[-1] == {"type": "error", "user_text": "Cancelled."}
+            assert records[-1] == {"type": "error", "section": 2, "user_text": "Cancelled."}
             session.wait_after(mark, "Cancelled.")
         finally:
             session.close()
@@ -654,6 +654,15 @@ def test_sigterm_leaves_terminal_state():
                 except OSError:
                     pass
         assert process.poll() == 143
+        # Process exit can be observed before its final terminal bytes are read.
+        while select.select([master], [], [], 0)[0]:
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            all_output += chunk
         assert before[6][termios.VINTR] == termios.tcgetattr(slave)[6][termios.VINTR]
         sync_starts = all_output.count(b"\x1b[?2026h")
         sync_ends = all_output.count(b"\x1b[?2026l")

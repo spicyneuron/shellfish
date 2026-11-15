@@ -243,6 +243,24 @@ for (( index = 1; index <= ${#invalid}; index += 2 )); do
   fi
 done
 
+# Numbered records keep one agent ID through tools and never reach providers.
+typeset numbered='[
+  {"type":"user","section":12,"content":[{"type":"text","text":"go"}]},
+  {"type":"assistant","section":13,"stop":"tool_calls","content":[
+    {"type":"tool_call","id":"c1","name":"shell","input":{}}]},
+  {"type":"tool_result","section":13,"id":"c1","name":"shell","input":{},"exit_code":0},
+  {"type":"assistant","section":13,"stop":"end","content":[]}
+]'
+print -r -- "$numbered" | accepts | jq -e '.sections == [12,13]' >/dev/null
+print -r -- "$numbered" | messages | jq -e 'all(.[]; has("section") | not)' >/dev/null
+for invalid_section in '.[0].section=0' '.[0].section=1.5' '.[1].section=12' \
+    '.[2].section=14' '.[3].section=14' \
+    '. + [{type:"user",section:12,content:[{type:"text",text:"again"}]}]'; do
+  if jq "$invalid_section" <<<"$numbered" | accepts >/dev/null 2>&1; then
+    fail "the reader accepted an invalid section: $invalid_section"
+  fi
+done
+
 # Settled results share one base, and state names stay addressable.
 settling() {
   print -r -- '[{"type":"user","content":[{"type":"text","text":"a"}]},

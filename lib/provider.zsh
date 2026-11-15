@@ -145,7 +145,7 @@ sf_provider_run() {
   coproc sf_jq -jn --unbuffered '
     include "lib/session";
     include "lib/provider";
-    decode_provider_response(canonical_response)
+    decode_provider_response((has("section") | not) and canonical_response)
   ' <"$output_pipe" 2>/dev/null
   decoder_pid=$!
   "$emit" '{"type":"_assistant_start"}'

@@ -154,14 +154,14 @@ new_session limit
 SHELLFISH_MAX_REQUESTS_PER_TURN=1 sf_test_run stop "$session" >"$stream" 2>"$tmp/limit.err" &&
   fail 'request limit succeeded'
 jq -e -s '.[-2].model_text == "<context script=\"stop\">\nchecking again\n</context>" and
-  .[-1] == {type:"error",user_text:"provider request limit reached: 1"}' "$session" >/dev/null ||
+  .[-1] == {type:"error",section:2,user_text:"provider request limit reached: 1"}' "$session" >/dev/null ||
   fail 'request limit lost feedback'
 : >"$STOP_SILENT"
 rm -f "$count"
 new_session no-feedback; sf_test_run stop "$session" >"$stream" 2>"$tmp/feedback.err" && fail 'missing feedback succeeded'
 assert_equal 1 "$(<$count)" 'stop without feedback requested again'
 jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_text") | not) and
-  .[-1] == {type:"error",user_text:"stop hook denied without model feedback"}' "$session" \
+  .[-1] == {type:"error",section:2,user_text:"stop hook denied without model feedback"}' "$session" \
   >/dev/null || fail 'missing stop feedback was accepted'
 # Ordered hooks see original input and preceding results. An action stops the list.
 typeset hooks="$tmp/hooks" name
