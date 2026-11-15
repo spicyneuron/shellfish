@@ -24,7 +24,7 @@ sf_run_create() {
         shift 2
         ;;
       *)
-        take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
+        take=$(( ${SF_CREATE_OPTIONS[(Ie)$1]} ? 2 : 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         forwarded+=( "${@:1:$take}" )
         shift $take
@@ -32,7 +32,6 @@ sf_run_create() {
     esac
   done
 
-  sf_run_limits || { sf_die "$REPLY"; return 1; }
   if [[ -n $source_session ]]; then
     (( ! ${#forwarded} )) || {
       sf_die 'profile overrides cannot be used with --session-from'

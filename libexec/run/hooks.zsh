@@ -2,7 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
-(( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_run_component_begin] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
 typeset -g SF_RUN_HOOK_ERROR=''
@@ -155,7 +155,7 @@ sf_run_hooks() {
     return 1
   }
   config_dir=$REPLY
-  sf_scratch_file hook-input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
+  sf_scratch hook-input || { SF_RUN_HOOK_ERROR="cannot prepare $lifecycle hook input"; return 1; }
   input=${REPLY:A}
   # Core values follow configured values so that they win.
   environment=(
@@ -189,7 +189,7 @@ sf_run_hooks() {
       [[ -n $prepared[component] ]] || continue
       max_capture=$prepared[max_capture]
       content=() content_bytes=0
-      sf_scratch_directory hook || { error='cannot prepare hook capture'; break; }
+      sf_scratch -d hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
       # A command's prompt is never submitted.
       [[ $kind == commands ]] && control='{"action":"deny"}' || control='{}'

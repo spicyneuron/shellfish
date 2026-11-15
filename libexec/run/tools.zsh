@@ -3,7 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-(( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_run_component_execute] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
 typeset -g SF_RUN_TOOL_ERROR=''
@@ -56,14 +56,14 @@ sf_run_tool_execute() {
       darwin_temp=''
     fi
   fi
-  sf_scratch_file tool-input || { SF_RUN_TOOL_ERROR='cannot prepare tool input'; return 1; }
+  sf_scratch tool-input || { SF_RUN_TOOL_ERROR='cannot prepare tool input'; return 1; }
   stdin=$REPLY
   print -r -- "$execution_input" >"$stdin" || {
     rm -f -- "$stdin"
     SF_RUN_TOOL_ERROR='cannot prepare tool input'
     return 1
   }
-  sf_scratch_directory tool || {
+  sf_scratch -d tool || {
     rm -f -- "$stdin"
     SF_RUN_TOOL_ERROR='cannot prepare tool capture'
     return 1

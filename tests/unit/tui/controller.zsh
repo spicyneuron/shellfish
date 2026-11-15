@@ -162,12 +162,9 @@ assert_equal working "$SF_PRESENT_STATE"
 
 # Cancel active turns.
 typeset -gi cancel_signals=0 cancel_stops=0
-functions[sf_tui_transport_signal_saved]=$functions[sf_tui_transport_signal]
+functions[sf_tui_transport_cancel_saved]=$functions[sf_tui_transport_cancel]
 functions[sf_tui_transport_stop_saved]=$functions[sf_tui_transport_stop]
-sf_tui_transport_signal() {
-  assert_equal USR1 "$1"
-  (( ++cancel_signals ))
-}
+sf_tui_transport_cancel() { (( ++cancel_signals )) }
 sf_tui_transport_stop() { (( ++cancel_stops )) }
 SF_PRESENT_STATE=working
 SF_PRESENT_QUEUE=( queued )
@@ -219,9 +216,9 @@ assert_equal '' "$BUFFER"
 SF_PRESENT_QUEUE=()
 SF_PRESENT_STEER=0
 
-functions[sf_tui_transport_signal]=$functions[sf_tui_transport_signal_saved]
+functions[sf_tui_transport_cancel]=$functions[sf_tui_transport_cancel_saved]
 functions[sf_tui_transport_stop]=$functions[sf_tui_transport_stop_saved]
-unfunction sf_tui_transport_signal_saved sf_tui_transport_stop_saved
+unfunction sf_tui_transport_cancel_saved sf_tui_transport_stop_saved
 
 # Invalid core output stops the client without retracting scrollback.
 sf_tui_reset

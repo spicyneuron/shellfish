@@ -14,10 +14,9 @@ source "$SF_ROOT/lib/options.zsh"
 sf_tui_main() {
   local requested_session=''
   local input='' draft='' presentation session='' session_mode=startup
-  local arity=''
   local -a positional=() profile_args=()
   local -a original_args=("$@")
-  integer out_explicit=0 override=0 take=0
+  integer out_explicit=0 override=0
   integer clear_requested=0
   integer draft_explicit=0
   integer verbose_requested=0 controller_status=0
@@ -58,13 +57,11 @@ sf_tui_main() {
         break
         ;;
       -*)
-        arity=${SF_CREATE_OPTIONS[$1]-}
-        [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
-        take=$(( arity + 1 ))
-        (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
-        profile_args+=( "${@:1:$take}" )
+        (( ${SF_CREATE_OPTIONS[(Ie)$1]} )) || { sf_die "unknown argument: $1"; return 2; }
+        (( $# >= 2 )) || { sf_die "$1 requires a value"; return 2; }
+        profile_args+=( "$1" "$2" )
         override=1
-        shift $take
+        shift 2
         ;;
       *)
         positional+=( "$1" )

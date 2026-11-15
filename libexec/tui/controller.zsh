@@ -146,7 +146,7 @@ sf_tui_cancel() {
     permission|working)
       [[ $SF_PRESENT_STATE != permission ]] || sf_tui_editor_permission restore
       SF_PRESENT_STATE=cancelling
-      sf_tui_transport_signal USR1
+      sf_tui_transport_cancel
       return
       ;;
     idle|stopped)

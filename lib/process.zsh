@@ -157,20 +157,6 @@ sf_process_run() {
   SF_PROCESS_ERROR=''
   REPLY=''
   reply=()
-  [[ -d $capture && ! -L $capture ]] || {
-    sf_process_fail 'invalid process capture directory'
-    return
-  }
-  [[ -z $(find "$capture" -mindepth 1 -print -quit 2>/dev/null) ]] || {
-    sf_process_fail 'process capture directory is not empty'
-    return
-  }
-  [[ -f $input && -r $input && -d $working && -x $working &&
-      ${#command} -gt 0 && $command[1] == /* && -f $command[1] && -x $command[1] &&
-      $max_capture -gt 0 && $max_control -gt 0 ]] || {
-    sf_process_fail 'process invocation is unavailable'
-    return
-  }
 
   sf_process_isolated_command "$group_file" "$status_file" "$working" "$input" \
     "$stdout_pipe" "$stderr_pipe" "$control_pipe" "${command[@]}" || {

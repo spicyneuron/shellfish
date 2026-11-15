@@ -183,7 +183,7 @@ sf_provider_stream '(.error.message? // .detail?)' '
   # normalizes directly.
   foreach (inputs, null) as $line (
     {items:[], added:{}, text:"", summary_item_id:null, summary_index:null,
-     mode:null, body:"", pending:"", mark:null, done:false, out:[]};
+     mode:null, body:"", done:false, out:[]};
     .out = [] |
     if $line == null then
       if .done then .

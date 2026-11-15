@@ -363,19 +363,14 @@ sf_run_turn() {
   integer begun=0 run_status catalog_ready=${4:-0}
 
   {
-    SF_RUN[answer]=''
-    SF_RUN[assistant]=''
-    SF_RUN[permission_count]=0
-    SF_RUN[signal_status]=0
-    SF_RUN[write_failed]=0
-    sf_run_limits && sf_run_open "$session" $catalog_ready || { print -r -u2 -- "$REPLY"; return 1; }
+    sf_run_open "$session" $catalog_ready || { print -r -u2 -- "$REPLY"; return 1; }
     begun=1
     [[ -d $SF_RUN[cwd] && -x $SF_RUN[cwd] ]] ||
       failure="session working directory is unavailable: $SF_RUN[cwd]"
     # The limit is in bytes, so multibyte text counts in full.
     () { setopt local_options no_multibyte; (( ${#1} <= SF_RUN[max_content] )) } "$user_record" ||
       failure='user message exceeds content limit'
-    sf_scratch_directory turn || failure='cannot prepare hook turn state'
+    sf_scratch -d turn || failure='cannot prepare hook turn state'
     turn_state=$REPLY
     if [[ -z $failure ]]; then
       if sf_run_hooks "$session" user_prompt_submit "$prompt" "$turn_state"; then

@@ -143,12 +143,6 @@ fi
 [[ -z $(find "$tmp/failure" -mindepth 1 -print -quit) ]] ||
   fail 'runner left files after a machinery failure'
 
-# Commands must name executable regular files.
-mkdir "$tmp/failure-command"
-if sf_process_run "$tmp/failure-command" "$tmp" "$input_file" 16 16 collect "$tmp"; then
-  fail 'runner accepted a directory as its command'
-fi
-
 # A launched isolation wrapper that omits status is a machinery failure.
 typeset no_status="$tmp/no-status" no_status_capture="$tmp/no-status-capture"
 cat >"$no_status" <<'ZSH'

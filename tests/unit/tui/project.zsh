@@ -73,7 +73,7 @@ project load "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"
 assert_equal 'cwd | /fixture
 commands
 details |  |  |  |  |  |
-profile | test/fake-model |
+identity | test/fake-model
 message_start | system
 message_delta | 0 | text | be brief |
 message_end
@@ -85,7 +85,7 @@ project live "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"
 assert_equal 'cwd | /fixture
 commands
 details |  |  |  |  |  |
-profile | test/fake-model |
+identity | test/fake-model
 message_start | user
 message_delta | 0 | text | Hello |
 message_end' "$REPLY"
@@ -188,10 +188,10 @@ project load "$header"
 assert_equal 'cwd | /fixture
 commands
 details |  |  |  |  |  |
-profile | test/fake-model |' "$REPLY"
+identity | test/fake-model' "$REPLY"
 project live "$update"
 assert_equal 'commands
-profile | test/fake-model | 200' "$REPLY"
+identity | test/fake-model' "$REPLY"
 project live '{"type":"_assistant_start"}' \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
 assert_equal 'message_start | agent
@@ -208,7 +208,7 @@ project live "$equipped"
 assert_equal 'cwd | /fixture
 commands
 details | read_file, shell |  | project/environment | 2 | 1 | 1
-profile | test/fake-model |' "$REPLY"
+identity | test/fake-model' "$REPLY"
 
 # The loaded path event names the session the client now owns.
 project load '{"type":"_session_load","path":"/sessions/live.jsonl"}'

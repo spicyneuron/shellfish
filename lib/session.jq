@@ -210,9 +210,6 @@ def session_state:
         .next = (if (.calls | length) == 0 then "assistant" else "tool_result" end)
       else error("unrecognized session record") end);
 
-def state_run:
-  {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context]};
-
 # A response awaiting results reaches no request, and trailing context waits
 # here for the request that carries it. A result with model content is a part
 # array, led by any context.
@@ -229,5 +226,4 @@ def state_messages:
     else . end] +
   if (.context | length) == 0 then [] else [context_message(.context; "")] end;
 
-def session_run: session_state | state_run;
 def session_messages: session_state | state_messages;

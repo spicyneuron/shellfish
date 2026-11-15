@@ -35,7 +35,7 @@ def identity:
   ((.model.provider // "?" | split("/") | last) + "/" + (.model.request.model // "?"));
 
 def model_actions:
-  [["profile", identity, (.model.context_window // "" | tostring)]];
+  [["identity", identity]];
 def commands_actions: [["commands"] + (.profile.commands // [])];
 
 # Component names drop their directory prefix. A disabled sandbox has no

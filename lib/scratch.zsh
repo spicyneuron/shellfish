@@ -13,26 +13,11 @@ sf_scratch_root() {
   REPLY=$root
 }
 
-sf_scratch_directory() {
-  local prefix=$1 created
-  [[ -n $prefix && $prefix != *[^A-Za-z0-9_-]* ]] || return 1
+# Create a private scratch file, or with -d a directory, named after PREFIX.
+sf_scratch() {
+  local -a flags=()
+  [[ $1 != -d ]] || { flags=( -d ); shift }
   sf_scratch_root || return 1
-  created=$(mktemp -d "$REPLY/$prefix.XXXXXX") || return 1
-  chmod 700 "$created" || {
-    rm -rf -- "$created"
-    return 1
-  }
-  REPLY=${created:A}
-}
-
-sf_scratch_file() {
-  local prefix=$1 created
-  [[ -n $prefix && $prefix != *[^A-Za-z0-9_-]* ]] || return 1
-  sf_scratch_root || return 1
-  created=$(mktemp "$REPLY/$prefix.XXXXXX") || return 1
-  chmod 600 "$created" || {
-    rm -f -- "$created"
-    return 1
-  }
-  REPLY=${created:A}
+  REPLY=$(mktemp "${flags[@]}" "$REPLY/$1.XXXXXX") || return 1
+  REPLY=${REPLY:A}
 }

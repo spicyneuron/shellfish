@@ -2,7 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
-(( $+functions[sf_scratch_directory] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_process_isolated_command] )) || source "$SF_ROOT/lib/process.zsh"
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_profile_components] )) || source "$SF_ROOT/lib/profile.zsh"
@@ -58,7 +58,7 @@ sf_provider_capture() {
     SF_PROVIDER[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
-  sf_scratch_directory provider-capture || {
+  sf_scratch -d provider-capture || {
     SF_PROVIDER[error]='cannot prepare provider capture'
     return 1
   }
@@ -116,7 +116,7 @@ sf_provider_run() {
     SF_PROVIDER[error]=$SF_ENVIRONMENT_ERROR
     return 1
   }
-  sf_scratch_directory provider || {
+  sf_scratch -d provider || {
     SF_PROVIDER[error]='cannot prepare provider capture'
     return 1
   }

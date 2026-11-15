@@ -156,7 +156,7 @@ sf_provider_stream '.error.message?' --arg control "$SF_PROVIDER_CONTROL_PATTERN
   # still normalizes; anything else that reaches the end unfinished is caught.
   foreach (inputs, null) as $line (
     {blocks:{}, order:[], usage:null, stop_reason:null, mode:null, body:"",
-     pending:"", mark:null, done:false, out:[]};
+     done:false, out:[]};
     .out = [] |
     if $line == null then
       if .done then .

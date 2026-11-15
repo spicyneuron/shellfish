@@ -5,7 +5,10 @@ sf_test_tmp session-read
 
 # Views read the transcript below the session header.
 accepts() { jq -L "$ROOT" -ce 'include "lib/session"; session_state'; }
-run() { jq -L "$ROOT" -ce 'include "lib/session"; session_run'; }
+run() {
+  jq -L "$ROOT" -ce 'include "lib/session"; session_state |
+    {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context]}'
+}
 messages() { jq -L "$ROOT" -ce 'include "lib/session"; session_messages'; }
 
 typeset records="$tmp/records.jsonl"

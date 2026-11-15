@@ -2,7 +2,7 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
 (( $+functions[sf_process_stop] )) || source "$SF_ROOT/lib/process.zsh"
-(( $+functions[sf_scratch_file] )) || source "$SF_ROOT/lib/scratch.zsh"
+(( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 typeset -ga SF_TUI_TRANSPORT_COMMAND=() SF_TUI_TRANSPORT_LINES=()
 typeset -g SF_TUI_TRANSPORT_PID='' SF_TUI_TRANSPORT_INPUT_FD=''
@@ -60,19 +60,12 @@ sf_tui_transport_close() {
   return $exit_status
 }
 
-sf_tui_transport_signal() {
-  local signal=${1:-TERM}
-  if [[ -n $SF_TUI_TRANSPORT_PID ]]; then
-    if [[ $signal == USR1 ]]; then
-      # Let the turn owner stop its children cleanly.
-      kill -USR1 "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
-    else
-      kill -"$signal" -- "-$SF_TUI_TRANSPORT_PID" 2>/dev/null ||
-        kill -"$signal" "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
-    fi
-    kill -CONT -- "-$SF_TUI_TRANSPORT_PID" 2>/dev/null ||
-      kill -CONT "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
-  fi
+# Ask the turn owner to cancel, so it stops its children cleanly.
+sf_tui_transport_cancel() {
+  [[ -n $SF_TUI_TRANSPORT_PID ]] || return 0
+  kill -USR1 "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
+  kill -CONT -- "-$SF_TUI_TRANSPORT_PID" 2>/dev/null ||
+    kill -CONT "$SF_TUI_TRANSPORT_PID" 2>/dev/null || true
 }
 
 sf_tui_transport_stop() {
@@ -95,7 +88,7 @@ sf_tui_transport_start() {
     return 1
   }
   sf_tui_transport_reset
-  sf_scratch_file transport-error || {
+  sf_scratch transport-error || {
     SF_TUI_TRANSPORT_ERROR='cannot create exec error file'
     return 1
   }

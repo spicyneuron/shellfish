@@ -1,44 +1,15 @@
 #!/usr/bin/env zsh
 
-# Derive profile option arity and compare it with the forwarding table.
+# Every forwarded profile option is one the profile parser accepts.
 
 source "${0:A:h:h}/_helpers.zsh"
 sf_test_source lib/options.zsh
+sf_test_source lib/profile.zsh
 
-typeset -a not_forwarded=( -- --verbose )
-typeset -a create_owned=( --session-from )
-
-# A shift count includes the option itself.
-typeset -A parsed=()
-typeset name arity
-while read -r name arity; do
-  parsed[$name]=$arity
-done < <(awk '
-  /^      -[-a-z|]*\)$/ { arm = substr($0, 7, length($0) - 7); next }
-  arm != "" && $1 == "shift" {
-    split(arm, names, "|")
-    for (i in names) print names[i], ($2 == "" ? 0 : $2 - 1)
-    arm = ""
-  }
-' "$ROOT/lib/profile.zsh")
-
-(( ${#parsed} )) || fail 'could not read the profile option arms'
-
-for name in ${(k)parsed}; do
-  if (( ${not_forwarded[(Ie)$name]} )); then continue; fi
-  (( ${+SF_CREATE_OPTIONS[$name]} )) || \
-    fail "lib/profile.zsh parses $name but lib/options.zsh omits it"
-  [[ $SF_CREATE_OPTIONS[$name] == $parsed[$name] ]] || \
-    fail "lib/options.zsh gives $name arity $SF_CREATE_OPTIONS[$name], lib/profile.zsh takes $parsed[$name]"
+typeset name
+for name in $SF_CREATE_OPTIONS; do
+  [[ $name != --session-from ]] || continue
+  sf_profile_resolve_args "$name" "" 2>/dev/null || true
+  [[ $SF_PROFILE_ERROR != 'unknown argument:'* ]] ||
+    fail "lib/options.zsh forwards $name but lib/profile.zsh does not parse it"
 done
-
-for name in ${(k)SF_CREATE_OPTIONS}; do
-  (( ${create_owned[(Ie)$name]} )) || (( ${+parsed[$name]} )) || \
-    fail "lib/options.zsh declares $name but lib/profile.zsh does not parse it"
-done
-for name in $create_owned; do
-  [[ $SF_CREATE_OPTIONS[$name] == 1 ]] ||
-    fail "creation option gives $name the wrong arity"
-done
-
-print -r -- ok

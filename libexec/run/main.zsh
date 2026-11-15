@@ -29,11 +29,11 @@ sf_run_lock() {
 }
 
 sf_run_main() {
-  local requested_session='' input='' prompt='' arity=''
+  local requested_session='' input='' prompt=''
   local -a positional=() create_args=()
   local -a background_launcher=()
   local -A message
-  integer create_only=0 json=0 jsonl=0 background=0 override=0 take=0 catalog_ready=0
+  integer create_only=0 json=0 jsonl=0 background=0 override=0 catalog_ready=0
 
   while (( $# )); do
     case $1 in
@@ -78,13 +78,11 @@ sf_run_main() {
         ;;
       -*)
         # Creation owns these; every one of them overrides the profile.
-        arity=${SF_CREATE_OPTIONS[$1]-}
-        [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
-        take=$(( arity + 1 ))
-        (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
-        create_args+=( "${@:1:$take}" )
+        (( ${SF_CREATE_OPTIONS[(Ie)$1]} )) || { sf_die "unknown argument: $1"; return 2; }
+        (( $# >= 2 )) || { sf_die "$1 requires a value"; return 2; }
+        create_args+=( "$1" "$2" )
         override=1
-        shift $take
+        shift 2
         ;;
       *)
         positional+=( "$1" )
@@ -190,6 +188,7 @@ sf_run_main() {
   fi
   trap '(( SF_RUN[signal_status] )) || SF_RUN[signal_status]=143;
     sf_run_interrupt "$SF_RUN[signal_status]"; exit $SF_RUN[signal_status]' TERM
+  sf_run_limits || { sf_die "$REPLY"; return 1; }
   local session
   if [[ -n $requested_session ]]; then
     sf_session_select_path "$requested_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
