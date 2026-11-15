@@ -880,8 +880,11 @@ cat >"$protocol" <<'ZSH'
 case $(jq -r .command) in
   action)
     print -r -u3 -- '{"state_update":[{"name":"tool/before-error","value":true}]}'
+    print -r -u3 -- '{"content":[{"type":"text","text":"discarded"}]}'
     print -r -u3 -- '{"action":"deny"}'
+    print -r -u3 -- '{"state_update":[{"name":"tool/after-error","value":true}]}'
     ;;
+  malformed) print -r -u3 -- '{' ;;
   stream)
     print -r -u3 -- '{"state_update":[{"name":"tool/live","value":true}]}'
     : >"$TOOL_MARKER"
@@ -910,18 +913,27 @@ ZSH
 chmod +x "$protocol"
 sf_test_shell_tool '.user_preview_lines=3' "$protocol"
 SF_TEST_PROFILE=$(jq -c '.sandbox.enabled=false' <<<"$SF_TEST_PROFILE")
-session="$tmp/protocol-action.jsonl"
-sf_test_session "$session"
-if SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=action \
-    sf_test_run protocol "$session" >"$stream" 2>/dev/null; then
-  fail 'a tool action was accepted'
-fi
-jq -eRn '[inputs | fromjson][-1] | .type == "error" and
-  (.user_text | contains("invalid control"))' <"$stream" >/dev/null ||
-  fail 'a tool action was not reported'
-jq -e -s 'map(select(.type == "state_update")) ==
-  [{type:"state_update",name:"tool/before-error",value:true}]' "$session" >/dev/null ||
-  fail 'invalid control lost previously accepted tool state'
+for mode in action malformed; do
+  session="$tmp/protocol-$mode.jsonl"
+  sf_test_session "$session"
+  SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COUNT=2 \
+    SF_TEST_PROVIDER_TOOL_COMMAND=$mode SF_TEST_PROVIDER_REQUEST="$tmp/control-request.json" \
+    sf_test_run protocol "$session" >"$stream" || fail "invalid $mode control failed the turn"
+  assert_canonical_session "$session"
+  jq -e -s '
+    ([.[] | select(.type == "tool_result")] | length == 2 and
+      all(.[]; .exit_code == 1 and .model_text == "tool returned invalid control data" and
+        (has("model_content") | not))) and
+    all(.[]; .type != "error") and .[-1].type == "assistant" and .[-1].stop == "end"
+  ' "$session" >/dev/null || fail "invalid $mode control did not settle both calls and continue"
+  jq -e '[.messages[] | select(.type == "tool_result")] |
+    length == 2 and all(.[]; .exit_code == 1 and .content == "tool returned invalid control data")' \
+    "$tmp/control-request.json" >/dev/null || fail "provider did not receive $mode failures"
+  [[ $mode != action ]] || jq -e -s '
+    [.[] | select(.type == "state_update")] | length == 2 and
+      all(.[]; .name == "tool/before-error" and .value == true)
+  ' "$session" >/dev/null || fail 'invalid control lost previously accepted tool state'
+done
 
 # State is durable while the tool is running and remains so after interruption.
 typeset live_marker="$tmp/tool-live"
@@ -998,12 +1010,12 @@ jq -e '[.messages[] | select(.type == "tool_result")][0].content |
 # Transcript images are inline data URIs only.
 session="$tmp/protocol-remote.jsonl"
 sf_test_session "$session"
-if SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=remote \
-    sf_test_run protocol "$session" >"$stream" 2>/dev/null; then
-  fail 'a remote image was accepted'
-fi
-jq -eRn '[inputs | fromjson][-1] | .type == "error" and
-  (.user_text | contains("invalid control"))' <"$stream" >/dev/null ||
-  fail 'a remote image was not reported'
+SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=remote \
+  sf_test_run protocol "$session" >"$stream" || fail 'a remote image failed the turn'
+assert_canonical_session "$session"
+jq -e -s '([.[] | select(.type == "tool_result")][0] |
+  .exit_code == 1 and .model_text == "tool returned invalid control data" and
+  (has("model_content") | not)) and .[-1].type == "assistant"' \
+  "$session" >/dev/null || fail 'a remote image did not fail the call'
 
 print -r -- ok

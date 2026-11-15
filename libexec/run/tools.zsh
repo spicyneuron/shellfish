@@ -109,7 +109,7 @@ sf_run_tool_execute() {
   [[ $reply[1] != ok ]] || (( content_bytes <= max_content )) || reply[1]=overflow
   case $reply[1] in
     (interrupted) return $reply[2] ;;
-    (invalid) sf_fail 'tool returned invalid control data'; return ;;
+    (invalid) sf_run_tool_refused 'tool returned invalid control data' 1 true; return ;;
     (overflow) sf_run_tool_refused 'tool result exceeds content limit' 1 true; return ;;
   esac
   if (( $#content )); then

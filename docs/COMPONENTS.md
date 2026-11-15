@@ -45,6 +45,8 @@ Tools, commands, and hooks use these channels. Providers use their own [response
 
 Nothing on stdout means no model text. Tools should report errors there so the model sees them. A manifest's `max_capture_kb` overrides the shared capture limit in kilobytes. Oversized stdout and stderr retain their tails behind an `[output truncated]` marker.
 
+Malformed tool control output fails that call without ending the turn.
+
 Tools and hooks can request durable named state with control lines such as `{"state_update":[{"name":"example/status","value":{"ready":true}}]}`. The latest exact name wins, and `null` clears it. Accepted state updates survive later component failure. Hooks also use fd 3 for lifecycle actions. Close fd 3 before starting an untrusted child so it cannot send control lines.
 
 ## Presentation
