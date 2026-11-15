@@ -55,7 +55,7 @@ def run(label, tests):
 
 class Session:
     def __init__(self, explicit_session=False, hooks=None, env=None, args=None,
-                 session_start=None, session_records=None, commands=None):
+                 session_start=None, session_records=None, commands=None, stdin=None):
         env_overrides = env or {}
         self.state_home = tempfile.TemporaryDirectory()
         self.project_home = tempfile.TemporaryDirectory(prefix="shellfish-pty.")
@@ -142,6 +142,13 @@ class Session:
                 )
                 argv.extend([flag, str(self.explicit_session)])
             argv.extend(args or [])
+            if stdin is not None:
+                # The terminal stays the controlling tty while stdin is a pipe.
+                read_end, write_end = os.pipe()
+                os.write(write_end, stdin.encode())
+                os.close(write_end)
+                os.dup2(read_end, 0)
+                os.close(read_end)
             os.execve(APP, argv, env)
         self.pid = pid
         self.fd = fd

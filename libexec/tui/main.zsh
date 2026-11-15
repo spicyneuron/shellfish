@@ -19,7 +19,7 @@ sf_tui_main() {
   local -a original_args=("$@")
   integer out_explicit=0 override=0 take=0
   integer clear_requested=0
-  integer handoff=0 draft_explicit=0
+  integer draft_explicit=0
   integer verbose_requested=0 controller_status=0
 
   while (( $# )); do
@@ -77,7 +77,10 @@ sf_tui_main() {
     sf_die '--session names an existing session and cannot be combined with --session-out'
     return 2
   }
-  if [[ ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then handoff=1; fi
+  # The interactive child repeats parsing and reads any piped prompt itself.
+  if [[ ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then
+    exec zsh -f -i "$SF_TUI_ENTRY" "${original_args[@]}"
+  fi
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
   typeset -gx SHELLFISH_VERBOSE=$verbose_requested
 
@@ -86,12 +89,6 @@ sf_tui_main() {
   if (( draft_explicit )) && { (( ${#positional} )) || [[ -n $input ]]; }; then
     sf_die '--draft cannot be combined with a prompt'
     return 2
-  fi
-  if (( handoff )); then
-    if [[ -n $input && ! ${#positional} ]]; then
-      exec zsh -f -i "$SF_TUI_ENTRY" "${original_args[@]}" <<<"$input"
-    fi
-    exec zsh -f -i "$SF_TUI_ENTRY" "${original_args[@]}"
   fi
   sf_cli_require_terminal chat || return
 

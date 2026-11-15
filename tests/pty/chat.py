@@ -552,6 +552,16 @@ def test_permission_stop_cancels_pending_tools():
             session.close()
 
 
+def test_piped_prompt_is_submitted():
+    session = Session(stdin="piped prompt\n")
+    try:
+        _, records = session.wait_session_records(3)
+        users = [record for record in records if record["type"] == "user"]
+        assert users and users[0]["content"][0]["text"] == "piped prompt", records
+    finally:
+        session.close()
+
+
 def test_chat_end():
     for submitted, exit_status in ((b"/quit\r", 0), (b"\x03", 130)):
         session = Session()
@@ -670,6 +680,7 @@ if __name__ == "__main__":
         test_permission_review_runs_with_prompt,
         test_permission_grant_for_session,
         test_permission_stop_cancels_pending_tools,
+        test_piped_prompt_is_submitted,
         test_chat_end,
         test_slash_command_completion,
         test_completion_drawer_during_streaming,

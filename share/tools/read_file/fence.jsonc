@@ -11,8 +11,8 @@
     "denyRead": [
       "**/.env",
       "**/.env.*",
-      "*.key",
-      "*.pem",
+      "**/*.key",
+      "**/*.pem",
       "~/.*hist*",
       "~/.aws/**",
       "~/.cache/huggingface/token",

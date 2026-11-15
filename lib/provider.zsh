@@ -89,7 +89,7 @@ sf_provider_context_window() {
   local -A process
   sf_provider_capture "$command" "$max_capture" || return
   process=( "${reply[@]}" )
-  (( ! process[interrupted] )) || return $process[exit_code]
+  (( ! process[interrupted] )) || return $process[interrupted]
   REPLY=null
   if (( process[exit_code] == 0 && process[stdout_bytes] <= max_capture &&
       process[stderr_bytes] <= max_capture )); then

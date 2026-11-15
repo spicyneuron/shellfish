@@ -108,5 +108,5 @@ Add your instructions in `system/review.md`, then select this profile with `shel
 ./tests/run pty      # terminal integration tests
 ./tests/run perf     # performance reports
 ./tests/run loc      # source size report
-./tests/run unit/session/main.zsh unit/profile/main.zsh
+./tests/run unit/session/read.zsh unit/profile/main.zsh
 ```

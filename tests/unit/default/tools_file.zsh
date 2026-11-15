@@ -138,7 +138,7 @@ for policy in "$tools"/*/fence.jsonc; do
   resolved=$(fence config show --settings "$settings" 2>/dev/null) ||
     fail "${policy:h:t} has an invalid sandbox policy"
   jq -e --arg tool "${policy:h:t}" '
-    ["**/.env", "**/.env.*", "*.key", "*.pem", "~/.*hist*", "~/.aws/**",
+    ["**/.env", "**/.env.*", "**/*.key", "**/*.pem", "~/.*hist*", "~/.aws/**",
      "~/.cache/huggingface/token", "~/.cargo/credentials.toml",
      "~/.claude/.credentials.json", "~/.claude/oauth-token",
      "~/.codex/.credentials.json", "~/.codex/auth.json",
