@@ -51,6 +51,13 @@ sf_run_append() {
   sf_run_emit "$record" || { sf_fail 'cannot emit session record'; return; }
 }
 
+sf_run_update() {
+  local session=$1 config=$2
+  sf_session_update "$session" "$config" || return
+  sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" ||
+    { sf_fail 'cannot emit session update'; return; }
+}
+
 typeset -gr SF_RUN_REDUCTIONS=$(<"$SF_ROOT/libexec/run/turn.jq")
 
 # Run BODY after the turn's reduction definitions, into reply.
@@ -295,10 +302,8 @@ sf_run_access_grant() {
     .sandbox.tools[$name] = $policy |
     {profile:., model:$model}
   ' <<<"$SF_RUN[profile]") || { sf_fail 'cannot keep sandbox access'; return; }
-  sf_session_update "$session" "$config" || return
+  sf_run_update "$session" "$config" || return
   SF_RUN[profile]=$(jq -c .profile <<<"$config")
-  sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" ||
-    { sf_fail 'cannot emit session update'; return; }
 }
 
 # Settle authorization before changing execution mode. reply is (authorization,
@@ -391,11 +396,8 @@ sf_run_turn() {
             --argjson model "$SF_RUN[model]" '{profile:$profile,model:$model}') ||
             failure='invalid session update'
           if [[ -z $failure ]]; then
-            sf_session_update "$session" "$config" || failure=$SF_ERROR
-          fi
-          if [[ -z $failure ]]; then
-            sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" && return 0
-            failure='cannot emit session update'
+            sf_run_update "$session" "$config" && return 0
+            failure=$SF_ERROR
           fi
           ;;
         deny) return 0 ;;
@@ -426,11 +428,7 @@ sf_run_turn() {
               failure='cannot update model context window'
               break
             }
-            sf_session_update "$session" "$config" || { failure=$SF_ERROR; break; }
-            sf_run_emit "$(jq -c '{type:"_session_update"} + .' <<<"$config")" || {
-              failure='cannot emit session update'
-              break
-            }
+            sf_run_update "$session" "$config" || { failure=$SF_ERROR; break; }
           fi
           sf_provider_run sf_run_emit || {
             run_status=$?

@@ -82,6 +82,9 @@ new_session update; sf_test_run update "$session" >"$stream" || fail 'session up
 jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox.tools.shell.filesystem.allowWrite == ["/tmp/reference"]' "$session" >/dev/null &&
   jq -eRn '[inputs | fromjson][-1].type == "_session_update"' <"$stream" >/dev/null || fail 'session update did not replace header'
 new_session bad-update; sf_test_run bad-update "$session" >"$stream" 2>"$tmp/update.err" && fail 'invalid update succeeded'
+jq -eRn '[inputs | fromjson] | all(.type != "_session_update")' <"$stream" >/dev/null ||
+  fail 'invalid update notified the client'
+assert_equal 'invalid session update' "$(<"$tmp/update.err")"
 jq -e -s '.[-2].model_text == "<context script=\"prompt\">\nupdate context\n</context>" and
   .[-1] == {type:"error",user_text:"invalid session update"}' "$session" >/dev/null ||
   fail 'invalid update lost settled result'
