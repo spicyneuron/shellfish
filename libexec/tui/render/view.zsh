@@ -176,9 +176,9 @@ sf_tui_loading() {
   trap 'exit 0' INT TERM HUP
   integer frame=1
   while true; do
-    zselect -t "$SF_PRESENT_HEARTBEAT_TIMEOUT" 2>/dev/null || true
-    frame=$(( frame % ${#SF_PRESENT_ACTIVITY_FRAMES} + 1 ))
-    sf_tui_loading_frame "$SF_PRESENT_ACTIVITY_FRAMES[frame]" || return
+    zselect -t "$SF_TUI_HEARTBEAT_TIMEOUT" 2>/dev/null || true
+    frame=$(( frame % ${#SF_TUI_ACTIVITY_FRAMES} + 1 ))
+    sf_tui_loading_frame "$SF_TUI_ACTIVITY_FRAMES[frame]" || return
   done
 }
 

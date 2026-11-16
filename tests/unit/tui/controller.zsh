@@ -73,11 +73,11 @@ assert_equal "cannot read incomplete session: $torn" "$SF_TUI_ERROR"
 
 # Resume activity is transient on both success and failure.
 sf_tui_resume "$replay" >"$tmp/loading" || fail 'resume failed'
-assert_equal test/fake-model "$SF_PRESENT_IDENTITY"
+assert_equal test/fake-model "$SF_TUI_IDENTITY"
 [[ $(<"$tmp/loading") == *'Loading session…'*$'\r\e[2K' ]] ||
   fail 'resume did not clear loading activity'
 sf_tui_resume "$malformed" >"$tmp/loading" && fail 'invalid resume succeeded'
-assert_equal "cannot present session: $malformed" "$SF_PRESENT_ERROR"
+assert_equal "cannot present session: $malformed" "$SF_TUI_ERROR"
 [[ $(<"$tmp/loading") == *$'\r\e[2K' ]] || fail 'failed resume left loading activity'
 assert_equal '' "$(jobs -p)"
 

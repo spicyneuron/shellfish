@@ -440,7 +440,7 @@ sf_tui_resume() {
   integer load_status=0
   trap 'return 130' INT
   trap 'return 143' TERM
-  sf_tui_loading_frame "$SF_PRESENT_ACTIVITY_FRAMES[1]"
+  sf_tui_loading_frame "$SF_TUI_ACTIVITY_FRAMES[1]"
   sf_tui_loading &
   worker=$!
   {
