@@ -10,14 +10,15 @@ def config_object($path; $fields):
   config_assert(type == "object"; $path; "must be an object") |
   config_assert((keys - $fields | length) == 0; $path + [(keys - $fields)[0]]; "unknown field");
 def config_name:
-  type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*$");
+  type == "string" and test($schema[0]."$defs".name.pattern);
 
 def config_presentation:
-  config_object([]; ["$schema", "theme_mode", "theme_light", "theme_dark", "themes",
-    "preview_lines_reasoning", "preview_lines"]) |
+  $schema[0]."$defs".preview_lines.oneOf as [$range, $full] |
+  config_object([]; ($schema[0].properties | keys)) |
   config_assert((has("$schema") | not) or (."$schema" | type == "string");
     ["$schema"]; "must be a string") |
-  config_assert((has("theme_mode") | not) or (.theme_mode | IN("auto", "light", "dark"));
+  config_assert((has("theme_mode") | not) or
+    (.theme_mode | IN($schema[0].properties.theme_mode.enum[]));
     ["theme_mode"]; "invalid theme mode") |
   reduce ["theme_light", "theme_dark"][] as $field (.;
     config_assert((has($field) | not) or (.[$field] | config_name);
@@ -27,19 +28,15 @@ def config_presentation:
   reduce (.themes // {} | to_entries[]) as $theme (.;
     config_assert($theme.key | config_name; ["themes", $theme.key]; "invalid name") |
     ($theme.value | config_object(["themes", $theme.key];
-      ["text", "muted", "divider", "footer", "prompt", "prompt_waiting", "system",
-       "user", "agent", "activity", "link", "code", "tool", "reasoning",
-       "error", "syntax_comment", "syntax_keyword", "syntax_string", "syntax_number",
-       "syntax_tag", "diff_added", "diff_added_background", "diff_removed",
-       "diff_removed_background", "permission"])) as $_ |
+      ($schema[0]."$defs".theme.properties | keys))) as $_ |
     reduce ($theme.value | to_entries[]) as $color (.;
       config_assert($color.value | type == "string" and
-        test("^#[0-9A-Fa-f]{6}$");
+        test($schema[0]."$defs".color.pattern);
         ["themes", $theme.key, $color.key]; "must be a #RRGGBB color"))) |
   reduce ["preview_lines_reasoning", "preview_lines"][] as $field (.;
     config_assert((has($field) | not) or
-      (.[$field] | . == "full" or
-        (type == "number" and floor == . and . >= 0 and . <= 2147483647));
+      (.[$field] | . == $full.const or
+        (type == "number" and floor == . and . >= $range.minimum and . <= $range.maximum));
       [$field]; "must be full or a non-negative integer"));
 
 # Whichever theme the current mode selects must exist.
@@ -53,5 +50,7 @@ def presentation_finish:
 if $raw | type != "object" then error("shellfish:invalid-config")
 else
   $defaults * $raw |
-  config_presentation | presentation_finish
+  config_presentation | presentation_finish |
+  if $verbose != 0 then .preview_lines_reasoning = "full" | .preview_lines = "full"
+  else . end
 end

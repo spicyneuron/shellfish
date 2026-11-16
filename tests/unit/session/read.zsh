@@ -5,7 +5,10 @@ sf_test_tmp session-read
 
 # Views read the transcript below the session header.
 accepts() { jq -L "$ROOT" -ce 'include "lib/session"; session_state'; }
-run() { jq -L "$ROOT" -ce 'include "lib/session"; session_run'; }
+run() {
+  jq -L "$ROOT" -ce 'include "lib/session"; session_state |
+    {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context]}'
+}
 messages() { jq -L "$ROOT" -ce 'include "lib/session"; session_messages'; }
 
 typeset records="$tmp/records.jsonl"
@@ -100,6 +103,16 @@ print -r -- '[
     "<context script=\"instructions\">\nsecond\n</context>\n" +
     "</hook>\n\ngo"
 ' >/dev/null || fail 'same-lifecycle hook context was not grouped'
+
+# Attached images follow the prompt and its context.
+print -r -- '[
+  {"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"ctx"},
+  {"type":"user","content":[{"type":"text","text":"see"},
+    {"type":"image","url":"data:image/png;base64,AAAA"}]}
+]' | messages | jq -e '
+  .[0].content == [{type:"text",text:"<hook name=\"session_start\">\nctx\n</hook>\n\nsee"},
+    {type:"image",url:"data:image/png;base64,AAAA"}]
+' >/dev/null || fail 'prompt images did not follow the prompt text'
 
 # Errors close a turn, reach no request, and never become context.
 typeset failed_turn='[
@@ -206,6 +219,13 @@ typeset -a invalid=(
   'an error carrying model text' '[{"type":"error","user_text":"failed","model_text":"failed"}]'
   'reasoning with an extra field' '[{"type":"user","content":[{"type":"text","text":"a"}]},
      {"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"why","extra":true}]}]'
+  'a prompt led by an image' '[{"type":"user","content":[
+     {"type":"image","url":"data:image/png;base64,AAAA"},{"type":"text","text":"a"}]}]'
+  'a prompt with two texts' '[{"type":"user","content":[
+     {"type":"text","text":"a"},{"type":"text","text":"b"}]}]'
+  'a prompt with a remote image' '[{"type":"user","content":[
+     {"type":"text","text":"a"},{"type":"image","url":"https://example.test/a.png"}]}]'
+  'an empty prompt' '[{"type":"user","content":[]}]'
   'consecutive user requests' '[{"type":"user","content":[{"type":"text","text":"a"}]},
      {"type":"user","content":[{"type":"text","text":"b"}]}]'
   'a user request during a tool sequence' '[{"type":"user","content":[{"type":"text","text":"a"}]},
@@ -220,6 +240,24 @@ typeset -a invalid=(
 for (( index = 1; index <= ${#invalid}; index += 2 )); do
   if print -r -- "$invalid[index + 1]" | accepts >/dev/null 2>&1; then
     fail "the reader accepted $invalid[index]"
+  fi
+done
+
+# Numbered records keep one agent ID through tools and never reach providers.
+typeset numbered='[
+  {"type":"user","section":12,"content":[{"type":"text","text":"go"}]},
+  {"type":"assistant","section":13,"stop":"tool_calls","content":[
+    {"type":"tool_call","id":"c1","name":"shell","input":{}}]},
+  {"type":"tool_result","section":13,"id":"c1","name":"shell","input":{},"exit_code":0},
+  {"type":"assistant","section":13,"stop":"end","content":[]}
+]'
+print -r -- "$numbered" | accepts | jq -e '.sections == [12,13]' >/dev/null
+print -r -- "$numbered" | messages | jq -e 'all(.[]; has("section") | not)' >/dev/null
+for invalid_section in '.[0].section=0' '.[0].section=1.5' '.[1].section=12' \
+    '.[2].section=14' '.[3].section=14' \
+    '. + [{type:"user",section:12,content:[{type:"text",text:"again"}]}]'; do
+  if jq "$invalid_section" <<<"$numbered" | accepts >/dev/null 2>&1; then
+    fail "the reader accepted an invalid section: $invalid_section"
   fi
 done
 
@@ -244,6 +282,44 @@ print -r -- '[{"type":"user","content":[{"type":"text","text":"a"}]},
   .[-1].content == [{type:"text",text:"<hook name=\"pre_tool_use\">\nnote\n</hook>"},
     {type:"text",text:"shot"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]
 ' >/dev/null || fail 'model content did not become request parts'
+
+# Hook attachments survive replay at submission, after tools, and on stop denial.
+for lifecycle in user_prompt_submit post_tool_use stop; do
+  jq -cn --arg lifecycle "$lifecycle" '
+    [{type:"user",content:[{type:"text",text:"inspect"}]}] as $user |
+    {type:"hook_result",lifecycle:$lifecycle,id:"1",model_content:[
+      {type:"text",text:"caption"},
+      {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]} as $hook |
+    if $lifecycle == "user_prompt_submit" then [$hook] + $user
+    elif $lifecycle == "stop" then $user +
+      [{type:"assistant",stop:"end",content:[]}, $hook + {action:"deny"}]
+    else $user + [{type:"assistant",stop:"tool_calls",content:[
+      {type:"tool_call",id:"c1",name:"shell",input:{}}]},
+      {type:"tool_result",id:"c1",name:"shell",input:{},exit_code:0,model_text:"out"},$hook]
+    end
+  ' | messages | jq -e --arg lifecycle "$lifecycle" '
+    (if $lifecycle == "user_prompt_submit" then .[0] else .[-1] end) |
+    (.content | type == "array") and
+    any(.content[]; .type == "image" and .url == "data:image/png;base64,iVBORw0KGgo=")
+  ' >/dev/null || fail "hook attachment lost at $lifecycle"
+done
+# Attached hook context joins the prompt as merged text around the image.
+print -r -- '[{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1",
+    "model_content":[{"type":"text","text":"screen:"},
+      {"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]},
+  {"type":"user","content":[{"type":"text","text":"what is shown?"}]}]' | messages | jq -e '
+  .[0].content == [{type:"text",text:"<hook name=\"user_prompt_submit\">\nscreen:"},
+    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="},
+    {type:"text",text:"\n</hook>\n\nwhat is shown?"}]
+' >/dev/null || fail 'hook attachment context did not merge its text parts'
+for content in '[]' '[{"type":"image","url":"https://example.com/a.png"}]'; do
+  jq -cn --argjson content "$content" '[{type:"hook_result",lifecycle:"session_start",
+    id:"1",model_content:$content}]' | accepts >/dev/null 2>&1 &&
+    fail 'invalid hook model content accepted'
+done
+print -r -- '[{"type":"hook_result","lifecycle":"session_start","id":"1",
+  "model_text":"text","model_content":[{"type":"text","text":"text"}]}]' |
+  accepts >/dev/null 2>&1 && fail 'hook accepted both model text and content'
 
 typeset -a malformed_results=(
   'an out-of-range exit code' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":256}'

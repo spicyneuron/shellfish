@@ -72,7 +72,7 @@ shellfish run --json --session "$session" "Inspect the tests next"
 
 ## Configuration
 
-Shellfish includes a default agent with bundled prompts, tools, commands, and hooks. `init` copies its profile for customization, plus a read-only example and configuration stubs. General and tool-use prompts remain bundled.
+Shellfish includes a default agent with bundled prompts, tools, commands, and hooks. See [Setup](docs/CONFIG.md#setup) for editable starter configuration and [Chat controls](docs/CONFIG.md#chat) for editor keys and queued prompts.
 
 The Shellfish directory (typically `~/.shellfish/`) holds your editable configuration:
 
@@ -108,5 +108,5 @@ Add your instructions in `system/review.md`, then select this profile with `shel
 ./tests/run pty      # terminal integration tests
 ./tests/run perf     # performance reports
 ./tests/run loc      # source size report
-./tests/run unit/session/main.zsh unit/profile/main.zsh
+./tests/run unit/session/read.zsh unit/profile/main.zsh
 ```

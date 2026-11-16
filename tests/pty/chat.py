@@ -44,7 +44,12 @@ def test_sandbox_updates_without_reload():
             while time.monotonic() < end:
                 records = [json.loads(line) for line in path.read_text().splitlines()]
                 grants = records[0]["profile"]["sandbox"]["tools"].get("shell", {})
-                if value in grants.get(kind, []):
+                section, field = {
+                    "read": ("filesystem", "allowRead"),
+                    "write": ("filesystem", "allowWrite"),
+                    "domains": ("network", "allowedDomains"),
+                }[kind]
+                if value in grants.get(section, {}).get(field, []):
                     return records, grants
                 session.pump()
             raise AssertionError(f"session header did not gain {kind} grant {value}")
@@ -66,6 +71,7 @@ def test_sandbox_updates_without_reload():
                 "type": "hook_result",
                 "lifecycle": "user_prompt_submit",
                 "user_text": f"**Sandbox** shell write grant added\n{grant_path}",
+                "user_preview_lines": "full",
                 "model_text": f'<context script="sandbox">\n{granted}\n</context>',
             }
             mark = len(session.output)
@@ -73,8 +79,8 @@ def test_sandbox_updates_without_reload():
             session.wait_after(mark, "Sandbox shell domain grant added", timeout=5)
             session.wait_ready(mark, timeout=5)
             _, grants = wait_grant("domains", "github.com")
-            assert grants["domains"] == ["github.com"]
-            assert grants["write"] == [grant_path]
+            assert grants["network"]["allowedDomains"] == ["github.com"]
+            assert grants["filesystem"]["allowWrite"] == [grant_path]
         finally:
             session.close()
 
@@ -319,8 +325,8 @@ def test_steer_cancels_and_sends_draft():
             assert prompts == ["delay response", "steer now", "later"], prompts
             assert records[-1]["type"] == "assistant", records
             assert records[2] in (
-                {"type": "error", "user_text": "Cancelled."},
-                {"type": "error", "user_text": "Turn interrupted."},
+                {"type": "error", "section": 2, "user_text": "Cancelled."},
+                {"type": "error", "section": 2, "user_text": "Turn interrupted."},
             ), (key, records)
         finally:
             session.close()
@@ -344,7 +350,7 @@ def test_interrupt_preserves_queue_until_send_now():
             for record in records if record["type"] == "user"
         ]
         assert prompts == ["delay response"], prompts
-        assert records[-1] == {"type": "error", "user_text": "Cancelled."}, records
+        assert records[-1] == {"type": "error", "section": 2, "user_text": "Cancelled."}, records
 
         session.send(b"\x1b[13;5u")
         _, records = session.wait_session_records(7, path=path)
@@ -374,7 +380,7 @@ def test_interrupt_drains_partial_recovery():
         session.send(b"\x03")
         session.wait_after(mark, "Cancelled.", timeout=2)
         _, records = session.wait_session_records(4, path=path)
-        assert records[-1] == {"type": "error", "user_text": "Cancelled."}
+        assert records[-1] == {"type": "error", "section": 2, "user_text": "Cancelled."}
         recovered = records[-2]
         assert recovered["type"] == "assistant" and recovered["stop"] == "cancelled"
         assert any(
@@ -503,7 +509,7 @@ def test_permission_grant_for_session():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["sandbox_access"] == "session"
-        assert records[0]["profile"]["sandbox"]["tools"]["shell"]["read"] == [
+        assert records[0]["profile"]["sandbox"]["tools"]["shell"]["filesystem"]["allowRead"] == [
             str(Path(granted).resolve())
         ]
     finally:
@@ -542,10 +548,20 @@ def test_permission_stop_cancels_pending_tools():
                 None,
                 None,
             ]
-            assert records[-1] == {"type": "error", "user_text": "Cancelled."}
+            assert records[-1] == {"type": "error", "section": 2, "user_text": "Cancelled."}
             session.wait_after(mark, "Cancelled.")
         finally:
             session.close()
+
+
+def test_piped_prompt_is_submitted():
+    session = Session(stdin="piped prompt\n")
+    try:
+        _, records = session.wait_session_records(3)
+        users = [record for record in records if record["type"] == "user"]
+        assert users and users[0]["content"][0]["text"] == "piped prompt", records
+    finally:
+        session.close()
 
 
 def test_chat_end():
@@ -679,6 +695,15 @@ def test_sigterm_leaves_terminal_state(loading=False):
                 except OSError:
                     pass
         assert process.poll() == 143
+        # Process exit can be observed before its final terminal bytes are read.
+        while select.select([master], [], [], 0)[0]:
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            all_output += chunk
         assert before[6][termios.VINTR] == termios.tcgetattr(slave)[6][termios.VINTR]
         sync_starts = all_output.count(b"\x1b[?2026h")
         sync_ends = all_output.count(b"\x1b[?2026l")
@@ -714,6 +739,7 @@ if __name__ == "__main__":
         test_permission_review_runs_with_prompt,
         test_permission_grant_for_session,
         test_permission_stop_cancels_pending_tools,
+        test_piped_prompt_is_submitted,
         test_chat_end,
         test_slash_command_completion,
         test_completion_drawer_during_streaming,

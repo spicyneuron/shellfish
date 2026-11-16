@@ -7,12 +7,6 @@ typeset -gr SF_ROOT=${0:A:h:h:h}
 
 source "$SF_ROOT/lib/cli.zsh"
 
-sf_request_abort() {
-  sf_process_stop "$SF_PROVIDER[pid]" "$SF_PROVIDER[group_file]"
-  [[ -z $SF_PROVIDER[directory] ]] || rm -rf -- "$SF_PROVIDER[directory]"
-  exit $1
-}
-
 sf_request_main() {
   local model=null
   local -a models=()
@@ -35,28 +29,19 @@ sf_request_main() {
   if (( ${#models} )); then
     sf_profile_model_refs run "${models[@]}" || {
       local resolve_status=$?
-      sf_die "$SF_PROFILE_ERROR"
+      sf_die "$SF_ERROR"
       return $resolve_status
     }
     model=$REPLY
   fi
-  sf_provider_project "$model" || { sf_die "$SF_PROVIDER[error]"; return 1; }
-  trap 'sf_request_abort 130' INT
-  trap 'sf_request_abort 129' HUP
-  trap 'sf_request_abort 143' TERM
-  sf_provider_run
-  local request_status=$?
-  if (( request_status )); then
-    trap - INT HUP TERM
-    (( request_status != 129 && request_status != 130 && request_status != 143 )) ||
-      return $request_status
-    sf_die "$SF_PROVIDER[error]"
-    return 1
-  fi
-  trap - INT HUP TERM
+  sf_provider_project "$model" || { sf_die "$SF_ERROR"; return 1; }
+  sf_provider_run || {
+    local request_status=$?
+    # A signal status means the request was cancelled, which needs no message.
+    (( request_status != 1 )) || sf_die "$SF_ERROR"
+    return $request_status
+  }
   print -r -- "$REPLY"
 }
 
 sf_request_main "$@"
-typeset exit_status=$?
-exit $exit_status

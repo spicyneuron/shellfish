@@ -6,6 +6,30 @@ typeset -g SF_PROVIDER_MODEL SF_PROVIDER_ENDPOINT SF_PROVIDER_INSECURE_TLS
 typeset -g SF_PROVIDER_HTTP_TIMEOUT SF_PROVIDER_HTTP_STALL
 typeset -ga SF_PROVIDER_CURL_ARGS
 typeset -gr SF_PROVIDER_CONTROL_PATTERN='[\x{0000}-\x{001f}\x{007f}-\x{009f}]'
+typeset -gr SF_PROVIDER_JQ='
+  def output_limit($default):
+    if has("max_output_tokens") then .max_output_tokens
+    elif has("max_completion_tokens") then .max_completion_tokens
+    elif has("max_tokens") then .max_tokens
+    else $default end;
+  def request_reasoning:
+    if has("reasoning_effort") then
+      .reasoning = ((.reasoning // {}) + {effort:.reasoning_effort}) |
+      del(.reasoning_effort)
+    else . end;
+  def delta($type;$text): {type:$type,text:$text};
+  def openai_usage:
+    {input_tokens,output_tokens} +
+    (if (.input_tokens_details.cached_tokens // null) == null then {}
+     else {cached_tokens:.input_tokens_details.cached_tokens} end) +
+    (if (.output_tokens_details.reasoning_tokens // null) == null then {}
+     else {reasoning_tokens:.output_tokens_details.reasoning_tokens} end);
+  def sse_event:
+    sub("\r$"; "") |
+    if startswith("data:") then
+      sub("^data:[ ]?"; "") | fromjson? // {type:"ignore"}
+    else {type:"ignore"} end;
+'
 
 sf_provider_die() {
   print -u2 -r -- "$SF_PROVIDER_NAME: $*"
@@ -74,29 +98,32 @@ sf_provider_credential() {
   print -r -- "$name: $value" >>$SF_PROVIDER_HEADERS_FILE
 }
 
-sf_provider_curl_args() {
-  SF_PROVIDER_CURL_ARGS=(--disable --silent --show-error --no-buffer --connect-timeout 15
-    --max-time "$SF_PROVIDER_HTTP_TIMEOUT" --speed-limit 1 --speed-time "$SF_PROVIDER_HTTP_STALL"
-    --write-out '%{stderr}%{http_code}' --request POST --url "$SF_PROVIDER_ENDPOINT"
-    --header 'Content-Type: application/json' --data-binary "@$SF_PROVIDER_BODY_FILE")
+sf_provider_curl_base() {
+  SF_PROVIDER_CURL_ARGS=(--disable --silent --show-error)
   [[ ! -s $SF_PROVIDER_HEADERS_FILE ]] ||
     SF_PROVIDER_CURL_ARGS+=(--header "@$SF_PROVIDER_HEADERS_FILE")
   [[ $SF_PROVIDER_INSECURE_TLS != 1 ]] || SF_PROVIDER_CURL_ARGS+=(--insecure)
 }
 
+sf_provider_curl_args() {
+  sf_provider_curl_base
+  SF_PROVIDER_CURL_ARGS+=(--no-buffer --connect-timeout 15
+    --max-time "$SF_PROVIDER_HTTP_TIMEOUT" --speed-limit 1 --speed-time "$SF_PROVIDER_HTTP_STALL"
+    --write-out '%{stderr}%{http_code}' --request POST --url "$SF_PROVIDER_ENDPOINT"
+    --header 'Content-Type: application/json' --data-binary "@$SF_PROVIDER_BODY_FILE")
+}
+
 # Model metadata is a side lookup, so it uses the request's TLS setting but its
 # own endpoint and tighter bounds.
 sf_provider_context_curl_args() {
-  local endpoint=$1 insecure=$SF_PROVIDER_INSECURE_TLS
+  local endpoint=$1
   integer timeout=$SF_PROVIDER_HTTP_TIMEOUT stall=$SF_PROVIDER_HTTP_STALL
   (( timeout <= 10 )) || timeout=10
   (( stall <= 5 )) || stall=5
-  SF_PROVIDER_CURL_ARGS=(--disable --silent --show-error --fail-with-body
+  sf_provider_curl_base
+  SF_PROVIDER_CURL_ARGS+=(--fail-with-body
     --connect-timeout 5 --max-time "$timeout" --speed-limit 1 --speed-time "$stall"
     --request GET --url "$endpoint")
-  [[ ! -s $SF_PROVIDER_HEADERS_FILE ]] ||
-    SF_PROVIDER_CURL_ARGS+=(--header "@$SF_PROVIDER_HEADERS_FILE")
-  [[ $insecure != 1 ]] || SF_PROVIDER_CURL_ARGS+=(--insecure)
 }
 
 # Sends the prepared body and normalizes the response with the provider's jq

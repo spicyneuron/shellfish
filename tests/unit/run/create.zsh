@@ -36,18 +36,18 @@ jq -es 'length == 1' "$explicit" >/dev/null || fail 'create did not populate --s
 # Freeze forwarded sandbox grants.
 typeset granted="$tmp/granted.jsonl"
 zsh -f "$entry" run --session-create --session-out "$granted" \
-  -t shell --sandbox "{\"tools\":{\"shell\":{\"read\":[\"${system:A}\"],\"write\":[\"~/work\"]}}}" >/dev/null || \
+  -t shell --sandbox "{\"tools\":{\"shell\":{\"filesystem\":{\"allowRead\":[\"${system:A}\"],\"allowWrite\":[\"~/work\"]}}}}" >/dev/null || \
   fail 'create rejected forwarded sandbox grants'
 jq -e --arg read "${system:A}" '
   select(.type == "session") |
-  (.profile.sandbox.tools.shell.read | index($read)) != null and
-  (.profile.sandbox.tools.shell.write | index("~/work")) != null
+  (.profile.sandbox.tools.shell.filesystem.allowRead | index($read)) != null and
+  (.profile.sandbox.tools.shell.filesystem.allowWrite | index("~/work")) != null
 ' "$granted" >/dev/null || fail 'create did not store forwarded sandbox grants'
 
 # Grants for a tool that never runs sandboxed fail creation.
 typeset unsandboxed="$tmp/unsandboxed.jsonl" unsandboxed_error="$tmp/unsandboxed.err"
 if zsh -f "$entry" run --session-create --session-out "$unsandboxed" \
-    -t subagent --sandbox '{"tools":{"subagent":{"read":["/x"]}}}' 2>"$unsandboxed_error"; then
+    -t subagent --sandbox '{"tools":{"subagent":{"filesystem":{"allowRead":["/x"]}}}}' 2>"$unsandboxed_error"; then
   fail 'create accepted grants for an unsandboxed tool'
 fi
 grep -q 'sandbox grants name an unsandboxed tool: subagent' "$unsandboxed_error" ||
@@ -215,10 +215,7 @@ sf_test_profile slow \
 zsh -f "$entry" run --jsonl --session-create -p slow --session-out "$cancelled" \
   >"$events" 2>"$hook_error" &
 integer create_pid=$! cancel_status=0 waited=0
-while (( waited++ < 50 )) && [[ ! -e $SLOW_MARKER ]]; do
-  sleep 0.1
-done
-(( waited <= 50 )) || fail 'session_start hook script did not start'
+sf_test_wait test -e "$SLOW_MARKER" || fail 'session_start hook script did not start'
 kill -USR1 "$create_pid"
 wait "$create_pid" || cancel_status=$?
 (( cancel_status == 130 )) || fail 'cancelled creation did not report cancellation'
@@ -246,15 +243,11 @@ for startup_mode in create foreground background; do
     foreground) startup_args=( 'startup answer' ) ;;
     background) startup_args=( --background 'startup answer' ) ;;
   esac
-  SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST="$startup_request" \
+  SF_TEST_PROVIDER_REQUEST="$startup_request" \
     zsh -f "$entry" run --session-out "$startup_session" -p slow "${startup_args[@]}" \
     </dev/null >"$events" 2>"$hook_error" &
   create_pid=$!
-  waited=0
-  while (( waited++ < 50 )) && [[ ! -e $SLOW_MARKER ]]; do
-    sleep 0.1
-  done
-  (( waited <= 50 )) || fail "$startup_mode startup did not start"
+  sf_test_wait test -e "$SLOW_MARKER" || fail "$startup_mode startup did not start"
   if zsh -f "$entry" run --session "$startup_session" competing \
       </dev/null >/dev/null 2>"$lock_error"; then
     fail "$startup_mode startup admitted a competing turn"
@@ -266,7 +259,7 @@ for startup_mode in create foreground background; do
   : >"$SLOW_RELEASE"
   wait "$create_pid" || fail "$startup_mode startup failed"
   if [[ $startup_mode == create ]]; then
-    SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST="$startup_request" \
+    SF_TEST_PROVIDER_REQUEST="$startup_request" \
       zsh -f "$entry" run --session "$startup_session" 'startup answer' \
       </dev/null >/dev/null || fail 'turn after creation failed'
   fi
@@ -310,7 +303,7 @@ jq -e 'select(.type == "session") |
 mv -- "$old_home" "$new_home"
 (
   builtin cd -- "$new_project"
-  HOME="$new_home" SHELLFISH_DIR="$new_home/.shellfish" SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run \
+  HOME="$new_home" SHELLFISH_DIR="$new_home/.shellfish" zsh -f "$entry" run \
     --session "$PWD/session.jsonl" 'plain answer' >"$tmp/relocated-answer"
 ) || fail 'relocated session turn failed'
 assert_equal 'plain answer' "$(<"$tmp/relocated-answer")"

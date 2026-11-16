@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 set -euo pipefail
+source "$SHELLFISH_SHARE_DIR/lib/files.zsh"
 decoded=$(jq -ejr '
   def field: ., "\u0000";
   def string: type == "string" and index("\u0000") == null;
@@ -14,16 +15,6 @@ fields=( "${(@0)${decoded%$'\0'}}" )
 }
 file_path=$fields[1]
 content=$fields[2]
-snapshot=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-original.XXXXXX") || {
-  printf 'write_file: cannot prepare diff for %s\n' "$file_path"
-  exit 2
-}
-diff_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-write-diff.XXXXXX") || {
-  rm -f -- "$snapshot"
-  printf 'write_file: cannot prepare diff for %s\n' "$file_path"
-  exit 2
-}
-trap 'rm -f -- "$snapshot" "$diff_file"' EXIT
 if [[ -e $file_path || -L $file_path ]]; then
   [[ ! -d $file_path ]] || { printf 'write_file: %s is a directory\n' "$file_path"; exit 2; }
   [[ -f $file_path ]] || { printf 'write_file: not a regular file: %s\n' "$file_path"; exit 2; }
@@ -31,38 +22,10 @@ if [[ -e $file_path || -L $file_path ]]; then
   probe_bytes=$(wc -c <"$file_path")
   text_bytes=$(tr -d '\0' <"$file_path" | wc -c)
   ((probe_bytes == text_bytes)) || { printf 'write_file: %s is not a text file\n' "$file_path"; exit 2; }
-  cp -- "$file_path" "$snapshot" || {
-    printf 'write_file: cannot prepare diff for %s\n' "$file_path"
-    exit 2
-  }
-  existed=true
 else
   mkdir -p -- "$(dirname -- "$file_path")" || {
     printf 'write_file: cannot create the parent directory of %s\n' "$file_path"
     exit 2
   }
-  existed=false
 fi
-printf '%s' "$content" >"$file_path" || {
-  printf 'write_file: cannot write %s\n' "$file_path"
-  exit 2
-}
-if diff -U1 -L '' -L '' -- "$snapshot" "$file_path" >"$diff_file"; then
-  diff_status=0
-else
-  diff_status=$?
-fi
-case $diff_status in
-  0) [[ $existed == false ]] || printf 'write_file: %s is already up to date\n' "$file_path" ;;
-  1)
-    awk '
-      NR == 1 && /^--- / { next }
-      NR == 2 && /^\+\+\+ / { next }
-      { print }
-    ' "$diff_file"
-    ;;
-  *)
-    printf 'write_file: cannot render diff for %s\n' "$file_path"
-    exit 2
-    ;;
-esac
+sf_file_write write_file "$file_path" "$content"

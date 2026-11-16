@@ -20,7 +20,7 @@ assert_equal '(empty)' "$(run_tool read_file '{"file_path":"empty.txt"}')"
 
 # Images return on fd 3 for the model to view, and other binary files are refused.
 typeset small_png=iVBORw0KGgoAAAANSUhEUgAAAAQAAAACAQMAAABFZu8gAAAAA1BMVEUAgACc+aWRAAAADElEQVQI12NgYGAAAAAEAAEnNCcKAAAAAElFTkSuQmCC
-typeset wide_png=iVBORw0KGgoAAAANSUhEUgAAB9AAAAAKAQMAAADW9Ff9AAAAA1BMVEUAgACc+aWRAAAAGUlEQVRIx+3BAQ0AAADCoPdPbQ43oAAA+DUJzgABnKClDgAAAABJRU5ErkJggg==
+typeset wide_png=iVBORw0KGgoAAAANSUhEUgAACcQAAAAKAQMAAACqx11pAAAAA1BMVEUAgACc+aWRAAAAGklEQVR42u3BgQAAAADDoPlTX+EAVQEAAPwGDEQAAWCjMYgAAAAASUVORK5CYII=
 print -rn -- $small_png | base64 -d >"$tmp/small.png"
 print -rn -- $wide_png | base64 -d >"$tmp/wide.png"
 if (( $+commands[sips] || $+commands[magick] || ($+commands[identify] && $+commands[convert]) )); then
@@ -38,10 +38,10 @@ if (( $+commands[sips] || $+commands[magick] || ($+commands[identify] && $+comma
   jq -e --arg url "data:image/png;base64,$small_png" '.content == [{type:"image",url:$url}]' \
     "$tmp/fd3" >/dev/null || fail 'read_file re-encoded an image it could send unchanged'
   : >|"$tmp/fd3"
-  assert_equal '[image 1568x8 png, downscaled from 2000x10]' \
+  assert_equal '[image 2000x8 png, downscaled from 2500x10]' \
     "$(SHELLFISH_CONFIG=$png run_tool read_file '{"file_path":"wide.png"}')"
   : >|"$tmp/fd3"
-  assert_equal '[image 1000x5 png, downscaled from 2000x10]' \
+  assert_equal '[image 1000x4 png, downscaled from 2500x10]' \
     "$(SHELLFISH_CONFIG='{"read_file":{"image_format":"png","image_max_edge":1000}}' \
       run_tool read_file '{"file_path":"wide.png"}')"
   : >|"$tmp/fd3"
@@ -113,10 +113,70 @@ mkdir -p "$tmp/folder"
 assert_equal 'write_file: folder is a directory' \
   "$(run_tool write_file '{"file_path":"folder","content":"x"}' || true)"
 
+# Empty files and trailing newlines survive creation and replacement.
+assert_equal '' "$(run_tool write_file '{"file_path":"new-empty.txt","content":""}')"
+[[ -f $tmp/new-empty.txt && ! -s $tmp/new-empty.txt ]]
+assert_equal 'write_file: new-empty.txt is already up to date' \
+  "$(run_tool write_file '{"file_path":"new-empty.txt","content":""}')"
+run_tool write_file '{"file_path":"nested/parent/file.txt","content":"one\n\n"}' >/dev/null
+printf 'one\n\n' >"$tmp/expected"
+cmp -s "$tmp/expected" "$tmp/nested/parent/file.txt"
+run_tool edit_file '{"file_path":"nested/parent/file.txt","old_string":"one","new_string":"two"}' >/dev/null
+printf 'two\n\n' >"$tmp/expected"
+cmp -s "$tmp/expected" "$tmp/nested/parent/file.txt"
+
+# A rejected binary target is unchanged by either tool.
+cp "$tmp/blob.bin" "$tmp/before.bin"
+typeset tool input
+integer exit_code
+for tool in edit_file write_file; do
+  if [[ $tool == edit_file ]]; then
+    input='{"file_path":"blob.bin","old_string":"GIF","new_string":"x"}'
+  else
+    input='{"file_path":"blob.bin","content":"x"}'
+  fi
+  exit_code=0
+  output=$(run_tool "$tool" "$input") || exit_code=$?
+  assert_equal 2 "$exit_code"
+  assert_equal "$tool: blob.bin is not a text file" "$output"
+  cmp -s "$tmp/before.bin" "$tmp/blob.bin"
+done
+
+# Diff failures retain the write but clean up its temporary files.
+mkdir "$tmp/fail-bin" "$tmp/scratch"
+printf '#!/bin/sh\nexit 2\n' >"$tmp/fail-bin/diff"
+chmod +x "$tmp/fail-bin/diff"
+for tool in edit_file write_file; do
+  print -rn -- old >"$tmp/fail.txt"
+  if [[ $tool == edit_file ]]; then
+    input='{"file_path":"fail.txt","old_string":"old","new_string":"new"}'
+  else
+    input='{"file_path":"fail.txt","content":"new"}'
+  fi
+  exit_code=0
+  output=$(PATH="$tmp/fail-bin:$PATH" TMPDIR="$tmp/scratch" run_tool "$tool" "$input") || exit_code=$?
+  assert_equal 2 "$exit_code"
+  assert_equal "$tool: cannot render diff for fail.txt" "$output"
+  assert_equal new "$(<"$tmp/fail.txt")"
+  [[ -z $(find "$tmp/scratch" -mindepth 1 -print -quit) ]] || fail "$tool leaked temporary files"
+done
+
 # File changes show their complete diff.
+sf_test_frozen_profile
+mkdir "$tmp/copied"
+cp "$tools/base.fence.jsonc" "$tmp/copied/"
 for tool in edit_file write_file; do
   jq -e '.user_preview_lines == "full"' "$tools/$tool/manifest.json" >/dev/null ||
     fail "$tool lost its full preview"
+  cp -R "$tools/$tool" "$tmp/copied/"
+  SF_TEST_PROFILE=$(jq -c --arg tool "$tmp/copied/$tool" \
+    '.tools=[$tool] | .sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
+  sf_test_session "$tmp/$tool.jsonl"
+  SF_TEST_PROVIDER_TOOL_BYPASS=false \
+    sf_test_run "${tool%_file}" "$tmp/$tool.jsonl" >"$tmp/$tool.stream"
+  jq -eRn '[inputs | fromjson | select(.type == "tool_result")] |
+    length == 1 and .[0].exit_code == 0 and (.[0].model_text | startswith("@@"))' \
+    <"$tmp/$tool.stream" >/dev/null || fail "copied sandboxed $tool failed"
 done
 
 # Every bundled tool runs, and a sandboxed one carries its own policy.
@@ -126,9 +186,61 @@ for tool in "$tools"/*(/); do
     [[ -f $tool/fence.jsonc ]] || fail "${tool:t} is sandboxed without a policy"
 done
 
-# Sandboxed tools that may write cannot create or change a Shellfish directory.
+# Every sandboxed tool has common protections and tool-specific access.
+typeset policy resolved settings override
+mkdir -p "$tmp/policies"
+cp "$tools/base.fence.jsonc" "$tmp/policies/"
 for policy in "$tools"/*/fence.jsonc; do
-  jq -e '(.filesystem.allowWrite // []) == [] or
-    (.filesystem.denyWrite | index("**/.shellfish") and index("**/.shellfish/**"))
-  ' "$policy" >/dev/null || fail "${policy:h:t} may write Shellfish directories"
+  mkdir -p "$tmp/policies/${policy:h:t}"
+  cp "$policy" "$tmp/policies/${policy:h:t}/"
+done
+for policy in "$tmp"/policies/*/fence.jsonc; do
+  settings=$policy
+  resolved=$(fence config show --settings "$settings" 2>/dev/null) ||
+    fail "${policy:h:t} has an invalid sandbox policy"
+  jq -e --arg tool "${policy:h:t}" '
+    ["**/.env", "**/.env.*", "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx",
+     "**/.direnv/**", "**/.git-credentials", "**/.netrc", "**/.npmrc", "**/.pypirc",
+     "~/.*hist*", "~/.aws/**",
+     "~/.cache/huggingface/token", "~/.cargo/credentials.toml",
+     "~/.claude/.credentials.json", "~/.claude/oauth-token",
+     "~/.codex/.credentials.json", "~/.codex/auth.json",
+     "~/.config/colima/_lima/_config/**", "~/.config/gh/hosts.yml",
+     "~/.config/git/credentials", "~/.config/glab-cli/config.yml", "~/.config/op/**",
+     "~/.config/pnpm/auth.ini", "~/.config/pnpm/rc", "~/.config/rclone/rclone.conf",
+     "~/.docker/config.json", "~/.git-credentials", "~/.gnupg/**", "~/.netrc",
+     "~/.npmrc", "~/.ssh/**", "~/.viminfo", "~/.vimtmp/**", "~/.zsh_sessions/**"] as $read |
+    ["**/.env", "**/.env.*", "**/.direnv/**", "**/.netrc",
+     "**/.git-credentials", "**/.npmrc", "**/.pypirc",
+     "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx"] as $write |
+    ($tool | IN("fetch_url", "search_web")) as $web |
+    ($tool | IN("shell", "shell_readonly")) as $shell |
+    .filesystem.defaultDenyRead == true and
+    .filesystem.denyRead == $read and
+    .filesystem.denyWrite == ($write + ["**/.shellfish", "**/.shellfish/**"] +
+      if $tool == "shell_readonly" then ["**"] else [] end) and
+    (.filesystem.allowRead // []) == (if $web then [] else ["."] end) and
+    (.filesystem.allowWrite // []) == (if $web or $tool == "read_file" then [] else ["."] end) and
+    (.filesystem.allowExecute // []) == (if $shell then ["."] else [] end) and
+    (.allowPty // false) == $shell and
+    (.network.allowedDomains // []) ==
+      (if $tool == "fetch_url" then ["r.jina.ai"]
+       elif $tool == "search_web" then ["mcp.exa.ai"] else [] end) and
+    .network.allowLocalBinding != true and .network.allowLocalOutbound != true and
+    .command.useDefaults == true
+  ' <<<"$resolved" >/dev/null || fail "${policy:h:t} has unexpected sandbox permissions"
+
+  # Profile additions survive the tool's relative inheritance chain.
+  override="$tmp/${policy:h:t}-override.json"
+  jq -n --arg policy "$policy" '{extends:$policy,
+    filesystem:{allowRead:["/extra/read"],allowWrite:["/extra/write"]},
+    network:{allowedDomains:["extra.test"]}}' >"$override"
+  fence config show --settings "$override" 2>/dev/null |
+    jq -e --argjson base "$resolved" '
+      .filesystem.allowRead == (($base.filesystem.allowRead // []) + ["/extra/read"]) and
+      .filesystem.allowWrite == (($base.filesystem.allowWrite // []) + ["/extra/write"]) and
+      .filesystem.denyRead == $base.filesystem.denyRead and
+      .filesystem.denyWrite == $base.filesystem.denyWrite and
+      .network.allowedDomains == (($base.network.allowedDomains // []) + ["extra.test"])
+    ' >/dev/null || fail "${policy:h:t} lost sandbox overrides or base protections"
 done

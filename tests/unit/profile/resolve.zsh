@@ -12,7 +12,7 @@ profile_eval() {
 # Provider settings belong to model files, not profile fields.
 for profile in \
     '{"driver":{}}' '{"request":{}}' '{"env":{}}' '{"extend":["default"]}' \
-    '{"model":"m"}' '{"sandbox":{"tools":{"shell":{"read":["relative"]}}}}' '{"hooks":{"stop":[]}}' \
+    '{"model":"m"}' '{"sandbox":{"tools":{"shell":{"read":["/old"]}}}}' '{"hooks":{"stop":[]}}' \
     '{"tools":"read_file"}' '{"tools":[{}]}' '{"system":[{"text":1}]}' '{"themes":{}}'; do
   if print -r -- "$profile" | profile_eval 'config_profile(["p"])' >/dev/null 2>&1; then
     fail "invalid profile was accepted: $profile"
@@ -20,8 +20,24 @@ for profile in \
 done
 print -r -- '{"sandbox":{},"system":["x.md"],"tools":[],"hooks":["h"]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
-print -r -- '{"sandbox":{"tools":{"shell":{"read":["./x"]}}},"system":[{"text":"t"}]}' |
+print -r -- '{"sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["./x"]}}}},"system":[{"text":"t"}]}' |
   profile_eval 'config_profile(["p"])' >/dev/null
+profile_eval '
+  {sandbox:{tools:{shell:{replace:true,extends:"@base",
+    filesystem:{allowRead:[".","cache","./relative","~/cache","**/notes"],
+      allowExecute:["~/bin"],denyWrite:[]},
+    network:{allowedDomains:["*"]},command:{useDefaults:false}}}}} |
+  config_profile(["p"]) | config_relative("profile"; "/profiles") |
+  .sandbox.tools.shell == {replace:true,extends:"@base",
+    filesystem:{allowRead:[".","cache","/profiles/relative","~/cache","**/notes"],
+      allowExecute:["~/bin"],denyWrite:[]},
+    network:{allowedDomains:["*"]},command:{useDefaults:false}}
+' -n >/dev/null || fail 'Fence policy properties or native paths were changed'
+profile_eval '
+  {sandbox:{tools:{shell:{replace:true,extends:"policies/base.jsonc"}}}} |
+  config_profile(["p"]) | config_relative("profile"; "/profiles") |
+  .sandbox.tools.shell.extends == "/profiles/policies/base.jsonc"
+' -n >/dev/null || fail 'a Fence inheritance path resolved outside its profile'
 for model in \
     '{"driver":"openai_chat"}' '{"context_window":0}' '{"endpoint":"ftp://example.invalid"}' \
     '{"request":"x"}' '{"tools":[]}'; do
@@ -82,12 +98,12 @@ sf_test_profile bad '{"tools":["missing"]}'
 if sf_profile_resolve_args -p bad -m probe; then
   fail 'missing component was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'cannot resolve tools reference: missing' ]]
+[[ $SF_ERROR == 'cannot resolve tools reference: missing' ]]
 sf_test_profile bad '{"hooks":["general.md"]}'
 if sf_profile_resolve_args -p bad -m probe; then
   fail 'a system file was accepted as a hook'
 fi
-[[ $SF_PROFILE_ERROR == 'cannot resolve hooks reference: general.md' ]]
+[[ $SF_ERROR == 'cannot resolve hooks reference: general.md' ]]
 (
   SF_SHARE="$tmp/flat-share"
   mkdir -p "$SF_SHARE/hooks"
@@ -96,5 +112,5 @@ fi
   if sf_profile_resolve_args -p bad -m probe; then
     fail 'non-executable hook was accepted'
   fi
-  [[ $SF_PROFILE_ERROR == 'invalid hooks reference: @hooks/disabled' ]]
+  [[ $SF_ERROR == 'invalid hooks reference: @hooks/disabled' ]]
 )

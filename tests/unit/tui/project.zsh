@@ -12,7 +12,7 @@ typeset update=$(jq -c '{type:"_session_update",profile,model:(.model | .context
   <<<"$header")
 
 # Join one action per line for comparison; a trailing empty field shows as "|".
-actions() { print -rl -- ${(@)${(@)SF_PRESENT_ACTIONS//$'\0'/ | }% } }
+actions() { print -rl -- ${(@)${(@)SF_TUI_ACTIONS//$'\0'/ | }% } }
 
 project() {
   local mode=$1
@@ -73,7 +73,7 @@ project load "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"
 assert_equal 'cwd | /fixture
 commands
 details |  |  |  |  |  |
-profile | test/fake-model |
+identity | test/fake-model
 message_start | system
 message_delta | 0 | text | be brief |
 message_end
@@ -85,7 +85,7 @@ project live "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"
 assert_equal 'cwd | /fixture
 commands
 details |  |  |  |  |  |
-profile | test/fake-model |
+identity | test/fake-model
 message_start | user
 message_delta | 0 | text | Hello |
 message_end' "$REPLY"
@@ -137,7 +137,7 @@ project live \
   '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_text":"context"}' \
   '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
 assert_equal 'execution_update | 1 | notice | guard · checking | 1 |
-execution_end | 1 | notice | guard · ok | full | agent
+execution_end | 1 | notice | guard · ok | full |
 execution_end | 2 | context | project · read | default | system
 execution_end | 3 | context |  | default | system' "$REPLY"
 
@@ -148,9 +148,9 @@ project load \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"3","model_text":"before"}' \
   '{"type":"hook_result","lifecycle":"stop","id":"4","model_text":"later"}'
 assert_equal 'execution_end | 1 | context |  | default | system
-execution_end | 2 | context |  | default | user
-execution_end | 3 | context |  | default | agent
-execution_end | 4 | context |  | default | agent' "$REPLY"
+execution_end | 2 | context |  | default |
+execution_end | 3 | context |  | default |
+execution_end | 4 | context |  | default |' "$REPLY"
 project load \
   '{"type":"hook_result","lifecycle":"session_start","id":"5","user_text":"startup notice"}'
 assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$REPLY"
@@ -158,7 +158,7 @@ assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$
 # A command denies the prompt it handles; that is not a failure.
 project load \
   '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"6","user_text":"**Shell** pwd","action":"deny"}'
-assert_equal 'execution_end | 6 | notice | **Shell** pwd | default | user' "$REPLY"
+assert_equal 'execution_end | 6 | notice | **Shell** pwd | default |' "$REPLY"
 
 # Permissions show the tool name, raw input, and configured timeout.
 project live \
@@ -188,10 +188,10 @@ project load "$header"
 assert_equal 'cwd | /fixture
 commands
 details |  |  |  |  |  |
-profile | test/fake-model |' "$REPLY"
+identity | test/fake-model' "$REPLY"
 project live "$update"
 assert_equal 'commands
-profile | test/fake-model | 200' "$REPLY"
+identity | test/fake-model' "$REPLY"
 project live '{"type":"_assistant_start"}' \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
 assert_equal 'message_start | agent
@@ -201,14 +201,14 @@ usage | 75 ↑ 20% ⦿ 5 ↓ 38% of 200 ◔ |' "$REPLY"
 # The header also describes its components and sandbox by name.
 typeset equipped=$(jq -c '.profile += {tools:["@tools/read_file","/x/tools/shell"],
   hooks:["@hooks/project/environment"],sandbox:{enabled:true,tools:{
-    read_file:{read:["~/a"],write:[],domains:[]},
-    shell:{read:["~/b"],write:["~/c"],domains:["github.com"]}}}}' \
+    read_file:{filesystem:{allowRead:["~/a"],allowWrite:[]},network:{allowedDomains:[]}},
+    shell:{filesystem:{allowRead:["~/b"],allowWrite:["~/c"]},network:{allowedDomains:["github.com"]}}}}}' \
   <<<"$header")
 project live "$equipped"
 assert_equal 'cwd | /fixture
 commands
 details | read_file, shell |  | project/environment | 2 | 1 | 1
-profile | test/fake-model |' "$REPLY"
+identity | test/fake-model' "$REPLY"
 
 # The loaded path event names the session the client now owns.
 project load '{"type":"_session_load","path":"/sessions/live.jsonl"}'
@@ -236,10 +236,41 @@ integer project_status=0
 sf_tui_project live '{"type":"_assistant_message_delta","text":"partial"}' \
   '{"type":"_unknown"}' || project_status=$?
 assert_equal 1 "$project_status"
-assert_equal 0 "${#SF_PRESENT_ACTIONS}"
+assert_equal 0 "${#SF_TUI_ACTIONS}"
 project_status=0
 sf_tui_project live 'not json' || project_status=$?
 assert_equal 1 "$project_status"
-assert_equal 0 "${#SF_PRESENT_ACTIONS}"
+assert_equal 0 "${#SF_TUI_ACTIONS}"
+
+# Copy targets and headings use the same IDs, even around empty replies and notices.
+sf_test_tmp projection-sections
+sf_test_source libexec/tui/render/main.zsh
+typeset -a numbered=(
+  '{"type":"user","section":1,"content":[{"type":"text","text":"first"}]}'
+  '{"type":"assistant","section":2,"stop":"end","content":[]}'
+  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1","user_text":"Help notice"}'
+  '{"type":"user","section":10,"content":[{"type":"text","text":"second"}]}'
+  '{"type":"assistant","section":12,"stop":"end","content":[{"type":"text","text":"answer"}]}'
+)
+{ head -n 1 "$SF_TEST_SESSIONS/complete.jsonl"; print -rl -- "${numbered[@]}"; } >"$tmp/numbered.jsonl"
+assert_canonical_session "$tmp/numbered.jsonl"
+sf_tui_reset
+typeset -gi COLUMNS=80
+project load "${numbered[@]}"
+typeset action
+typeset -a fields
+for action in "${SF_TUI_ACTIONS[@]}"; do
+  fields=( "${(@ps:\0:)action}" )
+  [[ $fields[1] == prompt ]] || sf_tui_action "${fields[@]}"
+done
+sf_tui_transcript 79 50
+[[ $SF_TUI_VIEWPORT_TEXT == *' 1 ─'*' 10 ─'*' 12 ─'*answer* &&
+   $SF_TUI_VIEWPORT_TEXT != *' 2 ─'* ]] || fail 'headings renumbered core sections' "$SF_TUI_VIEWPORT_TEXT"
+mkdir "$tmp/bin"
+print -rl -- '#!/bin/sh' 'cat >"$COPY_TARGET"' >"$tmp/bin/pbcopy"
+chmod +x "$tmp/bin/pbcopy"
+print -rn -- 12 | COPY_TARGET="$tmp/copied" PATH="$tmp/bin:$PATH" \
+  SHELLFISH_SESSION="$tmp/numbered.jsonl" "$ROOT/share/commands/copy/run" 2>"$tmp/copy.err"
+assert_equal answer "$(<"$tmp/copied")"
 
 print -r -- ok

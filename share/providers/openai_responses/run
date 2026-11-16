@@ -22,18 +22,18 @@ sf_provider_credential 'Authorization' "${api_key:+Bearer $api_key}"
 sf_provider_credential 'ChatGPT-Account-ID' "$account_id"
 unset api_key account_id
 
-jq -ce '
+jq -ce "$SF_PROVIDER_JQ"'
   def text_content:
     [.content[] | select(.type == "text") | .text] | join("");
-  # Images omit detail, which some compatible gateways reject in tool output.
-  def output:
+  # Images omit detail, which some compatible gateways reject.
+  def input_content:
     if type == "string" then .
     else [.[] | if .type == "image" then {type:"input_image",image_url:.url}
       else {type:"input_text",text:.text} end]
     end;
   def items:
     if .type == "user" then
-      [{type:"message",role:"user",content:[{type:"input_text",text:text_content}]}]
+      [{type:"message",role:"user",content:(.content | input_content)}]
     elif .type == "assistant" then
       (text_content) as $text |
       # Reasoning leads, as the API emits it, so each item still precedes the
@@ -48,7 +48,7 @@ jq -ce '
     elif .type == "tool_call" then
       [{type:"function_call",call_id:.id,name:.name,arguments:(.input | tojson)}]
     elif .type == "tool_result" then
-      [{type:"function_call_output",call_id:.call_id,output:(.content | output)}]
+      [{type:"function_call_output",call_id:.call_id,output:(.content | input_content)}]
     else
       error("unsupported canonical type")
     end;
@@ -59,16 +59,10 @@ jq -ce '
       .text = ((.text // {}) + {format:{type:"json_schema",
         name:"shellfish_response",strict:true,schema:$schema}})
     else . end |
-    (if has("max_output_tokens") then .max_output_tokens
-     elif has("max_completion_tokens") then .max_completion_tokens
-     else .max_tokens end) as $max_tokens |
+    output_limit(null) as $max_tokens |
     del(.max_tokens,.max_output_tokens,.max_completion_tokens) |
     if $max_tokens != null then .max_output_tokens=$max_tokens else . end |
-    if has("reasoning_effort") then
-      .reasoning = ((.reasoning // {}) + {effort:.reasoning_effort}) |
-      del(.reasoning_effort)
-    else . end |
-    if .reasoning == {effort:""} then del(.reasoning) else . end) as $request |
+    request_reasoning) as $request |
   ($request * {
     model: $request.model,
     instructions: .system,
@@ -88,8 +82,7 @@ jq -ce '
 ' "$SF_PROVIDER_REQUEST_FILE" >"$SF_PROVIDER_BODY_FILE" || sf_provider_die 'cannot translate canonical request'
 
 sf_provider_curl_args
-sf_provider_stream '(.error.message? // .detail?)' '
-  def delta($type;$text): {type:$type,text:$text};
+sf_provider_stream '(.error.message? // .detail?)' "$SF_PROVIDER_JQ"'
 
   # The output a completed response should carry. Its text is always the
   # streamed text, in place of the first message item. Most providers
@@ -165,45 +158,17 @@ sf_provider_stream '(.error.message? // .detail?)' '
          elif $calls > 0 then "tool_calls"
          else "end" end),
       content: $content
-    } + if $usage == null then {} else {
-      usage: {
-        input_tokens: $usage.input_tokens,
-        output_tokens: $usage.output_tokens
-      } + if ($usage.input_tokens_details.cached_tokens // null) == null then {}
-          else {cached_tokens: $usage.input_tokens_details.cached_tokens}
-          end + if ($usage.output_tokens_details.reasoning_tokens // null) == null then {}
-          else {reasoning_tokens: $usage.output_tokens_details.reasoning_tokens}
-          end
-    } end);
+    } + if $usage == null then {} else {usage:($usage | openai_usage)} end);
 
-  # A null line ends the stream. A body that never announced itself as a stream
-  # is taken whole there, so a provider that ignores the requested streaming mode
-  # still normalizes; anything else that reaches the end unfinished is caught. A
-  # whole body already carries the output a stream has to be rebuilt into, so it
-  # normalizes directly.
   foreach (inputs, null) as $line (
     {items:[], added:{}, text:"", summary_item_id:null, summary_index:null,
-     mode:null, body:"", pending:"", mark:null, done:false, out:[]};
+     done:false, out:[]};
     .out = [] |
     if $line == null then
       if .done then .
-      elif .mode != "json" then error("no completed response")
-      else (.body | try fromjson catch null) as $body |
-        if $body == null then error("no completed response")
-        else .done = true | .out += [$body | normalized]
-        end
-      end
+      else error("no completed response") end
     else
-      ($line | sub("\r$"; "")) as $clean |
-      (if .mode == null and ($clean | test("\\S")) then
-         .mode = (if ($clean | test("^(data|event|id|retry):|^:"))
-                  then "sse" else "json" end)
-       else . end) |
-      (if .mode == "json" then .body += ($line + "\n") else . end) |
-      (if ($clean | startswith("data:")) then
-         ($clean | sub("^data:[ ]?"; "") | fromjson? // {type:"ignore"})
-       else {type:"ignore"}
-       end) as $event |
+      ($line | sse_event) as $event |
       if .done then .
       elif $event.type == "response.failed" or $event.type == "error" then
         (if $event.type == "response.failed" then $event.response.error

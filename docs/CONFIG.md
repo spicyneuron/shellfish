@@ -19,7 +19,7 @@ shellfish
 
 Shellfish includes a ready-to-use default agent. You can start without `init` by supplying a model with `-m` and any required credentials through the environment.
 
-`init` copies the bundled default profile, plus [`share/template/`](../share/template/), into the selected Shellfish directory, keeping existing files. These become yours to edit, including sandbox settings in the profile, the model stub, read-only profile and its prompt, environment and TUI settings, and starter skill. The general, tools, and sandbox prompts remain bundled, along with executable components.
+`init` copies the bundled default profile, plus [`share/template/`](../share/template/), into the selected Shellfish directory, keeping existing files. These become yours to edit, including sandbox settings in the profile, the model stub, read-only profile and its prompt, environment and TUI settings, and the starter `skill-creator` skill. The general, tools, and sandbox prompts remain bundled, along with executable components.
 
 See [Profiles](PROFILE.md) for the starter agent and behavior customization, [Models](MODELS.md) for providers and credentials, and [Components](COMPONENTS.md) for writing your own extensions.
 
@@ -56,9 +56,33 @@ Credentials and core runtime settings live in exported variables or `.env` in th
 | `SHELLFISH_MAX_REQUESTS_PER_TURN` | `100` | Provider requests per turn |
 | `SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST` | `25` | Tool calls per response |
 | `SHELLFISH_MAX_CAPTURE_KB` | `32` | Kilobytes kept from each component stream, overridable by a manifest |
-| `SHELLFISH_MAX_CONTENT_KB` | `5120` | Kilobytes of tool control lines and of one call's model content, such as images |
+| `SHELLFISH_MAX_CONTENT_KB` | `5120` | Kilobytes of one user message, of tool or hook control lines, and of one invocation's model content such as images |
 
 Keep credentials in `.env` or the environment, not in profile `config`. See [Component trust](COMPONENTS.md#environment-and-trust) for which programs receive these values.
+
+## Chat
+
+Run `/help` for the active profile's commands and editor keys. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. `/refresh` rerenders the current session, and `/quit` exits chat.
+
+| Key | Action |
+| --- | --- |
+| Enter | Submit a prompt, or queue it behind an active turn |
+| Ctrl-C | Cancel the active turn, leaving queued prompts pending |
+| Ctrl-X | Send the draft, or else the first queued prompt, interrupting an active turn |
+| Ctrl-Return, Cmd-Return | Send now, when supported by the terminal |
+| Ctrl-V | Paste a clipboard image as an `[Image: PATH]` marker |
+
+Sending now waits for cancellation to settle before starting the new turn. The remaining queue is preserved and resumes automatically afterward. Use `/queue drop N` or `/queue clear` to remove pending prompts.
+
+Clipboard images use `wl-paste` or `xclip` on Linux and shrink to at most 2000 pixels on the long edge when ImageMagick or `sips` is present. Sending a prompt attaches each marker's PNG, JPEG, GIF, or WebP file.
+
+### Conversation sections
+
+Numbered headings identify conversation sections, not display positions. Each accepted prompt starts a user section. The responses and tool activity answering it share an agent section, whose heading appears only on its first visible piece. Command and hook notices do not create numbered targets of their own.
+
+Use `/copy N` to copy a numbered section. `/fork N` and `/rewind N` restore the point before a user section, with its prompt as an editable draft, or the point after an agent section. Without a target, `/copy` selects the latest section with copyable text, `/fork` keeps the current history, and `/rewind` restores the last prompt.
+
+IDs are local to a session and never renumbered. Forks and compaction preserve IDs on retained sections. Rewind does not reuse removed IDs. A compaction summary gets fresh IDs, so headings may have gaps or appear out of numeric order. Removed targets are unavailable rather than redirected to different content.
 
 ## Rendering
 

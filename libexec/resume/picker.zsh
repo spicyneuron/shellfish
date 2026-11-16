@@ -1,21 +1,16 @@
 emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
+(( $+functions[sf_fail] )) || source "$SF_ROOT/lib/cli.zsh"
+
 typeset -ga SF_RESUME_ALL_PATHS=() SF_RESUME_PATHS=()
 typeset -ga SF_RESUME_TIMES=() SF_RESUME_PAIRS=() SF_RESUME_PREVIEWS=()
-typeset -g SF_RESUME_ERROR=''
 typeset -gi SF_RESUME_LIMIT=10 SF_RESUME_CANCELLED=0 SF_RESUME_SELECTED=1 SF_RESUME_PAGE=0
-
-sf_resume_fail() {
-  SF_RESUME_ERROR=$1
-  return 1
-}
 
 sf_resume_load() {
   local file field header current decoded=0
   local -a lines headers readable raw_lasts
   local -A last_by_file
-  SF_RESUME_ERROR=''
   SF_RESUME_PATHS=( "$@" )
   SF_RESUME_TIMES=()
   SF_RESUME_PAIRS=()
@@ -89,7 +84,7 @@ sf_resume_load() {
     SF_RESUME_TIMES=()
     SF_RESUME_PAIRS=()
     SF_RESUME_PREVIEWS=()
-    sf_resume_fail 'cannot summarize sessions'
+    sf_fail 'cannot summarize sessions'
     return 1
   }
 }
@@ -217,9 +212,8 @@ sf_resume_run() {
   SF_RESUME_CANCELLED=0
   SF_RESUME_ALL_PATHS=( "$@" )
   SF_RESUME_PAGE=0
-  SF_RESUME_ERROR=''
   zmodload zsh/zle || {
-    sf_resume_fail 'cannot load ZLE'
+    sf_fail 'cannot load ZLE'
     return
   }
   sf_resume_load_page || return 1
@@ -257,7 +251,7 @@ sf_resume_run() {
   (( ! SF_RESUME_CANCELLED )) || return 130
   [[ $choice == <1-> ]] &&
     (( choice <= ${#SF_RESUME_PATHS} )) || {
-    sf_resume_fail "invalid session selection: $choice"
+    sf_fail "invalid session selection: $choice"
     return 1
   }
   REPLY=$SF_RESUME_PATHS[choice]

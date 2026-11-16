@@ -167,7 +167,7 @@ def test_slow_prompt_hook_keeps_ui_active():
         session.close()
 
 
-def test_blocked_prompt_notice_uses_user_heading():
+def test_blocked_prompt_notice_is_unnumbered():
     session = Session(hooks={"display": DISPLAY_HOOK})
     try:
         mark = len(session.output)
@@ -176,7 +176,9 @@ def test_blocked_prompt_notice_uses_user_heading():
         visible = session.visible(mark)
         display = visible.find("display line 3")
         assert display >= 0, visible
-        assert "─ user " in visible, visible
+        assert "─ user " not in visible, visible
+        _, records = session.wait_session_records(2)
+        assert all("section" not in record for record in records), records
         assert "─ agent " not in visible, visible
     finally:
         session.close()
@@ -311,6 +313,8 @@ def test_rewind_truncates_session_and_restores_prompt_as_draft():
         assert path.stat().st_mode & 0o777 == 0o600
         assert [r["type"] for r in records] == ["session", "user", "assistant"], records
         assert records[1]["content"][0]["text"] == "original prompt edited", records
+        assert records[0]["section_floor"] == 2
+        assert [records[1]["section"], records[2]["section"]] == [3, 4]
     finally:
         session.close()
 
@@ -320,7 +324,7 @@ if __name__ == "__main__":
         test_startup_streams_hooks_and_runs_the_queued_prompt,
         test_startup_cancellation_retains_the_transcript,
         test_slow_prompt_hook_keeps_ui_active,
-        test_blocked_prompt_notice_uses_user_heading,
+        test_blocked_prompt_notice_is_unnumbered,
         test_help_shows_its_full_listing,
         test_prompt_hook_hands_off_to_another_session,
         test_handoff_runs_command_on_path_and_restores_interrupt,

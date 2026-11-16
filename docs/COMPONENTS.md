@@ -45,6 +45,8 @@ Tools, commands, and hooks use these channels. Providers use their own [response
 
 Nothing on stdout means no model text. Tools should report errors there so the model sees them. A manifest's `max_capture_kb` overrides the shared capture limit in kilobytes. Oversized stdout and stderr retain their tails behind an `[output truncated]` marker.
 
+Malformed tool control output fails that call without ending the turn.
+
 Tools and hooks can request durable named state with control lines such as `{"state_update":[{"name":"example/status","value":{"ready":true}}]}`. The latest exact name wins, and `null` clears it. Accepted state updates survive later component failure. Hooks also use fd 3 for lifecycle actions. Close fd 3 before starting an untrusted child so it cannot send control lines.
 
 ## Presentation
@@ -75,11 +77,11 @@ A tool manifest describes its model-facing interface and execution policy:
 }
 ```
 
-`description`, an object `input_schema`, and the boolean `sandbox` are required. `allow_sandbox_bypass` defaults to `false` and is valid only for sandboxed tools. `environment` lists the variable names the tool needs. Sandboxed tools receive the filtered environment described above and access to platform temporary storage. Tools own their temporary-file cleanup. See [Sandbox](PROFILE.md#sandbox) for session grants and request approval.
+`description`, an object `input_schema`, and the boolean `sandbox` are required. `allow_sandbox_bypass` defaults to `false` and is valid only for sandboxed tools. `environment` lists the variable names the tool needs. Sandboxed tools receive the filtered environment described above, access to platform temporary storage, and read access to the installed `share/lib/` helpers. That directory contains distributable helper code, not credentials or runtime state. Loading a helper does not change the caller's permissions. Tools own their temporary-file cleanup. See [Sandbox](PROFILE.md#sandbox) for session grants and request approval.
 
 Shellfish calls `run` without arguments, passing one input object on stdin with sandbox request fields removed. The tool validates input before using it. A nonzero exit is a normal tool result, not a failed turn. Tools cannot take lifecycle actions.
 
-Tools can return images through `content` control lines, such as `{"content":[{"type":"image","url":"data:image/png;base64,..."}]}`. Parts can be text or base64 PNG, JPEG, GIF, or WebP images. Content follows stdout and is subject to `SHELLFISH_MAX_CONTENT_KB` rather than the capture limit.
+Tools and hooks can return images through `content` control lines, such as `{"content":[{"type":"image","url":"data:image/png;base64,..."}]}`. Parts can be text or base64 PNG, JPEG, GIF, or WebP images. Content follows stdout and is subject to `SHELLFISH_MAX_CONTENT_KB` rather than the capture limit.
 
 ## Hooks
 
@@ -97,6 +99,8 @@ A hook manifest declares its lifecycle with `on`, such as `{"on":"stop"}`. An op
 `NAME` and `ID` are the tool name and call ID. A tool request contains `turn_id`, `tool_name`, `tool_use_id`, and `tool_input`, the input the tool receives. A permission request adds `sandbox_access` with the agent's `reason` and either `unrestricted: true` or the `read`, `write`, and `domains` it needs beyond existing grants, with paths resolved. A tool response adds `tool_response` with `stdout`, `stderr`, and `exit_code`. `REQUEST_COUNT` is the number of provider requests made in the turn.
 
 Hooks run in profile order. Without an action, the next hook runs. A successful action ends the list. Hook output settles on exit 0, and a nonzero exit fails the operation, except that permission review failures defer to the user. Context reaches the model grouped by lifecycle and script name.
+
+Hook attachments follow the same lifecycle placement as text context and persist in the transcript. Invalid or oversized content fails the hook without storing its output.
 
 Hook actions are JSON lines on fd 3, such as `{"action":"deny","reason":"Run the tests first"}`. The last action from a hook applies after exit 0. At submission, `deny` withholds the prompt; at `pre_tool_use`, it refuses the call; and at `stop`, it continues inference after settled model text.
 

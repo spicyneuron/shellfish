@@ -1,16 +1,6 @@
 {
-  "network": {
-    "allowedDomains": [], "deniedDomains": [],
-    "allowLocalBinding": false, "allowLocalOutbound": false
-  },
+  "extends": "../base.fence.jsonc",
   "filesystem": {
-    "defaultDenyRead": true,
-    "allowRead": ["."],
-    "denyRead": [
-      "**/.env", "**/.env.*", "**/.direnv/**", "**/.netrc",
-      "**/.git-credentials", "**/.npmrc", "**/.pypirc",
-      "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx"
-    ]
-  },
-  "command": {"useDefaults": true}
+    "allowRead": ["."]
+  }
 }

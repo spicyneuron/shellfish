@@ -18,8 +18,8 @@ target=${target:-0}
 
 # The cut restores the moment before the prompt was sent: notices that awaited
 # it stay, and output from hooks that ran on its submission goes.
-resolved=$(jq -j -s -L "${0:A:h:h:h}/lib" --argjson target "$target" --argjson rewind "$rewind" '
-  include "sections";
+resolved=$(jq -j -s --argjson target "$target" --argjson rewind "$rewind" \
+  "$(<"$SHELLFISH_SHARE_DIR/lib/sections.jq")"'
   . as $records |
   def cut:
     if .prompt == null then [($records | length), "", 0]
@@ -35,8 +35,8 @@ resolved=$(jq -j -s -L "${0:A:h:h:h}/lib" --argjson target "$target" --argjson r
   elif $target == 0 and $rewind == 1 then
     ([$users[] | select(.prompt != null)] | last // {prompt:null}) | cut
   elif $target == 0 then [($records | length), "", 0]
-  elif $target > ($sections | length) then error("missing")
-  else (first($sections[$target - 1:][] | select(.role == "user")) // {prompt:null}) | cut
+  else (first($sections[] | select(.id == $target)) // error("missing")) |
+    if .role == "user" then cut else [.end, "", 0] end
   end | "\(.[0])\u0000\(.[1])\u0000\(.[2])\u0000"
 ' "$SHELLFISH_SESSION" 2>/dev/null) || {
   print -ru2 -- "${(C)name} target does not exist."
@@ -49,7 +49,9 @@ draft=$fields[2]
 has_draft=$fields[3]
 
 if (( rewind )); then
-  (( has_draft )) || { print -ru2 -- 'Nothing to rewind.'; exit 0 }
+  (( has_draft || cutoff < $(wc -l <"$SHELLFISH_SESSION") )) || {
+    print -ru2 -- 'Nothing to rewind.'; exit 0
+  }
   transcript=$(mktemp "${SHELLFISH_SESSION:h}/.${SHELLFISH_SESSION:t}.XXXXXX") || exit 1
   chmod 600 "$transcript" || { rm -f -- "$transcript"; exit 1 }
 else
@@ -61,7 +63,9 @@ fi
 # set after it is left out.
 if ! jq -ce -s --argjson cutoff "$cutoff" --arg created "$created" '
   ([.[0:$cutoff][] | select(.type == "state_update") | .name] | unique) as $names |
-  (.[0:$cutoff] | if $created == "" then . else .[0].created = $created end | .[]),
+  ([.[0].section_floor // 0, .[].section // empty] | max) as $floor |
+  (.[0:$cutoff] | .[0].section_floor = $floor |
+    if $created == "" then . else .[0].created = $created end | .[]),
   (.[$cutoff:][] | select(.type == "state_update" and IN(.name; $names[])))
 ' "$SHELLFISH_SESSION" >"$transcript"; then
   rm -f -- "$transcript"

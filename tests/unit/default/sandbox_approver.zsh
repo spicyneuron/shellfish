@@ -38,14 +38,14 @@ sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"o
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"opening answer"}]}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_text":"retry constraint","action":"deny","reason":"Check the constraint."}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"revised answer"}]}'
-sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"run the local setup"}]}'
+sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"run the local setup"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"I will inspect it."},{"type":"tool_call","id":"call_6","name":"shell","input":{"command":"inspect"}}],"usage":{"input_tokens":100,"output_tokens":20}}'
 sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell","input":{"command":"inspect"},"exit_code":0,"user_text":"display only","user_preview_lines":2,"model_content":[{"type":"text","text":"inspection"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"3","model_text":"inspection constraint","user_text":"display only"}'
 sf_session_append "$session" '{"type":"state_update","name":"inspection","value":"hidden state"}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"4","user_text":"display only"}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}}}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"5","model_text":"permission context"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"permission_request","id":"5","model_content":[{"type":"text","text":"permission context"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
 assert_canonical_session "$session"
 request='{"tool_input":{"command":"setup"},"sandbox_access":{"unrestricted":true,"reason":"needed"}}'
 
@@ -104,7 +104,8 @@ jq -e -s --argjson request "$request" \
   ] and
   $context.target_tool_call == {type:"tool_call",id:"call_7",name:"shell",
     input:$request.tool_input,sandbox_access:$request.sandbox_access} and
-  $context.latest_user_message == {type:"user",content:[{type:"text",text:"run the local setup"}]} and
+  $context.latest_user_message == {type:"user",content:[{type:"text",text:"run the local setup"},
+    {type:"text",text:"[image omitted]"}]} and
   ($context.recent_timeline | map(.type)) ==
     ["assistant","tool_result","hook_result","assistant","hook_result"] and
   $context.recent_timeline[0].content[1] ==
@@ -118,7 +119,7 @@ jq -e -s --argjson request "$request" \
     {type:"text",text:"I will run it."},{type:"tool_call",id:"call_7",name:"shell",
       input:{command:"setup",request_sandbox_access:{unrestricted:true,reason:"needed"}}}] and
   $context.recent_timeline[4] == {type:"hook_result",lifecycle:"permission_request",id:"5",
-    model_text:"permission context"} and
+    model_content:[{type:"text",text:"permission context"},{type:"text",text:"[image omitted]"}]} and
   ($context | tostring | contains("retry constraint") | not) and
   all($context.recent_timeline[]; has("usage") | not) and
   ($context | tostring | contains("base64") | not) and

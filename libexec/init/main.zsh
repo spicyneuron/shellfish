@@ -13,7 +13,7 @@ source "$SF_ROOT/lib/environment.zsh"
 sf_init_main() {
   local dir file target template=$SF_SHARE/template
   (( ! $# )) || { sf_die "unknown argument: $1"; return 2; }
-  sf_environment_dir || { sf_die "$SF_ENVIRONMENT_ERROR"; return 1; }
+  sf_environment_dir || { sf_die "$SF_ERROR"; return 1; }
   dir=$REPLY
   umask 077
   for file in $template/**/*(.DN) "$SF_SHARE/profiles/default.jsonc"; do

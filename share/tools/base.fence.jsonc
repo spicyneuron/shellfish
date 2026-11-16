@@ -1,0 +1,56 @@
+{
+  "network": {
+    "allowedDomains": [],
+    "deniedDomains": [],
+    "allowLocalBinding": false,
+    "allowLocalOutbound": false
+  },
+  "filesystem": {
+    "defaultDenyRead": true,
+    "denyRead": [
+      "**/.env",
+      "**/.env.*",
+      "**/*.key",
+      "**/*.pem",
+      "**/*.p12",
+      "**/*.pfx",
+      "**/.direnv/**",
+      "**/.git-credentials",
+      "**/.netrc",
+      "**/.npmrc",
+      "**/.pypirc",
+      "~/.*hist*",
+      "~/.aws/**",
+      "~/.cache/huggingface/token",
+      "~/.cargo/credentials.toml",
+      "~/.claude/.credentials.json",
+      "~/.claude/oauth-token",
+      "~/.codex/.credentials.json",
+      "~/.codex/auth.json",
+      "~/.config/colima/_lima/_config/**",
+      "~/.config/gh/hosts.yml",
+      "~/.config/git/credentials",
+      "~/.config/glab-cli/config.yml",
+      "~/.config/op/**",
+      "~/.config/pnpm/auth.ini",
+      "~/.config/pnpm/rc",
+      "~/.config/rclone/rclone.conf",
+      "~/.docker/config.json",
+      "~/.git-credentials",
+      "~/.gnupg/**",
+      "~/.netrc",
+      "~/.npmrc",
+      "~/.ssh/**",
+      "~/.viminfo",
+      "~/.vimtmp/**",
+      "~/.zsh_sessions/**"
+    ],
+    "denyWrite": [
+      "**/.env", "**/.env.*", "**/.direnv/**", "**/.netrc",
+      "**/.git-credentials", "**/.npmrc", "**/.pypirc",
+      "**/*.key", "**/*.pem", "**/*.p12", "**/*.pfx",
+      "**/.shellfish", "**/.shellfish/**"
+    ]
+  },
+  "command": {"useDefaults": true}
+}

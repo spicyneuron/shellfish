@@ -2,7 +2,7 @@
 
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
-source "${0:A:h:h:h}/lib/compact.zsh" || exit 1
+source "$SHELLFISH_SHARE_DIR/lib/compact.zsh" || exit 1
 
 typeset split transcript
 split=$(sf_compact_split) || sf_compact_fail 'Nothing to compact yet.'

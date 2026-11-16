@@ -16,18 +16,18 @@ typeset entry="$ROOT/bin/shellfish"
 typeset output
 
 # Plain mode prints only the answer.
-output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run 'plain answer') || \
+output=$(zsh -f "$entry" run 'plain answer') || \
   fail 'plain run failed'
 assert_equal 'plain answer' "$output" 'plain run prints only the answer'
 
 # Multi-request turns print only the final assistant message.
-output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run 'use a tool') || \
+output=$(zsh -f "$entry" run 'use a tool') || \
   fail 'plain tool run failed'
 assert_equal 'Tool complete.' "$output" 'plain run included an intermediate assistant message'
 
 # JSON mode returns a flattened final result, not a protocol record or turn stream.
 typeset json_session="$tmp/json.jsonl"
-output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --json \
+output=$(zsh -f "$entry" run --json \
   --session-out "$json_session" 'use a tool') || fail 'JSON run failed'
 print -r -- "$output" | jq -e --arg session "${json_session:a}" '
   keys == ["message","session","stop","usage"] and
@@ -64,26 +64,26 @@ jq -e -s '.[-1].type == "assistant" and .[-1].stop == "end"' "$json_session" >/d
 
 # Standard input supplies the prompt.
 output=$(print -rn -- 'piped answer' |
-  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run) || \
+  zsh -f "$entry" run) || \
   fail 'piped run failed'
 assert_equal 'piped answer' "$output" 'run accepts standard input'
 
 # A message argument does not wait for an inherited pipe to close.
 integer pipe_started=$SECONDS
-output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run 'plain answer' \
+output=$(zsh -f "$entry" run 'plain answer' \
   < <(sleep 5)) || fail 'run with an open pipe failed'
 assert_equal 'plain answer' "$output" 'run ignores an unread pipe'
 (( SECONDS - pipe_started < 3 )) || fail 'run waited for an inherited pipe to close'
 
 # Positional prompt words are joined.
-output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run \
+output=$(zsh -f "$entry" run \
   several prompt words) || fail 'multi-argument run failed'
 assert_equal 'several prompt words' "$output" 'run joins positional prompt words'
 
 # Create options preserve their values.
 typeset forwarded_session="$tmp/forwarded.jsonl"
 sf_test_model forwarded '{"request": {"model": "forwarded-model"}}'
-output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --session-out "$forwarded_session" \
+output=$(zsh -f "$entry" run --session-out "$forwarded_session" \
   --model default --model forwarded --system '{"text":"forwarded system"}' \
   'plain answer') || fail 'forwarded run failed'
 assert_equal 'plain answer' "$output" 'run keeps the prompt after a forwarded value'
@@ -97,7 +97,7 @@ head -n 1 "$forwarded_session" | jq -e '
 typeset copied_session="$tmp/copied.jsonl"
 print -r -- 'changed system' >"$SF_TEST_CONFIG/system/source.md"
 cp "$forwarded_session" "$tmp/source-before"
-output=$(SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run \
+output=$(zsh -f "$entry" run \
   --session-from "$forwarded_session" --session-out "$copied_session" \
   'copied answer') || fail 'run from a session failed'
 assert_equal 'copied answer' "$output"
@@ -135,7 +135,7 @@ for catalog_mode in fresh derived background; do
     derived) catalog_args=( --session-from "$catalog_source" ) ;;
     background) catalog_args+=( --background ); expected='original changed' ;;
   esac
-  SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST=$catalog_request \
+  SF_TEST_PROVIDER_REQUEST=$catalog_request \
     zsh -f "$entry" run "${catalog_args[@]}" --session-out "$catalog_session" catalog \
     >/dev/null || fail "$catalog_mode catalog run failed"
   integer catalog_wait=0
@@ -148,7 +148,7 @@ for catalog_mode in fresh derived background; do
   jq -e --arg expected "$expected" '.tools[0].description | startswith($expected + "\n")' \
     "$catalog_request" >/dev/null || fail "$catalog_mode run used the wrong component snapshot"
   [[ $catalog_mode != fresh ]] || cp "$catalog_session" "$catalog_source"
-  SF_TEST_PROVIDER_DELAY=0 SF_TEST_PROVIDER_REQUEST=$catalog_request \
+  SF_TEST_PROVIDER_REQUEST=$catalog_request \
     zsh -f "$entry" run --session "$catalog_session" catalog >/dev/null ||
     fail 'existing session did not reload its catalog'
   jq -e '.tools[0].description | startswith("original changed\n")' \
@@ -174,7 +174,7 @@ zsh -f "$entry" run --session-create --session-out "$stream_session" >/dev/null 
 typeset -i prefix=$(jq -es 'length' "$stream_session")
 jsonl=$(print -r -- \
   '{"type":"user","content":[{"type":"text","text":"stream answer"}]}' |
-  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl \
+  zsh -f "$entry" run --jsonl \
     --session "$stream_session") || fail 'JSONL run failed'
 print -r -- "$jsonl" | jq -eRn -L "$ROOT" '
   include "lib/session";
@@ -190,6 +190,44 @@ print -r -- "$jsonl" | jq -c 'select(.type | startswith("_") | not)' \
 jq -c . "$stream_session" | tail -n +$(( prefix + 1 )) >"$tmp/session-durable"
 cmp -s "$tmp/stream-durable" "$tmp/session-durable" ||
   fail 'JSONL durable events differ from the appended session records'
+
+# Images attached to a prompt persist and reach the provider after its text.
+typeset image_record='{"type":"user","content":[{"type":"text","text":"look"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
+print -r -- "$image_record" |
+  SF_TEST_PROVIDER_REQUEST="$tmp/image-request" \
+  zsh -f "$entry" run --jsonl --session "$stream_session" >/dev/null ||
+  fail 'JSONL run rejected an image prompt'
+jq -es --argjson record "$image_record" \
+  '[.[] | select(.type == "user")] | last | del(.section) == $record' "$stream_session" >/dev/null ||
+  fail 'the image prompt was not persisted exactly'
+jq -e '.messages[-1].content ==
+  [{type:"text",text:"look"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]' \
+  "$tmp/image-request" >/dev/null || fail 'the image prompt did not reach the provider'
+
+# A user message over the content limit fails before it is stored.
+integer chosen_section_status=0
+jq -cn --argjson record "$image_record" '$record + {section:999}' |
+  zsh -f "$entry" run --jsonl --session "$stream_session" \
+    >/dev/null 2>"$tmp/chosen-section.err" || chosen_section_status=$?
+assert_equal 2 "$chosen_section_status"
+
+typeset -i users=$(jq -es '[.[] | select(.type == "user")] | length' "$stream_session")
+jq -cn '{type:"user",content:[{type:"text",text:"look"},
+  {type:"image",url:("data:image/png;base64," + ("A" * 2048))}]}' |
+  SHELLFISH_MAX_CONTENT_KB=1 \
+  zsh -f "$entry" run --jsonl --session "$stream_session" >/dev/null 2>"$tmp/oversized" &&
+  fail 'run accepted a user message over the content limit'
+grep -Fq 'user message exceeds content limit' "$tmp/oversized" ||
+  fail 'run did not explain the oversized user message'
+jq -es --argjson users $users '
+  ([.[] | select(.type == "user")] | length) == $users and
+  .[-1] == {type:"error",user_text:"user message exceeds content limit"}
+' "$stream_session" >/dev/null || fail 'the oversized user message was stored'
+# The limit counts bytes: 600 two-byte characters fit 1 KB as characters only.
+jq -cn '{type:"user",content:[{type:"text",text:("é" * 600)}]}' |
+  SHELLFISH_MAX_CONTENT_KB=1 \
+  zsh -f "$entry" run --jsonl --session "$stream_session" >/dev/null 2>&1 &&
+  fail 'run measured the content limit in characters'
 
 # Context discovery replaces the complete frozen profile before inference.
 typeset context_provider="$tmp/context-provider"
@@ -208,7 +246,7 @@ sf_test_model context "{\"provider\": \"$context_provider\"}"
 sf_test_profile context '{"system": ["source.md"]}'
 print -r -- CONTEXT_SETTING=context-env >"$SF_TEST_CONFIG/.env"
 print -r -- '{"type":"user","content":[{"type":"text","text":"context"}]}' |
-  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
+  zsh -f "$entry" run --jsonl -p context -m default -m context \
     --session-out "$context_session" >"$context_stream" ||
   fail 'context discovery run failed'
 jq -eRn '
@@ -228,7 +266,7 @@ print -r -- '{"context_window":4321}'
 ZSH
 context_session="$tmp/context-overflow.jsonl"
 print -r -- '{"type":"user","content":[{"type":"text","text":"overflow"}]}' |
-  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
+  zsh -f "$entry" run --jsonl -p context -m default -m context \
     --session-out "$context_session" >/dev/null ||
   fail 'overlong context discovery blocked inference'
 head -n 1 "$context_session" | jq -e \
@@ -241,7 +279,7 @@ exit 7
 ZSH
 context_session="$tmp/context-unavailable.jsonl"
 print -r -- '{"type":"user","content":[{"type":"text","text":"fallback"}]}' |
-  SF_TEST_PROVIDER_DELAY=0 zsh -f "$entry" run --jsonl -p context -m default -m context \
+  zsh -f "$entry" run --jsonl -p context -m default -m context \
     --session-out "$context_session" >/dev/null ||
   fail 'unavailable context discovery blocked inference'
 head -n 1 "$context_session" | jq -e \
@@ -285,5 +323,15 @@ exit_code=0
 print -r -- prompt | zsh -f "$entry" run --session-create \
   >/dev/null 2>&1 || exit_code=$?
 (( exit_code == 2 )) || fail 'session creation accepted a prompt on stdin'
+
+if SHELLFISH_MAX_REQUESTS_PER_TURN=bad \
+    SF_TEST_PROVIDER_REQUEST="$tmp/invalid-limit-request" \
+    zsh -f "$entry" run --session "$stream_session" prompt \
+    >/dev/null 2>"$tmp/invalid-limit.err"; then
+  fail 'invalid request limit succeeded'
+fi
+assert_equal 'shellfish: SHELLFISH_MAX_REQUESTS_PER_TURN must be a positive integer' \
+  "$(<"$tmp/invalid-limit.err")"
+[[ ! -e $tmp/invalid-limit-request ]] || fail 'invalid request limit invoked the provider'
 
 print -r -- 'ok'

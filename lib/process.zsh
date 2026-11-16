@@ -3,14 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/system
 zmodload zsh/zselect
 
-typeset -g SF_PROCESS_ERROR=''
-
-sf_process_fail() {
-  SF_PROCESS_ERROR=$1
-  REPLY=''
-  reply=()
-  return 1
-}
+(( $+functions[sf_fail] )) || source "$SF_ROOT/lib/cli.zsh"
 
 sf_process_isolation_launcher() {
   if [[ $OSTYPE == linux* ]] && (( $+commands[setsid] )); then
@@ -154,34 +147,19 @@ sf_process_run() {
   integer limit stdout_bytes stderr_bytes control_bytes=0 pending=0 control_fd=-1 guard_fd
   integer process_pid=0 process_status=1 reader reader_status=0 signal_status=0 complete=0 cancelled=0
 
-  SF_PROCESS_ERROR=''
   REPLY=''
   reply=()
-  [[ -d $capture && ! -L $capture ]] || {
-    sf_process_fail 'invalid process capture directory'
-    return
-  }
-  [[ -z $(find "$capture" -mindepth 1 -print -quit 2>/dev/null) ]] || {
-    sf_process_fail 'process capture directory is not empty'
-    return
-  }
-  [[ -f $input && -r $input && -d $working && -x $working &&
-      ${#command} -gt 0 && $command[1] == /* && -f $command[1] && -x $command[1] &&
-      $max_capture -gt 0 && $max_control -gt 0 ]] || {
-    sf_process_fail 'process invocation is unavailable'
-    return
-  }
 
   sf_process_isolated_command "$group_file" "$status_file" "$working" "$input" \
     "$stdout_pipe" "$stderr_pipe" "$control_pipe" "${command[@]}" || {
-    sf_process_fail 'cannot isolate process'
+    sf_fail 'cannot isolate process'
     return
   }
   process_command=( "${reply[@]}" )
   limit=$(( max_capture + 1 ))
   {
     mkfifo "$stdout_pipe" "$stderr_pipe" "$control_pipe" || {
-      sf_process_fail 'cannot prepare process capture'
+      sf_fail 'cannot prepare process capture'
       return
     }
     sf_process_capture_stream "$stdout_pipe" "$stdout" $limit &
@@ -197,7 +175,7 @@ sf_process_run() {
     } &
     process_pid=$!
     exec {control_fd}<"$control_pipe" || {
-      sf_process_fail 'cannot capture process output'
+      sf_fail 'cannot capture process output'
       return
     }
     trap 'signal_status=130; sf_process_stop "$process_pid" "$group_file"' INT USR1
@@ -238,18 +216,18 @@ sf_process_run() {
     elif (( signal_status || cancelled )); then
       process_status=$signal_status
     else
-      sf_process_fail 'cannot read process status'
+      sf_fail 'cannot read process status'
       return
     fi
     for reader in $readers; do
       wait $reader || reader_status=1
     done
     (( ! reader_status )) || {
-      sf_process_fail 'cannot capture process output'
+      sf_fail 'cannot capture process output'
       return
     }
     stdout_bytes=$(wc -c <"$stdout") && stderr_bytes=$(wc -c <"$stderr") || {
-      sf_process_fail 'cannot inspect process capture'
+      sf_fail 'cannot inspect process capture'
       return
     }
     reply=( exit_code $process_status interrupted $signal_status cancelled $cancelled

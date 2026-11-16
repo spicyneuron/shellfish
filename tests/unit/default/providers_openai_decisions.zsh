@@ -7,18 +7,7 @@ typeset decide="$ROOT/share/providers/openai_decisions/decide"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.json"
 
-cat >"$tmp/curl" <<'EOF'
-#!/usr/bin/env bash
-while (($#)); do
-  case $1 in
-    --data-binary) cp "${2#@}" "$PROVIDER_TEST_BODY" ; shift 2 ;;
-    --header) [[ $2 == @* ]] && cp "${2#@}" "$PROVIDER_TEST_HEADERS" ; shift 2 ;;
-    *) shift ;;
-  esac
-done
-cat "$PROVIDER_TEST_RESPONSE"
-printf %s "${PROVIDER_TEST_STATUS:-200}" >&2
-EOF
+cp "$ROOT/tests/fixtures/curl" "$tmp/curl"
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
 export PROVIDER_TEST_RESPONSE="$tmp/response"
@@ -91,6 +80,12 @@ jq '.system = ""' "$req" >"$tmp/no-system.json"
 OPENAI_API_KEY=test zsh -f "$decide" <"$tmp/no-system.json" >/dev/null
 jq -e '.input | length == 1 and .[0].role == "user"' "$PROVIDER_TEST_BODY" >/dev/null ||
   fail 'decisions sent an empty system message'
+
+# Decision request options pass through unless the provider owns them.
+jq '.request.stream = false' "$req" >"$tmp/no-stream.json"
+OPENAI_API_KEY=test zsh -f "$decide" <"$tmp/no-stream.json" >/dev/null
+jq -e '.stream == false' "$PROVIDER_TEST_BODY" >/dev/null ||
+  fail 'decisions dropped a request option'
 
 # Reject what the API cannot express or the provider owns.
 jq '.input += [{type:"video",url:"data:video/mp4;base64,AAAA"}]' "$req" >"$tmp/video.json"

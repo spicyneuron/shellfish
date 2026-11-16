@@ -24,8 +24,9 @@ done
 [[ $threshold == null ]] || { [[ $key == decision_model ]] &&
   jq -e 'type == "number"' <<<"$threshold" >/dev/null 2>&1; } || usage
 
+source "$root/lib/cli.zsh"
 source "$root/lib/environment.zsh"
-sf_environment_dir || { print -u2 -r -- "$SF_ENVIRONMENT_ERROR"; exit 2; }
+sf_environment_dir || { print -u2 -r -- "$SF_ERROR"; exit 2; }
 config=$REPLY
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-decisions.XXXXXX") || exit 1
 tmp=${tmp:A}

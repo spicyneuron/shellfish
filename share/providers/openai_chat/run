@@ -19,7 +19,7 @@ sf_provider_request '.request | has("stream") or has("stream_options") | not' ||
 sf_provider_credential 'Authorization' "${api_key:+Bearer $api_key}"
 unset api_key
 
-jq -ce '
+jq -ce "$SF_PROVIDER_JQ"'
   def text_content: [.content[] | select(.type == "text") | .text] | join("");
   # Tool messages hold only text and must directly follow their calls, so
   # result images are lifted into one user message after the batch.
@@ -28,13 +28,18 @@ jq -ce '
     else [.[] | select(.type == "text") | .text] | join("\n\n") |
       if . == "" then "[images follow in the next user message]" else . end
     end;
-  def result_images:
+  def image_parts:
     if type == "string" then []
     else [.[] | select(.type == "image") | {type:"image_url",image_url:{url}}] end;
   def flush_images:
     if .images == [] then . else .out += [{role:"user",content:.images}] | .images = [] end;
   def message:
-    if .type == "user" then {role:"user",content:text_content}
+    # Some gateways accept only string content, so parts are sent only with images.
+    if .type == "user" then
+      {role:"user",content:(if any(.content[]; .type == "image") then
+          [.content[] | if .type == "image" then {type:"image_url",image_url:{url}}
+            else select(.text != "") | {type:"text",text} end]
+        else text_content end)}
     elif .type == "assistant" then {role:"assistant",content:text_content}
     elif .type == "tool_result" then
       {role:"tool",tool_call_id:.call_id,content:(.content | result_text)}
@@ -46,9 +51,7 @@ jq -ce '
       .response_format={type:"json_schema",json_schema:{
         name:"shellfish_response",strict:true,schema:$schema}}
     else . end |
-    (if has("max_output_tokens") then .max_output_tokens
-     elif has("max_completion_tokens") then .max_completion_tokens
-     else .max_tokens end) as $max_tokens |
+    output_limit(null) as $max_tokens |
     del(.max_tokens,.max_output_tokens,.max_completion_tokens) |
     if $max_tokens != null then .max_completion_tokens=$max_tokens else . end |
     (if has("reasoning_effort") then .reasoning_effort else .reasoning.effort end) as $effort |
@@ -67,7 +70,7 @@ jq -ce '
       (if .out[$index].content == "" then .out[$index].content = null else . end)
     elif $message.type == "tool_result" then
       .out += [$message | message] |
-      ($message.content | result_images) as $images |
+      ($message.content | image_parts) as $images |
       if $images == [] then .
       else .images += [{type:"text",
         text:"Images from the \($message.name) call \($message.call_id):"}] + $images end
@@ -87,8 +90,7 @@ jq -ce '
 ' "$SF_PROVIDER_REQUEST_FILE" >"$SF_PROVIDER_BODY_FILE" || sf_provider_die 'cannot translate canonical request'
 
 sf_provider_curl_args
-sf_provider_stream '.error.message?' '
-  def delta($type;$text): {type:$type,text:$text};
+sf_provider_stream '.error.message?' "$SF_PROVIDER_JQ"'
   def usage:
     {input_tokens:(.prompt_tokens // 0),output_tokens:(.completion_tokens // 0)} +
     (if (.prompt_tokens_details.cached_tokens // null) == null then {}

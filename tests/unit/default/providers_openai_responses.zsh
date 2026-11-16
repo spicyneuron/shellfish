@@ -9,27 +9,7 @@ typeset codex_context_window="$ROOT/share/providers/codex/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
-cat >"$tmp/curl" <<'EOF'
-#!/usr/bin/env bash
-while (($#)); do
-  case $1 in
-    --data-binary) cp "${2#@}" "$PROVIDER_TEST_BODY" ; shift 2 ;;
-    *) shift ;;
-  esac
-done
-if [[ -n ${PROVIDER_TEST_ATTEMPTS:-} ]]; then
-  attempts=0
-  [[ ! -s $PROVIDER_TEST_ATTEMPTS ]] || attempts=$(<"$PROVIDER_TEST_ATTEMPTS")
-  printf '%s\n' "$((attempts + 1))" >"$PROVIDER_TEST_ATTEMPTS"
-fi
-if [[ -n ${PROVIDER_TEST_FAIL_ONCE:-} && ${attempts:-0} == 0 ]]; then
-  printf '%s' 'curl: (92) HTTP/2 stream was not closed cleanly: INTERNAL_ERROR (err 2)000' >&2
-  exit 92
-fi
-cat "$PROVIDER_TEST_RESPONSE"
-printf %s "${PROVIDER_TEST_STATUS:-200}" >&2
-exit "${PROVIDER_TEST_CURL_STATUS:-0}"
-EOF
+cp "$ROOT/tests/fixtures/curl" "$tmp/curl"
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
 export PROVIDER_TEST_RESPONSE="$tmp/response"
@@ -57,9 +37,10 @@ assert_usage() {
   ' <<<"$REPLY" >/dev/null || fail 'responses lost text or usage'
 }
 
-# Parse buffered responses.
+# Translate common options and normalize streamed usage.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}
+data: {"type":"response.output_text.delta","delta":"ok"}
+data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":100,"input_tokens_details":{"cached_tokens":85},"output_tokens":7,"output_tokens_details":{"reasoning_tokens":3}}}}
 EOF
 (builtin cd -- "$tmp" && OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
@@ -100,7 +81,7 @@ grep -Fq -- 'HTTP 400: unsupported parameter' "$tmp/error" ||
   fail 'Responses HTTP error detail was lost'
 
 # Reject empty completions instead of completing an empty assistant.
-print -r -- '{"status":"completed","output":[]}' >"$PROVIDER_TEST_RESPONSE"
+print -r -- 'data: {"type":"response.completed","response":{"status":"completed","output":[]}}' >"$PROVIDER_TEST_RESPONSE"
 if OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res" 2>"$tmp/error"; then
   fail 'empty completion was accepted'
 fi
@@ -110,7 +91,7 @@ grep -Fq -- 'empty completed response' "$tmp/error" ||
 
 # Discard incomplete call arguments.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}
+data: {"type":"response.incomplete","response":{"status":"incomplete","output":[{"type":"function_call","call_id":"call_cut","name":"shell","arguments":"{\"command\":"}],"usage":{"input_tokens":10,"output_tokens":5}}}
 EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$req" >"$res"
 sf_test_provider_response "$res" || fail 'responses emitted an invalid incomplete stream'
@@ -177,6 +158,17 @@ if zsh -f "$codex_context_window" <"$tmp/insecure-codex.json" >"$res"; then
   fail 'Codex metadata accepted insecure TLS'
 fi
 
+# Codex credentials never go to a model-supplied endpoint.
+jq '.endpoint="https://other.test/responses"' "$tmp/codex-request.json" >"$tmp/other-codex.json"
+if CODEX_HOME="$tmp" zsh -f "$codex_run" <"$tmp/other-codex.json" \
+    >"$res" 2>"$tmp/other-codex.err"; then
+  fail 'Codex accepted another endpoint'
+fi
+grep -q 'Codex transport must use the built-in secure endpoint' "$tmp/other-codex.err"
+if zsh -f "$codex_context_window" <"$tmp/other-codex.json" >"$res"; then
+  fail 'Codex metadata accepted another endpoint'
+fi
+
 # Keep the streamed text, in the completed message's place.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
 data: {"type":"response.output_text.delta","delta":"ok"}
@@ -239,7 +231,8 @@ cat >"$batch_request" <<'JSON'
 }
 JSON
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1}}
+data: {"type":"response.output_text.delta","delta":"ok"}
+data: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}
 EOF
 OPENAI_API_KEY=test zsh -f "$run" <"$batch_request" >"$res"
 jq -e '
@@ -250,17 +243,20 @@ jq -e '
   .input[2].arguments == "{\"command\":\"pwd\"}"
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'responses did not map a flat call batch'
 
-# Tool result images.
-jq -c '.messages[3].content = [{type:"text",text:"shot"},
+# Prompt and tool result images.
+jq -c '.messages[0].content += [{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}] |
+  .messages[3].content = [{type:"text",text:"shot"},
   {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}] |
   .messages[5].content = [{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]' \
   "$batch_request" >"$tmp/images.json"
 OPENAI_API_KEY=test zsh -f "$run" <"$tmp/images.json" >"$res"
 jq -e '
+  .input[0].content == [{type:"input_text",text:"run both"},
+    {type:"input_image",image_url:"data:image/png;base64,iVBORw0KGgo="}] and
   [.input[] | select(.type == "function_call_output") | .output] == [
     [{type:"input_text",text:"shot"},{type:"input_image",image_url:"data:image/png;base64,iVBORw0KGgo="}],
     [{type:"input_image",image_url:"data:image/png;base64,iVBORw0KGgo="}]]
-' "$PROVIDER_TEST_BODY" >/dev/null || fail 'responses did not send tool result images'
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'responses did not send prompt or tool result images'
 
 # The provider always streams, so a stream option is refused.
 jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"

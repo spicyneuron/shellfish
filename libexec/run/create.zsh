@@ -24,7 +24,7 @@ sf_run_create() {
         shift 2
         ;;
       *)
-        take=$(( ${SF_CREATE_OPTIONS[$1]:-0} + 1 ))
+        take=$(( ${SF_CREATE_OPTIONS[(Ie)$1]} ? 2 : 1 ))
         (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
         forwarded+=( "${@:1:$take}" )
         shift $take
@@ -32,33 +32,32 @@ sf_run_create() {
     esac
   done
 
-  sf_run_limits || { sf_die "$REPLY"; return 1; }
   if [[ -n $source_session ]]; then
     (( ! ${#forwarded} )) || {
       sf_die 'profile overrides cannot be used with --session-from'
       return 2
     }
-    sf_session_select_path "$source_session" || { sf_die "$SF_SESSION_ERROR"; return 1; }
-    sf_session_read_config "$REPLY" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+    sf_session_select_path "$source_session" || { sf_die "$SF_ERROR"; return 1; }
+    sf_session_read_config "$REPLY" || { sf_die "$SF_ERROR"; return 1; }
     config=$REPLY
   else
     sf_profile_resolve_args "${forwarded[@]}" || {
       resolve_status=$?
-      sf_die "$SF_PROFILE_ERROR"
+      sf_die "$SF_ERROR"
       return $resolve_status
     }
     config=$REPLY
   fi
   SF_RUN[profile]=$(jq -c '.profile' <<<"$config") &&
     SF_RUN[model]=$(jq -c '.model' <<<"$config") || { sf_die 'cannot read configuration'; return 1; }
-  sf_run_components "$SF_RUN[profile]" || { sf_die "$REPLY"; return 1; }
+  sf_run_components "$SF_RUN[profile]" || { sf_die "$SF_ERROR"; return 1; }
   # Grants are inert for tools whose manifest disables sandboxing.
   REPLY=$(jq -rn --argjson profile "$SF_RUN[profile]" --argjson tools "$SF_RUN[tools]" '
     [$tools[] | select(.manifest.sandbox | not) | .name] as $open |
     first($profile.sandbox.tools | keys[] | select(IN($open[])))
   ') || { sf_die 'cannot read configuration'; return 1; }
   [[ -z $REPLY ]] || { sf_die "sandbox grants name an unsandboxed tool: $REPLY"; return 1; }
-  sf_session_select_path "$requested_out" || { sf_die "$SF_SESSION_ERROR"; return 1; }
+  sf_session_select_path "$requested_out" || { sf_die "$SF_ERROR"; return 1; }
   session=$REPLY
   cwd=$(pwd -P) && created=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || {
     sf_die 'cannot prepare session header'
@@ -90,7 +89,7 @@ sf_run_create() {
   fi
   sf_run_hooks "$session" session_start '' '' || {
     (( ! SF_RUN[signal_status] )) || return $SF_RUN[signal_status]
-    sf_die "$SF_RUN_HOOK_ERROR"
+    sf_die "$SF_ERROR"
     return 1
   }
   REPLY=$session

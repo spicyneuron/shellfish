@@ -14,12 +14,11 @@ source "$SF_ROOT/lib/options.zsh"
 sf_tui_main() {
   local requested_session=''
   local input='' draft='' presentation session='' session_mode=startup
-  local arity=''
   local -a positional=() profile_args=()
   local -a original_args=("$@")
-  integer out_explicit=0 override=0 take=0
+  integer out_explicit=0 override=0
   integer clear_requested=0
-  integer handoff=0 draft_explicit=0
+  integer draft_explicit=0
   integer verbose_requested=0 controller_status=0
 
   while (( $# )); do
@@ -58,13 +57,11 @@ sf_tui_main() {
         break
         ;;
       -*)
-        arity=${SF_CREATE_OPTIONS[$1]-}
-        [[ -n $arity ]] || { sf_die "unknown argument: $1"; return 2; }
-        take=$(( arity + 1 ))
-        (( $# >= take )) || { sf_die "$1 requires a value"; return 2; }
-        profile_args+=( "${@:1:$take}" )
+        (( ${SF_CREATE_OPTIONS[(Ie)$1]} )) || { sf_die "unknown argument: $1"; return 2; }
+        (( $# >= 2 )) || { sf_die "$1 requires a value"; return 2; }
+        profile_args+=( "$1" "$2" )
         override=1
-        shift $take
+        shift 2
         ;;
       *)
         positional+=( "$1" )
@@ -77,7 +74,10 @@ sf_tui_main() {
     sf_die '--session names an existing session and cannot be combined with --session-out'
     return 2
   }
-  if [[ ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then handoff=1; fi
+  # The interactive child repeats parsing and reads any piped prompt itself.
+  if [[ ! -o interactive && -t 1 && ( -t 0 || -r /dev/tty ) ]]; then
+    exec zsh -f -i "$SF_TUI_ENTRY" "${original_args[@]}"
+  fi
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
   typeset -gx SHELLFISH_VERBOSE=$verbose_requested
 
@@ -86,12 +86,6 @@ sf_tui_main() {
   if (( draft_explicit )) && { (( ${#positional} )) || [[ -n $input ]]; }; then
     sf_die '--draft cannot be combined with a prompt'
     return 2
-  fi
-  if (( handoff )); then
-    if [[ -n $input && ! ${#positional} ]]; then
-      exec zsh -f -i "$SF_TUI_ENTRY" "${original_args[@]}" <<<"$input"
-    fi
-    exec zsh -f -i "$SF_TUI_ENTRY" "${original_args[@]}"
   fi
   sf_cli_require_terminal chat || return
 
@@ -103,20 +97,20 @@ sf_tui_main() {
     }
     source "$SF_ROOT/lib/session.zsh"
     sf_session_select_path "$requested_session" || {
-      sf_die "$SF_SESSION_ERROR"
+      sf_die "$SF_ERROR"
       return 1
     }
     session=$REPLY
     session_mode=resume
   fi
-  source "$SF_ROOT/libexec/tui/presentation.zsh"
-  SF_PRESENTATION_VERBOSE=$verbose_requested
-  sf_presentation_resolve || {
+  source "$SF_ROOT/libexec/tui/config.zsh"
+  SF_TUI_CONFIG_VERBOSE=$verbose_requested
+  sf_tui_config_resolve || {
     resolve_status=$?
-    sf_die "$SF_PRESENTATION_ERROR"
+    sf_die "$SF_TUI_CONFIG_ERROR"
     return $resolve_status
   }
-  presentation=$SF_PRESENTATION
+  presentation=$SF_TUI_CONFIG
 
   source "$SF_ROOT/libexec/tui/render/main.zsh"
   source "$SF_ROOT/libexec/tui/project.zsh"
@@ -136,9 +130,10 @@ sf_tui_main() {
       "$session_mode" "$draft" || controller_status=$?
   } always {
     [[ -z $SF_TUI_TRANSPORT_PID ]] || sf_tui_transport_stop
+    sf_tui_paste_cleanup
   }
   if (( controller_status )); then
-    [[ -z $SF_PRESENT_ERROR ]] || sf_die "$SF_PRESENT_ERROR"
+    [[ -z $SF_TUI_ERROR ]] || sf_die "$SF_TUI_ERROR"
     return $controller_status
   fi
 }

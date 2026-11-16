@@ -3,6 +3,15 @@
 source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_source lib/profile.zsh lib/environment.zsh lib/session.zsh
 
+SF_ERROR='earlier failure'
+sf_jq_fields -n '"value\u0000ok\u0000"'
+assert_equal value "$reply[1]"
+assert_equal 'earlier failure' "$SF_ERROR"
+if sf_jq_fields -n 'error("projection failed")'; then fail 'invalid projection succeeded'; fi
+[[ $SF_ERROR == *'projection failed'* ]] || fail 'projection omitted its diagnostic'
+if sf_jq_fields -n '"partial\u0000"'; then fail 'incomplete projection succeeded'; fi
+[[ $SF_ERROR == *partial* ]] || fail 'incomplete projection omitted its diagnostic'
+
 typeset profile tool_name
 typeset -r fixture_provider="$ROOT/tests/fixtures/provider"
 sf_test_tmp profile
@@ -79,13 +88,13 @@ print -r -- 'kit' >"$kit/system/kit.md"
 cp -R "$ROOT/tests/fixtures/provider" "$tmp/tests-provider"
 print -r -- '{"provider": "./../../tests-provider", "request": {"model": "kit"}}' \
   >"$kit/models/kit.jsonc"
-print -r -- '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["./data", "../system"]}}},
+print -r -- '{"tools":["shell"], "sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["./data", "../system"]}}}},
   "system":["../system/kit.md"]}' \
   >"$kit/profiles/kit.jsonc"
 sf_profile_resolve_args -p "$kit/profiles/kit.jsonc" -m "$kit/models/kit.jsonc"
 jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
   .model.provider == $provider and .profile.system == [{text:"kit"}] and
-  .profile.sandbox.tools.shell.read == [$kit + "/profiles/data", $kit + "/system"]
+  .profile.sandbox.tools.shell.filesystem.allowRead == [$kit + "/profiles/data", $kit + "/system"]
 ' <<<"$REPLY" >/dev/null || fail 'config-relative references did not resolve from their files'
 (
   cd "$kit"
@@ -95,14 +104,14 @@ jq -e --arg kit "${kit:A}" --arg provider "${tmp:A}/tests-provider" '
 
 # Sandbox settings live in the profile, system files freeze into one text,
 # and a frozen profile and model resolve to themselves.
-sf_test_profile inline '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["./data"]}}},
+sf_test_profile inline '{"tools":["shell"], "sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["./data"]}}}},
   "system": [{"text": "hello"}, "prompt.md"],
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 sf_profile_resolve_args -p inline -m '{"provider": "'"$fixture_provider"'", "request": {"model": "inline"},
   "config": {"example": {"paths": ["./data", "~/data", "@data"], "values": [null, false, 2]}}}'
 profile=$REPLY
 jq -e --arg root "${SF_TEST_CONFIG:A}" '
-  .model.request.model == "inline" and .profile.sandbox.tools.shell.read == [$root + "/profiles/data"] and
+  .model.request.model == "inline" and .profile.sandbox.tools.shell.filesystem.allowRead == [$root + "/profiles/data"] and
   .profile.system == [{text:"hello\n\nnested"}] and
   .profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}} and
   .model.config == .profile.config
@@ -115,13 +124,13 @@ sf_profile_resolve_args -p "$(jq -c '.profile' <<<"$profile")" -m "$tmp/frozen-m
 [[ $REPLY == "$profile" ]] || fail 'an inline frozen profile did not resolve to itself'
 
 # An inline profile resolves relative paths against the working directory.
-sf_profile_resolve_args -p '{"sandbox":{"tools":{"shell":{"read":["./data"]}}}}' -t shell -m fixture
-jq -e --arg cwd "${PWD:A}" '.profile.sandbox.tools.shell.read == [$cwd + "/data"]' <<<"$REPLY" >/dev/null ||
+sf_profile_resolve_args -p '{"sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["./data"]}}}}}' -t shell -m fixture
+jq -e --arg cwd "${PWD:A}" '.profile.sandbox.tools.shell.filesystem.allowRead == [$cwd + "/data"]' <<<"$REPLY" >/dev/null ||
   fail 'inline profile paths did not resolve against the working directory'
 if sf_profile_resolve_args -p '{broken' -m fixture; then
   fail 'malformed inline profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == '--profile requires a reference or JSON object' ]]
+[[ $SF_ERROR == '--profile requires a reference or JSON object' ]]
 
 # Supplied configuration freezes without rereading the source profile or model.
 "$ROOT/bin/shellfish" run --session-create --session-out "$tmp/config.jsonl" \
@@ -137,7 +146,7 @@ for value in null false 1 '"text"' '[]'; do
   if sf_profile_resolve_args -p bad -m fixture; then
     fail "profile accepted non-object config: $value"
   fi
-  [[ $SF_PROFILE_ERROR == 'invalid configuration: profile bad $["config"]: must be an object' ]]
+  [[ $SF_ERROR == 'invalid configuration: profile bad $["config"]: must be an object' ]]
 done
 
 for name in '' $'open\nai'; do
@@ -153,7 +162,7 @@ done
 if sf_profile_resolve_args -p work -p work; then
   fail 'a repeated --profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == '--profile may only be specified once' ]]
+[[ $SF_ERROR == '--profile may only be specified once' ]]
 
 # Hooks keep their listed order; a run groups them by declared lifecycle.
 typeset hooks="$SF_TEST_CONFIG/hooks"
@@ -173,7 +182,7 @@ sf_test_profile hooked '{"hooks": ["dir"]}'
 if sf_profile_resolve_args -p hooked -m fixture; then
   fail 'incomplete hook directory was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid hooks reference: dir' ]]
+[[ $SF_ERROR == 'invalid hooks reference: dir' ]]
 print -r -- '#!/bin/sh' | sf_test_hook "$hooks/unbound"
 sf_test_profile hooked '{"hooks": ["unbound"]}'
 sf_profile_resolve_args -p hooked -m fixture
@@ -181,12 +190,12 @@ profile=$(jq -c '.profile' <<<"$REPLY")
 if sf_profile_components "$profile"; then
   fail 'a hook without a lifecycle was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
+[[ $SF_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 rm "$hooks/unbound/manifest.json"
 if sf_profile_components "$profile"; then
   fail 'a hook without a manifest was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'hook manifest must be valid and declare "on"'* ]]
+[[ $SF_ERROR == *'hook manifest must be valid and declare "on"'* ]]
 
 # Starter profiles use bundled components with a configured model.
 # Subagents and review remain opt-in.
@@ -226,7 +235,7 @@ for field in model provider request env extend max_capture_kb theme_light; do
   if sf_profile_resolve_args -p bad -m fixture; then
     fail "profile accepted $field"
   fi
-  [[ $SF_PROFILE_ERROR == "invalid configuration: profile bad \$[\"$field\"]: unknown field" ]]
+  [[ $SF_ERROR == "invalid configuration: profile bad \$[\"$field\"]: unknown field" ]]
 done
 for value in '1' '[1]' '[""]'; do
   if sf_profile_resolve_args -p work -m "$value"; then
@@ -237,7 +246,7 @@ sf_test_model bad '{"tools": []}'
 if sf_profile_resolve_args -p work -m bad; then
   fail 'model file accepted a profile field'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid configuration: model bad $["tools"]: unknown field' ]]
+[[ $SF_ERROR == 'invalid configuration: model bad $["tools"]: unknown field' ]]
 for value in '{"endpoint":"ftp://example.invalid"}' '{"context_window":0}' '{"request":[]}' \
     '{"config":null}' '{"config":[]}' '{"config":false}' '{"config":1}' '{"config":"text"}'; do
   sf_test_model bad "$value"
@@ -249,11 +258,11 @@ sf_test_model providerless '{"request": {"model": "m"}}'
 if sf_profile_resolve_args -p work -m providerless; then
   fail 'a model without a provider was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'a model provider is required'* ]]
+[[ $SF_ERROR == *'a model provider is required'* ]]
 if sf_profile_resolve_args -p work; then
   fail 'a missing default model was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'no model selected: run shellfish init, or pass -m' ]]
+[[ $SF_ERROR == 'no model selected: run shellfish init, or pass -m' ]]
 
 # Named prompts use configuration, and "@" can reach the bundle directly.
 mkdir -p "$SF_TEST_CONFIG/system"
@@ -269,11 +278,11 @@ rm "$SF_TEST_CONFIG/system/general.md"
 if sf_profile_resolve_args -p absent; then
   fail 'unknown profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'unknown profile: absent' ]]
+[[ $SF_ERROR == 'unknown profile: absent' ]]
 if sf_profile_resolve_args -p work -m absent; then
   fail 'unknown model was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'unknown model: absent' ]]
+[[ $SF_ERROR == 'unknown model: absent' ]]
 
 # Options append to lists, a repeated reference collapses to the first, and
 # references reaching the same tool fail.
@@ -295,12 +304,12 @@ sf_test_profile malformed '{"tools":}'
 if sf_profile_resolve_args -p malformed -m fixture; then
   fail 'malformed profile was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'invalid profile: '*'malformed.jsonc:'*'parse error:'* ]]
+[[ $SF_ERROR == *'invalid profile: '*'malformed.jsonc:'*'parse error:'* ]]
 sf_test_model malformed '{"request":}'
 if sf_profile_resolve_args -p work -m malformed; then
   fail 'malformed model was accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'invalid model: '*'malformed.jsonc:'*'parse error:'* ]]
+[[ $SF_ERROR == *'invalid model: '*'malformed.jsonc:'*'parse error:'* ]]
 
 # A provider without a manifest needs an endpoint from a model file.
 mkdir -p "$SF_TEST_CONFIG/providers/bare"
@@ -320,18 +329,16 @@ fi
 mkdir -p "$tmp/flag"
 sf_test_profile boxed '{"tools":["shell","read_file"],
   "sandbox":{"enabled":false, "user_approval_timeout":30,
-    "tools":{"shell":{"read":["~/my reference", "/opt/ref"], "write":["~/output"],
-      "domains":["github.com"]},
-      "read_file":{"read":["~/reference"]}}}}'
+    "tools":{"shell":{"filesystem":{"allowRead":["~/my reference", "/opt/ref"],"allowWrite":["~/output"]},"network":{"allowedDomains":["github.com"]}},
+      "read_file":{"filesystem":{"allowRead":["~/reference"]}}}}}'
 (cd "$tmp" && sf_profile_resolve_args -p boxed -m work \
-  --sandbox '{"tools":{"shell":{"read":["@system"]}}}' \
-  --sandbox '{"tools":{"shell":{"write":["./flag"],"domains":["*.NPMjs.org"]}}}' &&
+  --sandbox '{"tools":{"shell":{"filesystem":{"allowRead":["@system"]}}}}' \
+  --sandbox '{"tools":{"shell":{"filesystem":{"allowWrite":["./flag"]},"network":{"allowedDomains":["*.NPMjs.org"]}}}}' &&
   print -r -- "$REPLY") | read -r REPLY
 jq -e --arg home "${tmp:A}/home" --arg flag "${tmp:A}/flag" --arg share "$ROOT/share" '
   .profile.sandbox == {enabled:false, user_approval_timeout:30, tools:{
-    shell:{read:[$home + "/my reference", "/opt/ref", $share + "/system"],
-      write:[$home + "/output", $flag],domains:["github.com","*.npmjs.org"]},
-    read_file:{read:[$home + "/reference"],write:[],domains:[]}}}
+    shell:{filesystem:{allowRead:[$home + "/my reference", "/opt/ref", $share + "/system"],allowWrite:[$home + "/output", $flag]},network:{allowedDomains:["github.com","*.npmjs.org"]}},
+    read_file:{filesystem:{allowRead:[$home + "/reference"]}}}}
 ' <<<"$REPLY" >/dev/null || fail 'sandbox options did not extend profile grants'
 sf_profile_resolve_args -p boxed -m work \
   --sandbox '{"enabled":false,"user_approval_timeout":15}' --sandbox '{"enabled":true}'
@@ -339,20 +346,22 @@ jq -e '.profile.sandbox.enabled and .profile.sandbox.user_approval_timeout == 15
   <<<"$REPLY" >/dev/null || fail 'later sandbox options did not replace settings'
 
 # Invalid sandbox settings name the profile and entry.
-sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["/ok", "relative"]}}}}'
+sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"replace":"yes"}}}}'
 if sf_profile_resolve_args -p boxed -m work; then
   fail 'an invalid sandbox path was accepted'
 fi
-[[ $SF_PROFILE_ERROR == 'invalid configuration: profile boxed $["sandbox"]["tools"]["shell"]["read"][1]: must be a /, ~/, ./, ../, or @ path' ]]
-for value in '{"enabled": "yes"}' '{"tools":{"shell":{"write":"/x"}}}' '{"paths": []}' \
+[[ $SF_ERROR == 'invalid configuration: profile boxed $["sandbox"]["tools"]["shell"]: must be a Fence policy with an optional boolean replace; extends requires replace: true' ]]
+for value in '{"enabled": "yes"}' '{"tools":{"shell":{"filesystem":{"allowWrite":"/x"}}}}' '{"paths": []}' \
     '{"tools":null}' '{"tools":[]}' '{"tools":{"*":{}}}' '{"tools":{"shell":null}}' \
-    '{"tools":{"shell":{"read":null}}}' '{"tools":{"shell":{"extra":[]}}}' \
-    '{"tools":{"shell":{"domains":null}}}' '{"tools":{"shell":{"domains":"github.com"}}}' \
-    '{"tools":{"shell":{"domains":["https://github.com"]}}}' \
-    '{"tools":{"shell":{"domains":["github.com:443"]}}}' \
-    '{"tools":{"shell":{"domains":["*"]}}}' '{"tools":{"shell":{"domains":[3]}}}' \
-    '{"tools":{"shell":{"domains":["example.com\n"]}}}' \
-    '{"tools":{"shell":{"domains":["a..com"]}}}' \
+    '{"tools":{"shell":{"filesystem":{"allowRead":null}}}}' '{"tools":{"shell":{"extra":[]}}}' \
+    '{"tools":{"shell":{"network":{"allowedDomains":null}}}}' '{"tools":{"shell":{"network":{"allowedDomains":"github.com"}}}}' \
+    '{"tools":{"shell":{"replace":null}}}' \
+    '{"tools":{"shell":{"filesystem":[]}}}' \
+    '{"tools":{"shell":{"read":["/old"]}}}' '{"tools":{"shell":{"network":{"allowedDomains":[3]}}}}' \
+    '{"tools":{"shell":{"network":{"allowedDomains":["example.com\n"]}}}}' \
+    '{"tools":{"shell":{"extends":3}}}' \
+    '{"tools":{"shell":{"extends":"code"}}}' \
+    '{"tools":{"shell":{"replace":false,"extends":"code"}}}' \
     '{"user_approval_timeout": 0}' '{"user_approval_timeout": 1.5}' null false 1; do
   sf_test_profile boxed "{\"sandbox\":$value}"
   if sf_profile_resolve_args -p boxed -m work; then
@@ -362,18 +371,18 @@ for value in '{"enabled": "yes"}' '{"tools":{"shell":{"write":"/x"}}}' '{"paths"
     fail "sandbox option accepted $value"
   fi
 done
-sf_test_profile boxed '{"sandbox":{"tools":{"missing":{"read":["/reference"]}}}}'
+sf_test_profile boxed '{"sandbox":{"tools":{"missing":{"filesystem":{"allowRead":["/reference"]}}}}}'
 if sf_profile_resolve_args -p boxed -m work; then
   fail 'sandbox grants for an unselected tool were accepted'
 fi
-[[ $SF_PROFILE_ERROR == *'sandbox grants name an unselected tool: missing'* ]]
-sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":["~/reference"]}}}}'
+[[ $SF_ERROR == *'sandbox grants name an unselected tool: missing'* ]]
+sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"filesystem":{"allowRead":["~/reference"]}}}}}'
 (
   unset HOME
   if sf_profile_resolve_args -p boxed -m work; then
     fail 'home-relative sandbox path resolved without HOME'
   fi
-  [[ $SF_PROFILE_ERROR == *'cannot expand ~ without HOME'* ]]
+  [[ $SF_ERROR == *'cannot expand ~ without HOME'* ]]
 )
 
 # init copies the bundled defaults and template, keeping existing files.
@@ -394,7 +403,7 @@ sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":[
   sf_profile_resolve_args
   jq -e '.model.request.model == "MODEL"' <<<"$REPLY" >/dev/null
   print -r -- '{"system":[{"text":"mine"}],"tools":["read_file"],
-    "sandbox":{"tools":{"read_file":{"read":["~/reference"]}}}}' \
+    "sandbox":{"tools":{"read_file":{"filesystem":{"allowRead":["~/reference"]}}}}}' \
     >"$SHELLFISH_DIR/profiles/default.jsonc"
   print -r -- 'My read-only policy.' >"$SHELLFISH_DIR/system/readonly.md"
   "$ROOT/bin/shellfish" init >"$tmp/init.out"
@@ -406,7 +415,7 @@ sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":[
   sf_profile_resolve_args
   jq -e --arg home "${HOME:A}" '.profile.system == [{text:"mine"}] and
     (.profile.tools | map(split("/") | last)) == ["read_file"] and
-    .profile.sandbox.tools.read_file.read == [$home + "/reference"]' <<<"$REPLY" >/dev/null
+    .profile.sandbox.tools.read_file.filesystem.allowRead == [$home + "/reference"]' <<<"$REPLY" >/dev/null
   sf_profile_resolve_args -p @profiles/default.jsonc
   jq -e '.profile.system[0].text | startswith("You are a CLI agent.")' <<<"$REPLY" >/dev/null
 )
@@ -417,7 +426,7 @@ sf_test_profile boxed '{"tools":["shell"], "sandbox":{"tools":{"shell":{"read":[
   if sf_profile_resolve_args; then
     fail 'an empty selection was accepted'
   fi
-  [[ $SF_PROFILE_ERROR == *'no model selected: run shellfish init, or pass -m'* ]]
+  [[ $SF_ERROR == *'no model selected: run shellfish init, or pass -m'* ]]
   sf_profile_resolve_args -m '{"provider":"openrouter","request":{"model":"test-model"}}'
   jq -e '.model.request.model == "test-model" and
     (.profile.tools | map(split("/") | last)) ==
@@ -525,7 +534,7 @@ profile=$(jq -c '.profile' <<<"$REPLY")
 if sf_profile_components "$profile"; then
   fail 'component with ambiguous manifests was accepted'
 fi
-[[ $SF_PROFILE_ERROR == "multiple component manifests: ${tools:A}/beta" ]]
+[[ $SF_ERROR == "multiple component manifests: ${tools:A}/beta" ]]
 rm "$tools/beta/manifest.json"
 
 mv "$tools/gamma/manifest.json" "$tmp/gamma.json"
@@ -568,17 +577,17 @@ for kind name in tools alpha commands go hooks start; do
   saved=$(<"$manifest")
   print -r -- '{}' >"$manifest"
   sf_profile_components "$profile" && fail "invalid $kind manifest was accepted"
-  [[ $SF_PROFILE_ERROR == *"$catalog/$kind/$name"* ]] ||
+  [[ $SF_ERROR == *"$catalog/$kind/$name"* ]] ||
     fail "invalid $kind manifest lost its path"
   print -r -- '{"broken":}' >"$manifest"
   sf_profile_components "$profile" && fail "malformed $kind manifest was accepted"
-  [[ $SF_PROFILE_ERROR == *"$manifest"*'parse error:'* ]] ||
+  [[ $SF_ERROR == *"$manifest"*'parse error:'* ]] ||
     fail "malformed $kind manifest lost its file or diagnostic"
   print -r -- "$saved" >"$manifest"
 done
 chmod -x "$catalog/commands/go/run"
 sf_profile_components "$profile" && fail 'catalog accepted a nonexecutable command'
-[[ $SF_PROFILE_ERROR == "invalid commands reference: $catalog/commands/go" ]]
+[[ $SF_ERROR == "invalid commands reference: $catalog/commands/go" ]]
 sf_profile_components '{"tools":[],"commands":[],"hooks":[]}'
 jq -e '. == {tools:[],commands:[],hooks:[]}' <<<"$REPLY" >/dev/null ||
   fail 'empty component lists left catalog entries'

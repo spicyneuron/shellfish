@@ -134,8 +134,7 @@ chmod +x "$tmp/slow/decide"
 model=$(jq -cn --arg provider "$tmp/slow" '{provider:$provider,request:{model:"slow"}}')
 SF_TEST_PID="$tmp/slow.pid" zsh -f "$entry" decide -m "$model" <<<"$decision" >/dev/null 2>&1 &
 typeset decide_pid=$! interrupt_status=0
-integer polls=0
-until [[ -s $tmp/slow.pid ]] || (( polls++ > 100 )); do sleep 0.05; done
+sf_test_wait test -s "$tmp/slow.pid" || fail 'decision provider did not start'
 kill -INT $decide_pid
 wait $decide_pid || interrupt_status=$?
 assert_equal 130 "$interrupt_status"

@@ -19,6 +19,7 @@ ctrl+x             Send draft or first queued prompt now, interrupting an active
 ctrl+enter, cmd+enter
                    Send now, if supported by the terminal
 ctrl+c             Cancel an active request, keeping the queue pending; otherwise exit
+ctrl+v             Paste a clipboard image as an [Image: PATH] marker
 ↑, ↓               Navigate prompt history
 /queue drop <N>    Discard queued prompt
 /queue clear       Discard all queued prompts

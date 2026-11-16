@@ -5,7 +5,7 @@ setopt extended_glob no_aliases no_multios pipe_fail
 
 typeset body tool operation candidate value header grants updated profile
 typeset grant resolved matched=''
-typeset action access label message user
+typeset action access label message user section field
 typeset usage='usage: /sandbox [TOOL [{+read|+write|+domain|-read|-write|-domain} VALUE]]'
 body=$(cat)
 body=${body##[[:space:]]#}
@@ -24,12 +24,12 @@ fi
 
 if [[ $body == "$tool" ]]; then
   jq -r --arg tool "$tool" '.profile as $profile | $profile.sandbox as $sandbox |
+    [($profile.tools[] | split("/") | last | select($tool == "" or . == $tool)) as $name |
+      ($sandbox.tools[$name] // {}) as $policy |
+      select($policy != {}) | $name + ":", ($policy | tojson | "  " + .)] as $lines |
     "Sandbox: " + (if $sandbox.enabled then "enabled" else "disabled" end),
-    "Additional grants (tool policy still applies):",
-    ($profile.tools[] | split("/") | last | select($tool == "" or . == $tool)) as $name |
-      $name + ":",
-      (("read", "write", "domains") as $access | ($sandbox.tools[$name][$access] // []) as $grants |
-        "  \($access):", if $grants == [] then "    (none)" else $grants[] | "    " + . end)
+    "Tool policies (merged unless replace is true):",
+    (if $lines == [] then "  (none)" else $lines[] end)
   ' <<<"$header" >&2
   exit
 fi
@@ -53,6 +53,11 @@ case $operation in
     ;;
 esac
 label=${access%s}
+case $access in
+  read) section=filesystem; field=allowRead ;;
+  write) section=filesystem; field=allowWrite ;;
+  domains) section=network; field=allowedDomains ;;
+esac
 [[ -n $candidate ]] || {
   print -u2 -r -- "$usage"
   exit 0
@@ -62,8 +67,8 @@ jq -e '.profile.sandbox.enabled' <<<"$header" >/dev/null || {
   print -u2 -r -- 'session sandbox is disabled'
   exit 0
 }
-grants=$(jq -ce --arg tool "$tool" --arg access "$access" \
-  '.profile.sandbox.tools[$tool][$access] // [] | select(type == "array")' \
+grants=$(jq -ce --arg tool "$tool" --arg section "$section" --arg field "$field" \
+  '.profile.sandbox.tools[$tool][$section][$field] // [] | select(type == "array")' \
   <<<"$header") || exit 1
 
 if [[ $access == domains ]]; then
@@ -123,9 +128,8 @@ fi
 updated=$(jq -c --arg action "$action" --arg value "$value" --arg matched "$matched" '
   if $action == "add" then . + [$value] else map(select(. != $matched)) end
 ' <<<"$grants") || exit 1
-profile=$(jq -c --arg tool "$tool" --arg access "$access" --argjson grants "$updated" '
-  .profile | .sandbox.tools[$tool] //= {read:[], write:[], domains:[]} |
-  .sandbox.tools[$tool][$access]=$grants
+profile=$(jq -c --arg tool "$tool" --arg section "$section" --arg field "$field" --argjson grants "$updated" '
+  .profile | .sandbox.tools[$tool][$section][$field]=$grants
 ' <<<"$header") || exit 1
 if [[ $action == add ]]; then
   message="The user added a session sandbox $label grant for $tool: $value"

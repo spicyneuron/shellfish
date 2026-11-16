@@ -1,14 +1,14 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-typeset -ga SF_PRESENT_HIGHLIGHT_SPANS=()
-typeset -g SF_PRESENT_HIGHLIGHT_ERROR=''
+typeset -ga SF_TUI_HIGHLIGHT_SPANS=()
+typeset -g SF_TUI_HIGHLIGHT_ERROR=''
 # A code line ends inside a block comment.
-typeset -gi SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
-typeset -gA SF_PRESENT_STYLE=()
-typeset -g SF_PRESENT_BACKGROUND=''
+typeset -gi SF_TUI_HIGHLIGHT_BLOCK_OPEN=0
+typeset -gA SF_TUI_STYLE=()
+typeset -g SF_TUI_BACKGROUND=''
 # Keyed "$language/$token", plus "$language" once its words are loaded.
-typeset -gA SF_PRESENT_KEYWORD=()
+typeset -gA SF_TUI_KEYWORD=()
 
 sf_tui_background_mode() {
   local tty saved answer='' character previous=''
@@ -46,8 +46,8 @@ sf_tui_theme_config() {
   local presentation=${1:-\{\}} mode key value
   local -A values
 
-  SF_PRESENT_STYLE=()
-  SF_PRESENT_HIGHLIGHT_ERROR=''
+  SF_TUI_STYLE=()
+  SF_TUI_HIGHLIGHT_ERROR=''
   [[ ${TERM-} != dumb && -z ${NO_COLOR-} ]] || return 0
   while IFS= read -r -d '' key && IFS= read -r -d '' value; do
     values[$key]=$value
@@ -90,36 +90,36 @@ sf_tui_theme_config() {
     record("valid"; "yes")
   ' <<<"$presentation" 2>/dev/null)
   [[ ${values[valid]-} == yes ]] || {
-    SF_PRESENT_HIGHLIGHT_ERROR='cannot apply configured theme'
+    SF_TUI_HIGHLIGHT_ERROR='cannot apply configured theme'
     return 1
   }
 
   mode=$values[mode]
   if [[ $mode == auto ]]; then
-    [[ -n $SF_PRESENT_BACKGROUND ]] ||
-      { sf_tui_background_mode && SF_PRESENT_BACKGROUND=$REPLY } ||
-      SF_PRESENT_BACKGROUND=dark
-    mode=$SF_PRESENT_BACKGROUND
+    [[ -n $SF_TUI_BACKGROUND ]] ||
+      { sf_tui_background_mode && SF_TUI_BACKGROUND=$REPLY } ||
+      SF_TUI_BACKGROUND=dark
+    mode=$SF_TUI_BACKGROUND
   fi
 
   # nearcolor approximates hex palettes when true color is not declared.
   if [[ ${COLORTERM-} != (truecolor|24bit) ]]; then
     zmodload zsh/nearcolor 2>/dev/null || {
-      SF_PRESENT_HIGHLIGHT_ERROR='cannot load zsh/nearcolor'
+      SF_TUI_HIGHLIGHT_ERROR='cannot load zsh/nearcolor'
       return 1
     }
   fi
   for key in ${(k)values}; do
     [[ $key == $mode.* ]] || continue
-    SF_PRESENT_STYLE[${key#$mode.}]=$values[$key]
+    SF_TUI_STYLE[${key#$mode.}]=$values[$key]
   done
 }
 
 sf_tui_highlight_span() {
   integer start=$1 end=$2
-  local style=${SF_PRESENT_STYLE[syntax.$3]-}
+  local style=${SF_TUI_STYLE[syntax.$3]-}
   (( end > start )) && [[ -n $style ]] || return 0
-  SF_PRESENT_HIGHLIGHT_SPANS+=( $start $end "$style" )
+  SF_TUI_HIGHLIGHT_SPANS+=( $start $end "$style" )
 }
 
 sf_tui_code_highlight() {
@@ -127,7 +127,7 @@ sf_tui_code_highlight() {
   local block_kind=comment words='' character quote token
   integer base=${3:-0} state=${4:-0} length=${#source} index=1 end escaped closed tag_open=0
 
-  SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=0
+  SF_TUI_HIGHLIGHT_BLOCK_OPEN=0
   case $language in
     javascript|typescript|ts|jsx|tsx|node) language=js ;;
     bash|zsh|shell|console) language=sh ;;
@@ -168,9 +168,9 @@ sf_tui_code_highlight() {
       ;;
     *) return 0 ;;
   esac
-  if [[ -n $words ]] && (( ! ${+SF_PRESENT_KEYWORD[$language]} )); then
-    for token in ${(s:|:)words}; do SF_PRESENT_KEYWORD[$language/$token]=1; done
-    SF_PRESENT_KEYWORD[$language]=1
+  if [[ -n $words ]] && (( ! ${+SF_TUI_KEYWORD[$language]} )); then
+    for token in ${(s:|:)words}; do SF_TUI_KEYWORD[$language/$token]=1; done
+    SF_TUI_KEYWORD[$language]=1
   fi
 
   if (( state )) && [[ -n $block_end ]]; then
@@ -183,7 +183,7 @@ sf_tui_code_highlight() {
       (( end += ${#block_end} ))
     else
       end=$(( length + 1 ))
-      SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=1
+      SF_TUI_HIGHLIGHT_BLOCK_OPEN=1
     fi
     sf_tui_highlight_span $base $(( base + end - 1 )) $block_kind
     index=$end
@@ -213,7 +213,7 @@ sf_tui_code_highlight() {
         (( end += ${#block_end} ))
       else
         end=$(( length + 1 ))
-        SF_PRESENT_HIGHLIGHT_BLOCK_OPEN=1
+        SF_TUI_HIGHLIGHT_BLOCK_OPEN=1
       fi
       sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) $block_kind
       index=$end
@@ -302,7 +302,7 @@ sf_tui_code_highlight() {
         (( ++end ))
       done
       token=${source[index,end - 1]}
-      if (( ${+SF_PRESENT_KEYWORD[$language/$token]} )); then
+      if (( ${+SF_TUI_KEYWORD[$language/$token]} )); then
         sf_tui_highlight_span $(( base + index - 1 )) $(( base + end - 1 )) keyword
       fi
       index=$end
@@ -349,7 +349,7 @@ sf_tui_markdown_highlight() {
         comment=0
       else
         sf_tui_code_highlight "$line" "$language" $base $comment
-        comment=$SF_PRESENT_HIGHLIGHT_BLOCK_OPEN
+        comment=$SF_TUI_HIGHLIGHT_BLOCK_OPEN
       fi
     elif [[ $line =~ '^ {0,3}(```+|~~~+)[[:space:]]*([^[:space:]]*)' ]]; then
       fence=$match[1]

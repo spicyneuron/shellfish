@@ -99,10 +99,6 @@ def config_object($path; $fields):
     else . end end;
 def config_assert($valid; $path; $message):
   if $valid then . else config_error($path; $message) end;
-# A path: "/", "~/", "./", "../", or "@" for the bundled root.
-def path_reference:
-  nonempty_control_free_string and test("^(/|~/|\\./|\\.\\./|@)");
-
 def sandbox_domain:
   nonempty_control_free_string and
   test("^(\\*\\.)?([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.)*[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$");
@@ -122,8 +118,31 @@ def config_model($path):
   config_assert((has("request") | not) or (.request | type == "object");
     $path + ["request"]; "must be an object");
 
-# Sandbox settings enable or disable sandboxing, grant extra paths, and limit
-# how long an access request waits for the user.
+# Fence owns policy validation. Shellfish validates the fields it interprets.
+def sandbox_policy:
+  type == "object" and
+  (keys - ["$schema", "replace", "extends", "filesystem", "network", "command",
+    "devices", "macos", "ssh", "allowPty", "forceNewSession"] | length == 0) and
+  ((has("replace") | not) or (.replace | type == "boolean")) and
+  ((has("extends") | not) or (.extends | nonempty_control_free_string)) and
+  ((has("extends") | not) or .replace == true) and
+  all(("filesystem", "network", "command", "devices", "macos", "ssh") as $key |
+    select(has($key)) | .[$key]; type == "object") and
+  all((.filesystem // {}) | to_entries[] |
+    select(.key | IN("allowRead", "allowExecute", "allowWrite", "denyRead", "denyWrite")) | .value;
+    type == "array" and all(.[]; nonempty_control_free_string)) and
+  ((.network | has("allowedDomains") | not) or
+    (.network.allowedDomains | type == "array" and all(.[]; nonempty_control_free_string)));
+
+# Only explicit references are relocated. Fence paths such as "." and globs
+# retain their meaning relative to the session working directory.
+def policy_paths(f):
+  (if has("extends") and .extends != "@base" then .extends |= f else . end) |
+  if has("filesystem") then .filesystem |= with_entries(
+    if .key | IN("allowRead", "allowExecute", "allowWrite", "denyRead", "denyWrite")
+    then .value |= map(f) else . end) else . end;
+
+# Sandbox settings and per-tool Fence policies.
 def config_sandbox($path):
   config_object($path; ["enabled", "tools", "user_approval_timeout"]) |
   config_assert((has("enabled") | not) or (.enabled | type == "boolean");
@@ -135,17 +154,9 @@ def config_sandbox($path):
   reduce ((.tools // {}) | keys[]) as $name (.;
     config_assert($name | tool_name; $path + ["tools", $name]; "invalid tool name") |
     .tools[$name] |= (
-      config_object($path + ["tools", $name]; ["read", "write", "domains"]) |
-      reduce ["read", "write", "domains"][] as $field (.;
-        config_assert((has($field) | not) or (.[$field] | type == "array");
-          $path + ["tools", $name, $field]; "must be an array") |
-        reduce range(0; .[$field] // [] | length) as $at (.;
-          config_assert(.[$field][$at] |
-            if $field == "domains" then sandbox_domain else path_reference end;
-            $path + ["tools", $name, $field, $at];
-            if $field == "domains" then "must be a hostname or *.hostname"
-            else "must be a /, ~/, ./, ../, or @ path" end))) |
-      if has("domains") then .domains |= map(ascii_downcase) else . end));
+      config_assert(sandbox_policy; $path + ["tools", $name]; "must be a Fence policy with an optional boolean replace; extends requires replace: true") |
+      if .network | has("allowedDomains") then .network.allowedDomains |= map(ascii_downcase)
+      else . end));
 
 # A profile selects components, holds sandbox settings and opaque configuration.
 # Absent lists are empty. Options add a model list.
@@ -186,7 +197,9 @@ def config_relative($kind; $dir):
   def each($field; f): if has($field) then .[$field] |= f else . end;
   if $kind == "model" then each("provider"; relative_to($dir))
   elif $kind == "sandbox" then each("tools"; with_entries(.value |= (
-    each("read"; map(relative_to($dir))) | each("write"; map(relative_to($dir))))))
+    (if has("extends") and (.extends | contains("/") and test("^[^/~@.]"))
+     then .extends |= ("./" + .) else . end) |
+    policy_paths(relative_to($dir)))))
   else each("sandbox"; config_relative("sandbox"; $dir)) |
     reduce ("model", "system", "tools", "commands", "hooks") as $field (.;
     each($field; map(if type == "object" and $field != "system"
@@ -200,20 +213,21 @@ def model_merge($models):
   end |
   if (.provider // "") == "" then error("a model provider is required") else . end;
 
-# Sandbox grants accumulate and settings replace. Defaults apply after merging.
+# Repeated policy options accumulate lists and replace scalar settings.
 def sandbox_merge($items):
+  def merge($a; $b):
+    reduce ($b | keys_unsorted[]) as $key ($a;
+      .[$key] = (if (.[$key] | type) == "object" and ($b[$key] | type) == "object"
+        then merge(.[$key]; $b[$key])
+        elif (.[$key] | type) == "array" and ($b[$key] | type) == "array"
+        then .[$key] + ($b[$key] - .[$key]) else $b[$key] end));
   reduce $items[] as $item ({tools:{}};
-    . + ($item | with_entries(select(.key | IN("enabled", "user_approval_timeout")))) |
-    reduce (($item.tools // {}) | keys[]) as $name (.;
-      .tools[$name] //= {read:[], write:[], domains:[]} |
-      .tools[$name].read += ($item.tools[$name].read // []) |
-      .tools[$name].write += ($item.tools[$name].write // []) |
-      .tools[$name].domains += ($item.tools[$name].domains // [])));
+    merge(.; $item));
 
 # Every path in a frozen profile through f.
 def header_paths(f):
   .model.provider |= f | .profile |= (.tools |= map(f) | .commands |= map(f) | .hooks |= map(f) |
-    .sandbox.tools |= with_entries(.value |= (.read |= map(f) | .write |= map(f))));
+    .sandbox.tools |= with_entries(.value |= policy_paths(f)));
 
 # Stored paths name bundled files "@...", files under HOME "~/...", and
 # anything else absolutely. An empty $share stores nothing as bundled.
@@ -252,11 +266,10 @@ def canonical_profile:
   (.sandbox | type == "object" and
     (keys - ["user_approval_timeout"]) == ["enabled", "tools"] and
     (.enabled | type == "boolean") and
-    (.tools | type == "object" and all(.[];
-      type == "object" and keys == ["domains", "read", "write"] and
-      (.read | type == "array") and (.write | type == "array") and
-      (.domains | type == "array" and all(.[]; sandbox_domain)) and
-      all(.read[], .write[]; stored_reference))) and
+    (.tools | type == "object" and all(.[]; sandbox_policy and
+      all(.extends? // empty, .filesystem.allowRead[]?, .filesystem.allowExecute[]?,
+        .filesystem.allowWrite[]?, .filesystem.denyRead[]?, .filesystem.denyWrite[]?;
+        (startswith("./") or startswith("../")) | not))) and
     ((has("user_approval_timeout") | not) or (.user_approval_timeout | positive_integer))) and
   (.system | type == "array" and length <= 1 and all(.[]; type == "object" and
     keys == ["text"] and (.text | nul_free_string) and .text != "")) and
@@ -271,7 +284,9 @@ def canonical_profile:
 # boundary.
 def canonical_session_header:
   type == "object" and
-  keys == ["created", "cwd", "format_version", "model", "profile", "type"] and
+  (del(.section_floor) | keys == ["created", "cwd", "format_version", "model", "profile", "type"]) and
+  ((has("section_floor") | not) or (.section_floor |
+    type == "number" and floor == . and . >= 0 and . <= 999999999)) and
   .type == "session" and .format_version == 1 and
   (.cwd | stored_cwd) and (.created | type == "string") and
   (.profile | canonical_profile) and (.model | canonical_model);

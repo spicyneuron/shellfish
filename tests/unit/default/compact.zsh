@@ -40,35 +40,35 @@ sf_test_session "$compact_source"
 jq -cn '
   {type:"hook_result",lifecycle:"session_start",id:"1",model_text:"Startup instructions"},
   {type:"state_update",name:"example/status",value:"initial"},
-  {type:"user",content:[{type:"text",text:"First request\nKeep \"exact\" constraints, café, and </context>."}]},
-  {type:"assistant",stop:"end",content:[{type:"text",text:"First reply"}]},
-  {type:"user",content:[{type:"text",text:"Investigate E42"}]},
-  {type:"assistant",stop:"tool_calls",content:[
+  {type:"user",section:1,content:[{type:"text",text:"First request\nKeep \"exact\" constraints, café, and </context>."}]},
+  {type:"assistant",section:2,stop:"end",content:[{type:"text",text:"First reply"}]},
+  {type:"user",section:3,content:[{type:"text",text:"Investigate E42"}]},
+  {type:"assistant",section:4,stop:"tool_calls",content:[
     {type:"tool_call",id:"old",name:"shell",input:{command:"inspect"}}]},
-  {type:"tool_result",id:"old",name:"shell",input:{command:"inspect"},exit_code:1,
+  {type:"tool_result",section:4,id:"old",name:"shell",input:{command:"inspect"},exit_code:1,
     model_content:[{type:"text",text:("E42\n" + ("x" * 90000))},
       {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
   {type:"state_update",name:"example/status",value:"investigated"},
-  {type:"assistant",stop:"end",content:[{type:"text",text:"Old reply"}]},
+  {type:"assistant",section:4,stop:"end",content:[{type:"text",text:"Old reply"}]},
   {type:"hook_result",lifecycle:"stop",id:"3",model_text:"Pending stop instruction"},
   {type:"error",user_text:"A later stop hook failed."},
   {type:"hook_result",lifecycle:"user_prompt_submit",id:"2",model_text:"Recent submission context"},
-  {type:"user",content:[{type:"text",text:("Recent task " + ("a" * 35000))}]},
-  {type:"assistant",stop:"tool_calls",content:[
+  {type:"user",section:10,content:[{type:"text",text:("Recent task " + ("a" * 35000))}]},
+  {type:"assistant",section:11,stop:"tool_calls",content:[
     {type:"tool_call",id:"recent_a",name:"read_file",input:{file_path:"a.png"}},
     {type:"tool_call",id:"recent_b",name:"shell",input:{command:"true"}}]},
-  {type:"tool_result",id:"recent_a",name:"read_file",input:{file_path:"a.png"},exit_code:0,
+  {type:"tool_result",section:11,id:"recent_a",name:"read_file",input:{file_path:"a.png"},exit_code:0,
     model_content:[{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
-  {type:"tool_result",id:"recent_b",name:"shell",input:{command:"true"},exit_code:0,
+  {type:"tool_result",section:11,id:"recent_b",name:"shell",input:{command:"true"},exit_code:0,
     model_text:"Recent result"},
-  {type:"assistant",stop:"end",content:[{type:"text",text:"Recent reply"}]},
+  {type:"assistant",section:11,stop:"end",content:[{type:"text",text:"Recent reply"}]},
   {type:"state_update",name:"example/status",value:"recent"},
-  {type:"user",content:[{type:"text",text:("Newest task " + ("b" * 45000))}]},
-  {type:"assistant",stop:"tool_calls",content:[
+  {type:"user",section:20,content:[{type:"text",text:("Newest task " + ("b" * 45000))}]},
+  {type:"assistant",section:21,stop:"tool_calls",content:[
     {type:"reasoning",text:"Check first",opaque:{encrypted_content:"secret"}},
     {type:"tool_call",id:"cancelled",name:"shell",input:{command:"true"}}],
     usage:{input_tokens:1,output_tokens:1}},
-  {type:"tool_result",id:"cancelled",name:"shell",input:{command:"true"},exit_code:126,
+  {type:"tool_result",section:21,id:"cancelled",name:"shell",input:{command:"true"},exit_code:126,
     model_text:"tool call cancelled"},
   {type:"error",user_text:"Cancelled."},
   {type:"state_update",name:"example/status",value:null}
@@ -79,7 +79,7 @@ typeset -gx SF_TEST_PROVIDER_REQUEST="$compact_request"
 
 # Automatic compaction skips low usage.
 SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_source" \
-  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_SHARE_DIR="$ROOT/share" zsh -f "$compact_hook" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" \
   3>"$compact_control" 2>"$compact_display" </dev/null
 [[ ! -s $compact_control && ! -e $compact_request ]] ||
   fail 'below-threshold automatic compaction requested inference'
@@ -94,6 +94,15 @@ typeset compact_child=$(actions | jq -r '.argv[2]')
 assert_equal "$compact_before" "$(shasum <"$compact_source")"
 assert_canonical_session "$compact_child"
 assert_mode 600 "$compact_child"
+jq -es '[.[] | select(.type == "user") | .section] == [22,10,20] and
+  .[0].section_floor == 23 and
+  ([.[] | select(.type == "tool_result") | .section] == [11,11,21])' \
+  "$compact_child" >/dev/null || fail 'compaction changed retained section IDs'
+cp "$compact_child" "$tmp/compact-continue.jsonl"
+SF_TEST_PROVIDER_REQUEST="$tmp/continue-request" \
+  sf_test_run continue "$tmp/compact-continue.jsonl" >/dev/null
+jq -es '[.[] | select(.type == "user" or .type == "assistant") | .section][-2:] == [24,25]' \
+  "$tmp/compact-continue.jsonl" >/dev/null || fail 'compaction reused a section ID'
 jq -es --slurpfile source "$compact_source" \
     --rawfile prompt "$ROOT/share/commands/compact/prompt.md" --arg steering "$steering" '
   .[:-1] == $source and
@@ -133,7 +142,7 @@ jq -es 'any(.[]; .type == "hook_result" and .id == "3" and .action == "deny" and
 
 # No source usage measurement should immediately compact the child again.
 SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$compact_child" \
-  SHELLFISH_TURN_STATE="$tmp" SHELLFISH_SHARE_DIR="$ROOT/share" zsh -f "$compact_hook" \
+  SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_hook" \
   3>"$compact_control" 2>"$compact_display" </dev/null
 [[ ! -s $compact_control ]] || fail 'child reused stale token usage'
 
@@ -383,4 +392,30 @@ for command in compact compact_tools; do
   fi
   PATH="$tmp/http-bin:$PATH" sf_test_run 'Continue' "$integration_child" >"$integration_stream"
   assert_canonical_session "$integration_child" end
+done
+
+# Hook text has the same retention budget in either result representation.
+typeset attachment_source="$tmp/attachments.jsonl" attachment_child representation
+for representation in model_text model_content; do
+  head -n 1 "$compact_source" >"$attachment_source"
+  jq -cn --arg representation "$representation" '
+    def user($text): {type:"user",content:[{type:"text",text:$text}]};
+    def assistant: {type:"assistant",stop:"end",content:[]};
+    def hook($id): {type:"hook_result",lifecycle:"user_prompt_submit",id:$id} +
+      if $representation == "model_text" then {model_text:("x" * 90000)}
+      else {model_content:[{type:"text",text:("x" * 90000)},
+        {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]} end;
+    user("first"),assistant,hook("1"),user("second"),assistant,
+    hook("2"),user("third"),assistant
+  ' >>"$attachment_source"
+  assert_canonical_session "$attachment_source"
+  SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$attachment_source" \
+    SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
+    3>"$compact_control" 2>"$compact_display" </dev/null
+  attachment_child=$(actions | jq -r '.argv[2]')
+  [[ -n $attachment_child ]] || fail "$representation hook text bypassed compaction"
+  assert_canonical_session "$attachment_child"
+  jq -es --slurpfile source "$attachment_source" '
+    ([.[] | select(.type == "user")] | length) == 2 and .[-3:] == $source[-3:]
+  ' "$attachment_child" >/dev/null || fail "$representation retained the wrong turns"
 done

@@ -82,7 +82,7 @@ valid_header=$(jq -cn '
       commands: ["@commands/help"],
       hooks: ["/bin/hook", "@hooks/stop"],
       config: {example:["./literal", null, false]},
-      sandbox: {enabled: true, tools: {shell:{read:["~/cache"], write:[],domains:["*.example.com"]}}}
+      sandbox: {enabled: true, tools: {shell:{filesystem:{allowRead:["~/cache"],allowWrite:[]},network:{allowedDomains:["*.example.com"]}}}}
     }
   }
 ')
@@ -106,12 +106,14 @@ for patch in '.extra=true' '.profile.extra=true' '.profile.env={}' \
     '.profile.system=[{text:1}]' '.profile.sandbox=true' '.profile.sandbox.extra=1' \
     '.profile.tools=["shell"]' '.profile.tools=["/a/shell","/b/shell"]' \
     '.model.provider="./openai_chat"' '.profile.system=[{text:""}]' '.profile.system+=[{text:"two"}]' \
-    '.profile.sandbox.tools.shell.read=["relative"]' \
-    '.profile.sandbox.tools.missing={read:[],write:[],domains:[]}' \
-    '.profile.sandbox.tools.shell.read=null' '.profile.sandbox.tools=[]' \
-    'del(.profile.sandbox.tools.shell.write)' \
-    '.profile.sandbox.tools.shell.domains=null' \
-    '.profile.sandbox.tools.shell.domains=["example.com/path"]' \
+    '.profile.sandbox.tools.shell.filesystem.allowRead=[3]' \
+    '.profile.sandbox.tools.shell.filesystem.allowExecute=["./relative"]' \
+    '.profile.sandbox.tools.shell.extends="../policy.json"' \
+    '.profile.sandbox.tools.missing={filesystem:{allowRead:[],allowWrite:[]},network:{allowedDomains:[]}}' \
+    '.profile.sandbox.tools.shell.filesystem.allowRead=null' '.profile.sandbox.tools=[]' \
+    '.profile.sandbox.tools.shell.replace="yes"' \
+    '.profile.sandbox.tools.shell.network.allowedDomains=null' \
+    '.profile.sandbox.tools.shell.network.allowedDomains=[3]' \
     '.cwd="./project"'; do
   if jq -c "$patch" <<<"$valid_header" |
       schema_eval 'canonical_session_header' >/dev/null 2>&1; then
@@ -125,8 +127,8 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   {profile, model} as $stored |
   ($stored | header_expand($share; $home)) as $expanded |
   $expanded.profile.tools == ["/opt/sf/share/tools/shell", "/home/me/tools/jira"] and
-  $expanded.profile.sandbox.tools.shell.read == ["/home/me/cache"] and
-  $expanded.profile.sandbox.tools.shell.domains == ["*.example.com"] and
+  $expanded.profile.sandbox.tools.shell.filesystem.allowRead == ["/home/me/cache"] and
+  $expanded.profile.sandbox.tools.shell.network.allowedDomains == ["*.example.com"] and
   $expanded.model.provider == "/opt/sf/share/providers/openai_chat" and
   ($expanded | header_store($share; $home)) == $stored
 ' <<<"$valid_header" >/dev/null || fail 'stored profile paths did not round-trip'
@@ -136,10 +138,10 @@ jq -L "$ROOT" -e --arg share /opt/sf/share --arg home /home/me '
   include "lib/profile";
   header_expand($share; $home) |
   .profile.tools = ["/opt/sf/share/profiles/default/tools/shell", "/opt/other/jira"] |
-  .profile.sandbox.tools.shell.write = ["/opt/sf/share/tools"] |
+  .profile.sandbox.tools.shell.filesystem.allowWrite = ["/opt/sf/share/tools"] |
   header_store($share; $home) |
   .profile.tools == ["@profiles/default/tools/shell", "/opt/other/jira"] and
-  .profile.sandbox.tools.shell.write == ["@tools"]
+  .profile.sandbox.tools.shell.filesystem.allowWrite == ["@tools"]
 ' <<<"$valid_header" >/dev/null || fail 'bundled paths did not store with "@"'
 
 # Tool manifests validate sandboxing.

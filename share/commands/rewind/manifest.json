@@ -1,1 +1,1 @@
-{"description":"Rewind this session to the following user section (default: last)","arguments":"[N]","user_text":"${output.stderr}"}
+{"description":"Rewind before a user section or after an agent section (default: last prompt)","arguments":"[N]","user_text":"${output.stderr}"}

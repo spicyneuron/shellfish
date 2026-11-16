@@ -16,11 +16,11 @@ jq -e '. == {type:"_tool_permission_response",id:"permission_1",decision:"approv
   "$tmp/reply.jsonl" >/dev/null || fail 'permission reply was not encoded canonically'
 
 # Normalize transport errors.
-print -rn -- $'first\tsecond\nthird' >"$tmp/exec.error"
-SF_TUI_TRANSPORT_ERROR_FILE="$tmp/exec.error"
+print -rn -- $'first\tsecond\nthird' >"$tmp/turn.error"
+SF_TUI_TRANSPORT_ERROR_FILE="$tmp/turn.error"
 sf_tui_transport_close
 assert_equal 'first second third' "$SF_TUI_TRANSPORT_EXIT_DETAIL"
-[[ ! -e $tmp/exec.error ]] || fail 'transport error file was not removed'
+[[ ! -e $tmp/turn.error ]] || fail 'transport error file was not removed'
 
 # Complete the coprocess lifecycle.
 SF_TUI_TRANSPORT_COMMAND=( "${commands[zsh]}" -f -c \

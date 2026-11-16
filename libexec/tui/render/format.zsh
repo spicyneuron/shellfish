@@ -4,19 +4,19 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 # Formatting turns source into wrapped rows and styling spans. LEADING counts
 # the role chrome before the content those rows introduce.
 
-typeset -ga SF_FORMAT_ROWS=() SF_FORMAT_SPANS=()
-typeset -gi SF_FORMAT_LEADING=0
-typeset -ga SF_FORMAT_SPAN=()
+typeset -ga SF_TUI_FORMAT_ROWS=() SF_TUI_FORMAT_SPANS=()
+typeset -gi SF_TUI_FORMAT_LEADING=0
+typeset -ga SF_TUI_FORMAT_SPAN=()
 
 sf_tui_format_start() {
-  SF_FORMAT_ROWS=()
-  SF_FORMAT_SPANS=()
-  SF_FORMAT_LEADING=0
+  SF_TUI_FORMAT_ROWS=()
+  SF_TUI_FORMAT_SPANS=()
+  SF_TUI_FORMAT_LEADING=0
 }
 
 sf_tui_format_blank() {
-  SF_FORMAT_ROWS+=( '' )
-  SF_FORMAT_SPANS+=( '' )
+  SF_TUI_FORMAT_ROWS+=( '' )
+  SF_TUI_FORMAT_SPANS+=( '' )
 }
 
 # Trim outer blank lines.
@@ -28,10 +28,10 @@ sf_tui_format_trim() {
 }
 
 sf_tui_span() {
-  local style=${SF_PRESENT_STYLE[$3]:-$SF_PRESENT_STYLE[${3%%.*}]}
+  local style=${SF_TUI_STYLE[$3]:-$SF_TUI_STYLE[${3%%.*}]}
   integer start=$1 end=$2
   (( end > start )) && [[ -n $style ]] || return 0
-  SF_FORMAT_SPAN+=( $start $end "$style" )
+  SF_TUI_FORMAT_SPAN+=( $start $end "$style" )
 }
 
 # Role rules optionally end with a section number.
@@ -40,7 +40,7 @@ sf_tui_format_rule() {
   integer columns=$1 title_start title_end number_start=-1
   local role=$2 number=${3-} text
   [[ -n $role ]] || return 0
-  SF_FORMAT_SPAN=()
+  SF_TUI_FORMAT_SPAN=()
   text="─ $role "
   title_end=${#text}
   if [[ -n $number ]] && (( ${#text} + ${#number} + 3 <= columns )); then
@@ -58,23 +58,23 @@ sf_tui_format_rule() {
   sf_tui_span $title_start $title_end "section.$role"
   (( number_start < 0 )) ||
     sf_tui_span $number_start $(( number_start + ${#number} )) muted
-  SF_FORMAT_ROWS+=( "$text" )
-  SF_FORMAT_SPANS+=( "${(j: :)SF_FORMAT_SPAN}" )
+  SF_TUI_FORMAT_ROWS+=( "$text" )
+  SF_TUI_FORMAT_SPANS+=( "${(j: :)SF_TUI_FORMAT_SPAN}" )
   sf_tui_format_blank
-  SF_FORMAT_LEADING=${#SF_FORMAT_ROWS}
+  SF_TUI_FORMAT_LEADING=${#SF_TUI_FORMAT_ROWS}
 }
 
 # RAIL styles the first cell of each row as the rail.
 sf_tui_format_body() {
   integer limit=$1 row
-  local style=${SF_PRESENT_STYLE[$2]-} rail=''
+  local style=${SF_TUI_STYLE[$2]-} rail=''
   local -a spans=()
-  [[ -z ${3-} ]] || rail=${SF_PRESENT_STYLE[divider]-}
+  [[ -z ${3-} ]] || rail=${SF_TUI_STYLE[divider]-}
   for (( row = 1; row <= limit; row++ )); do
     spans=()
-    [[ -z $style || -z $SF_WRAP_ROWS[row] ]] || spans=( 0 ${#SF_WRAP_ROWS[row]} "$style" )
-    SF_FORMAT_ROWS+=( "$SF_WRAP_ROWS[row]" )
-    SF_FORMAT_SPANS+=( "${(j: :)spans} $SF_WRAP_SPANS[row]${rail:+ 0 1 $rail}" )
+    [[ -z $style || -z $SF_TUI_WRAP_ROWS[row] ]] || spans=( 0 ${#SF_TUI_WRAP_ROWS[row]} "$style" )
+    SF_TUI_FORMAT_ROWS+=( "$SF_TUI_WRAP_ROWS[row]" )
+    SF_TUI_FORMAT_SPANS+=( "${(j: :)spans} $SF_TUI_WRAP_SPANS[row]${rail:+ 0 1 $rail}" )
   done
 }
 
@@ -83,17 +83,17 @@ sf_tui_format_chrome() {
   local text=$2 kind=$3
   shift 3
   sf_tui_wrap $columns "$text" '' "$@" || return 1
-  sf_tui_format_body ${#SF_WRAP_ROWS} "$kind"
+  sf_tui_format_body ${#SF_TUI_WRAP_ROWS} "$kind"
 }
 
 sf_tui_format_styled() {
   integer columns=$1 start
-  local text=$2 kind=$3 overlay=${SF_PRESENT_STYLE[${4-}]-}
-  local suffix=${SF_PRESENT_STYLE[${5-}]-} rail=${SF_PRESENT_STYLE[divider]-}
+  local text=$2 kind=$3 overlay=${SF_TUI_STYLE[${4-}]-}
+  local suffix=${SF_TUI_STYLE[${5-}]-} rail=${SF_TUI_STYLE[divider]-}
   local -a source=()
   [[ -z $overlay ]] || source+=( 0 ${#text} "$overlay" )
-  if [[ -n $suffix && $text == *"$SF_PRESENT_ACTIVITY" ]]; then
-    start=$(( ${#text} - ${#SF_PRESENT_ACTIVITY} ))
+  if [[ -n $suffix && $text == *"$SF_TUI_ACTIVITY" ]]; then
+    start=$(( ${#text} - ${#SF_TUI_ACTIVITY} ))
     source+=( $start ${#text} "$suffix" )
   fi
   [[ -z $rail || $text != (│|╰)* ]] || source+=( 0 1 "$rail" )
@@ -102,8 +102,8 @@ sf_tui_format_styled() {
 
 sf_tui_format_head() {
   integer columns=$1 value_start=$4 value_end=$5 clamp_start=${6:--1}
-  local text=$2 kind=$3 style=${SF_PRESENT_STYLE[$3]-}
-  local clamp=${SF_PRESENT_STYLE[clamp]-}
+  local text=$2 kind=$3 style=${SF_TUI_STYLE[$3]-}
+  local clamp=${SF_TUI_STYLE[clamp]-}
   local -a source=()
   [[ -z $style ]] || source+=( $value_start $value_end "$style,bold" )
   [[ -z $clamp ]] || (( clamp_start < 0 )) || source+=( $clamp_start ${#text} "$clamp" )
@@ -133,12 +133,12 @@ sf_tui_format_fill() {
 # Reasoning also holds its last line, so its rail can close there. FINAL takes
 # the rest of the source and closes the block.
 sf_tui_format_lines() {
-  integer columns=$1 final=$2 shown=$SF_LIVE_SHOWN
-  local text=$SF_LIVE_TEXT chunk head tail
+  integer columns=$1 final=$2 shown=$SF_TUI_LIVE_SHOWN
+  local text=$SF_TUI_LIVE_TEXT chunk head tail
   sf_tui_format_start
   if (( final )); then
     chunk=$text
-  elif [[ $SF_LIVE_KIND == reasoning ]]; then
+  elif [[ $SF_TUI_LIVE_KIND == reasoning ]]; then
     tail=${text##*[!$'\n']}
     chunk=${text%"$tail"}
     [[ $chunk == *$'\n'* ]] || return 0
@@ -149,7 +149,7 @@ sf_tui_format_lines() {
   fi
   tail=${chunk##*[!$'\n']}
   chunk=${chunk%"$tail"}
-  SF_LIVE_TEXT=${text[${#chunk} + 1,-1]}
+  SF_TUI_LIVE_TEXT=${text[${#chunk} + 1,-1]}
   # Leading blank lines are trimmed; later, a newline ends the line before it.
   if (( shown )); then
     chunk=${chunk#$'\n'}
@@ -159,12 +159,12 @@ sf_tui_format_lines() {
   fi
   if [[ -n $chunk ]] || (( final )); then
     (( shown )) || sf_tui_format_opening $columns
-    SF_LIVE_SHOWN=1
+    SF_TUI_LIVE_SHOWN=1
   fi
   [[ -z $chunk ]] || sf_tui_format_prose $columns "$chunk" || return 1
   (( final )) || return 0
-  if [[ $SF_LIVE_KIND == reasoning ]]; then
-    [[ -z $chunk ]] || SF_FORMAT_ROWS[-1]="╰${SF_FORMAT_ROWS[-1][2,-1]}"
+  if [[ $SF_TUI_LIVE_KIND == reasoning ]]; then
+    [[ -z $chunk ]] || SF_TUI_FORMAT_ROWS[-1]="╰${SF_TUI_FORMAT_ROWS[-1][2,-1]}"
   else
     sf_tui_format_summary $columns
   fi
@@ -173,42 +173,42 @@ sf_tui_format_lines() {
 # A block opens with its role rule; reasoning adds its heading.
 sf_tui_format_opening() {
   integer columns=$1
-  sf_tui_format_rule $columns "$SF_LIVE_ROLE" "$SF_LIVE_SECTION"
-  [[ $SF_LIVE_KIND != reasoning ]] ||
+  sf_tui_format_rule $columns "$SF_TUI_LIVE_ROLE" "$SF_TUI_LIVE_SECTION"
+  [[ $SF_TUI_LIVE_KIND != reasoning ]] ||
     sf_tui_format_head $columns '✎ Reasoning' reasoning 2 11
 }
 
 # Message text is Markdown; streamed reasoning is plain text on the rail.
 # System text spends one preview budget across the whole block.
 sf_tui_format_prose() {
-  integer columns=$1 limit spent=$SF_LIVE_SPENT
+  integer columns=$1 limit spent=$SF_TUI_LIVE_SPENT
   local text=$2 prefix='' rail='' style=message preview=full
-  (( ! SF_LIVE_HIDDEN )) || return 0
-  SF_PRESENT_HIGHLIGHT_SPANS=()
-  if [[ $SF_LIVE_KIND == reasoning ]]; then
+  (( ! SF_TUI_LIVE_HIDDEN )) || return 0
+  SF_TUI_HIGHLIGHT_SPANS=()
+  if [[ $SF_TUI_LIVE_KIND == reasoning ]]; then
     prefix='│ '
     rail=rail
     style=reasoning
   else
-    [[ $SF_LIVE_ROLE != system ]] || preview=$SF_PRESENT_PREVIEW
-    sf_tui_markdown_highlight "$text" "$SF_LIVE_STATE"
-    SF_LIVE_STATE=$REPLY
+    [[ $SF_TUI_LIVE_ROLE != system ]] || preview=$SF_TUI_PREVIEW
+    sf_tui_markdown_highlight "$text" "$SF_TUI_LIVE_STATE"
+    SF_TUI_LIVE_STATE=$REPLY
   fi
-  sf_tui_wrap $columns "$text" "$prefix" "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
-  limit=${#SF_WRAP_ROWS}
+  sf_tui_wrap $columns "$text" "$prefix" "${(@)SF_TUI_HIGHLIGHT_SPANS}" || return 1
+  limit=${#SF_TUI_WRAP_ROWS}
   if [[ $preview != full ]] && (( limit > preview - spent )); then
     limit=$(( preview > spent ? preview - spent : 0 ))
-    SF_LIVE_HIDDEN=1
+    SF_TUI_LIVE_HIDDEN=1
   fi
   sf_tui_format_body $limit $style $rail
-  SF_LIVE_SPENT=$(( spent + limit ))
+  SF_TUI_LIVE_SPENT=$(( spent + limit ))
 }
 
 # Clamped system text reports its size.
 sf_tui_format_summary() {
   integer columns=$1
-  (( SF_LIVE_HIDDEN )) || return 0
-  sf_tui_token_count $SF_LIVE_TOTAL
+  (( SF_TUI_LIVE_HIDDEN )) || return 0
+  sf_tui_token_count $SF_TUI_LIVE_TOTAL
   sf_tui_format_styled $columns "… ~$REPLY tokens" message clamp
 }
 
@@ -216,12 +216,12 @@ sf_tui_format_summary() {
 # spinner.
 sf_tui_format_status() {
   integer columns=$1
-  (( SF_LIVE_SHOWN )) || sf_tui_format_opening $columns
+  (( SF_TUI_LIVE_SHOWN )) || sf_tui_format_opening $columns
   sf_tui_spinner || return 0
-  if [[ $SF_LIVE_KIND == message ]]; then
-    sf_tui_format_styled $columns "$SF_PRESENT_ACTIVITY" message '' activity
+  if [[ $SF_TUI_LIVE_KIND == message ]]; then
+    sf_tui_format_styled $columns "$SF_TUI_ACTIVITY" message '' activity
   else
-    sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" reasoning '' activity
+    sf_tui_format_styled $columns "╰ $SF_TUI_ACTIVITY" reasoning '' activity
   fi
 }
 
@@ -231,34 +231,34 @@ sf_tui_format_execution() {
   integer columns=$1 live=$(( ! $2 )) spinner=0 fold=0 diff=0
   integer row limit total heading hidden=0 span background cursor start end pass lead
   local body full head rest label badge='' suffix='' glyph preview text style kind=execution
-  local base_style rail_style=${SF_PRESENT_STYLE[divider]-}
-  local clamp=${SF_PRESENT_STYLE[clamp]-} badge_style='' glyph_style=''
-  local strong=${SF_PRESENT_STYLE[syntax.strong]-}
+  local base_style rail_style=${SF_TUI_STYLE[divider]-}
+  local clamp=${SF_TUI_STYLE[clamp]-} badge_style='' glyph_style=''
+  local strong=${SF_TUI_STYLE[syntax.strong]-}
   local -a projected=() spans=()
 
   sf_tui_format_start
-  sf_tui_format_trim "$SF_LIVE_TEXT"
+  sf_tui_format_trim "$SF_TUI_LIVE_TEXT"
   body=$REPLY
-  if [[ $SF_LIVE_KIND == reasoning ]]; then
+  if [[ $SF_TUI_LIVE_KIND == reasoning ]]; then
     kind=reasoning
     glyph='✎'
     [[ -z $body ]] || body=$'\n'$body
     body="**Reasoning**$body"
-    preview=$SF_PRESENT_PREVIEW_REASONING
+    preview=$SF_TUI_PREVIEW_REASONING
   else
-    case $SF_LIVE_CLASS in
+    case $SF_TUI_LIVE_CLASS in
       tool) glyph='⛭' ;;
       context) glyph='↪' ;;
       *) glyph='ℹ' ;;
     esac
-    preview=${SF_LIVE_PREVIEW:-default}
-    if [[ $SF_PRESENT_PREVIEW == full ]]; then
+    preview=${SF_TUI_LIVE_PREVIEW:-default}
+    if [[ $SF_TUI_PREVIEW == full ]]; then
       preview=full
     elif [[ $preview == default ]]; then
-      preview=$SF_PRESENT_PREVIEW
+      preview=$SF_TUI_PREVIEW
     fi
   fi
-  base_style=${SF_PRESENT_STYLE[$kind]-}
+  base_style=${SF_TUI_STYLE[$kind]-}
   (( ! live )) || sf_tui_spinner && spinner=$live
 
   [[ $preview == full ]] || fold=1
@@ -276,53 +276,53 @@ sf_tui_format_execution() {
       label=''
     fi
   fi
-  [[ -z $SF_LIVE_FAILED || -z ${SF_PRESENT_STYLE[error]-} ]] ||
-    glyph_style=${SF_PRESENT_STYLE[error]},bold
-  if [[ -n $SF_LIVE_BADGE ]]; then
-    badge="[sandbox access $SF_LIVE_BADGE]"
-    case $SF_LIVE_BADGE in
-      requested) badge_style=${SF_PRESENT_STYLE[permission]-} ;;
-      approved*) badge_style=${SF_PRESENT_STYLE[muted]-} ;;
-      *) badge_style=${SF_PRESENT_STYLE[error]-} ;;
+  [[ -z $SF_TUI_LIVE_FAILED || -z ${SF_TUI_STYLE[error]-} ]] ||
+    glyph_style=${SF_TUI_STYLE[error]},bold
+  if [[ -n $SF_TUI_LIVE_BADGE ]]; then
+    badge="[sandbox access $SF_TUI_LIVE_BADGE]"
+    case $SF_TUI_LIVE_BADGE in
+      requested) badge_style=${SF_TUI_STYLE[permission]-} ;;
+      approved*) badge_style=${SF_TUI_STYLE[muted]-} ;;
+      *) badge_style=${SF_TUI_STYLE[error]-} ;;
     esac
     [[ -z $badge_style ]] || badge_style+=,bold
   fi
 
-  sf_tui_format_rule $columns "$SF_LIVE_ROLE" "$SF_LIVE_SECTION"
+  sf_tui_format_rule $columns "$SF_TUI_LIVE_ROLE" "$SF_TUI_LIVE_SECTION"
   # The identity line always shows, however many rows it wraps to; the preview
   # budget covers the output below it. Settled clamped output adds its size to
   # the identity line and wraps again.
   for pass in 1 2; do
     full=${badge:+$badge }$head$suffix$rest
-    SF_PRESENT_HIGHLIGHT_SPANS=()
+    SF_TUI_HIGHLIGHT_SPANS=()
     [[ -z $badge || -z $badge_style ]] ||
-      SF_PRESENT_HIGHLIGHT_SPANS+=( 0 ${#badge} "$badge_style" )
+      SF_TUI_HIGHLIGHT_SPANS+=( 0 ${#badge} "$badge_style" )
     lead=$(( ${#badge} ? ${#badge} + 1 : 0 ))
     [[ -z $label || -z $strong ]] ||
-      SF_PRESENT_HIGHLIGHT_SPANS+=( $lead $(( lead + ${#label} )) "$strong" )
+      SF_TUI_HIGHLIGHT_SPANS+=( $lead $(( lead + ${#label} )) "$strong" )
     [[ -z $suffix || -z $clamp ]] ||
-      SF_PRESENT_HIGHLIGHT_SPANS+=( $(( ${#full} - ${#rest} - ${#suffix} )) \
+      SF_TUI_HIGHLIGHT_SPANS+=( $(( ${#full} - ${#rest} - ${#suffix} )) \
         $(( ${#full} - ${#rest} )) "$clamp" )
     (( ! diff )) || sf_tui_diff_highlight "$rest" $(( ${#full} - ${#rest} ))
     if (( fold )); then
       sf_tui_wrap $columns "${full[1,${#full}-${#rest}]}" '│ ' || return 1
-      heading=${#SF_WRAP_ROWS}
+      heading=${#SF_TUI_WRAP_ROWS}
       sf_tui_wrap -L $(( heading + preview + 1 )) $columns "$full" '│ ' \
-        "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+        "${(@)SF_TUI_HIGHLIGHT_SPANS}" || return 1
     else
-      sf_tui_wrap $columns "$full" '│ ' "${(@)SF_PRESENT_HIGHLIGHT_SPANS}" || return 1
+      sf_tui_wrap $columns "$full" '│ ' "${(@)SF_TUI_HIGHLIGHT_SPANS}" || return 1
     fi
-    total=${#SF_WRAP_ROWS}
+    total=${#SF_TUI_WRAP_ROWS}
     (( fold && total > heading + preview )) || break
     hidden=1
     (( ! live )) && [[ -z $suffix ]] || break
-    sf_tui_token_count ${#rest} "$SF_LIVE_TOKENS"
+    sf_tui_token_count ${#rest} "$SF_TUI_LIVE_TOKENS"
     suffix=" · ~$REPLY tokens"
   done
   limit=$total
   (( ! hidden )) || limit=$(( heading + preview ))
   for (( row = 1; row <= limit; row++ )); do
-    text=$SF_WRAP_ROWS[row]
+    text=$SF_TUI_WRAP_ROWS[row]
     # The last output row closes the rail, or fades it when output is hidden.
     if (( row == 1 )); then
       text="$glyph${text[2,-1]}"
@@ -331,7 +331,7 @@ sf_tui_format_execution() {
     elif (( ! live && ! hidden && row == limit )); then
       text="╰${text[2,-1]}"
     fi
-    projected=( ${=SF_WRAP_SPANS[row]} )
+    projected=( ${=SF_TUI_WRAP_SPANS[row]} )
     background=0
     for (( span = 1; span <= ${#projected}; span += 3 )); do
       [[ ${projected[span + 2]} != *bg=* ]] || background=1
@@ -369,11 +369,11 @@ sf_tui_format_execution() {
     if [[ -n $base_style ]] && (( cursor < ${#text} )); then
       spans+=( $cursor ${#text} "$base_style" )
     fi
-    SF_FORMAT_ROWS+=( "$text" )
-    SF_FORMAT_SPANS+=( "${(j: :)spans}" )
+    SF_TUI_FORMAT_ROWS+=( "$text" )
+    SF_TUI_FORMAT_SPANS+=( "${(j: :)spans}" )
   done
   (( ! spinner )) ||
-    sf_tui_format_styled $columns "╰ $SF_PRESENT_ACTIVITY" "$kind" '' activity
+    sf_tui_format_styled $columns "╰ $SF_TUI_ACTIVITY" "$kind" '' activity
 }
 
 # Notices settle immediately: a heading row followed by indented detail.
@@ -387,6 +387,6 @@ sf_tui_format_notice() {
   sf_tui_format_head $columns "$head" error 2 $(( 2 + heading_length )) || return 1
   if [[ -n $body ]]; then
     sf_tui_wrap $columns "$body" '  ' || return 1
-    sf_tui_format_body ${#SF_WRAP_ROWS} error
+    sf_tui_format_body ${#SF_TUI_WRAP_ROWS} error
   fi
 }

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+set -e
+
+[[ -z ${PROVIDER_TEST_ARGS:-} ]] || printf '%s\n' "$@" >"$PROVIDER_TEST_ARGS"
+[[ -z ${PROVIDER_TEST_HEADERS:-} ]] || : >"$PROVIDER_TEST_HEADERS"
+while (($#)); do
+  case $1 in
+    --data-binary) cp "${2#@}" "$PROVIDER_TEST_BODY"; shift 2 ;;
+    --header)
+      if [[ -n ${PROVIDER_TEST_HEADERS:-} ]]; then
+        if [[ $2 == @* ]]; then cat "${2#@}"; else printf '%s\n' "$2"; fi >>"$PROVIDER_TEST_HEADERS"
+      fi
+      shift 2 ;;
+    *) shift ;;
+  esac
+done
+attempts=0
+if [[ -n ${PROVIDER_TEST_ATTEMPTS:-} ]]; then
+  [[ ! -s $PROVIDER_TEST_ATTEMPTS ]] || attempts=$(<"$PROVIDER_TEST_ATTEMPTS")
+  printf '%s\n' "$((attempts + 1))" >"$PROVIDER_TEST_ATTEMPTS"
+fi
+if [[ -n ${PROVIDER_TEST_FAIL_ONCE:-} && $attempts == 0 ]]; then
+  printf '%s' 'curl: (92) HTTP/2 stream was not closed cleanly: INTERNAL_ERROR (err 2)000' >&2
+  exit 92
+fi
+cat "$PROVIDER_TEST_RESPONSE"
+printf %s "${PROVIDER_TEST_STATUS:-200}" >&2
+exit "${PROVIDER_TEST_CURL_STATUS:-0}"

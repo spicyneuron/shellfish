@@ -34,12 +34,6 @@ if PATH="$tmp/jina-bin:$PATH" JINA_TEST_ARGS="$jina_args" JINA_TEST_STATUS=22 \
     "$ROOT/share/tools/fetch_url/run" <<<'{"url":"https://example.com"}' >/dev/null 2>&1; then
   fail 'fetch_url hid a curl failure'
 fi
-jq -e '
-  .network.allowedDomains == ["r.jina.ai"] and
-  .network.allowLocalBinding == false and
-  .network.allowLocalOutbound == false and
-  .filesystem.defaultDenyRead == true
-' "$ROOT/share/tools/fetch_url/fence.jsonc" >/dev/null
 
 # Search through the Exa MCP endpoint.
 mkdir "$tmp/exa-bin"
@@ -92,9 +86,3 @@ if PATH="$tmp/exa-bin:$PATH" EXA_TEST_ARGS="$exa_args" EXA_TEST_STATUS=22 \
     "$ROOT/share/tools/search_web/run" <<<'{"query":"docs"}' >/dev/null 2>&1; then
   fail 'search_web hid a curl failure'
 fi
-jq -e '
-  .network.allowedDomains == ["mcp.exa.ai"] and
-  .network.allowLocalBinding == false and
-  .network.allowLocalOutbound == false and
-  .filesystem.defaultDenyRead == true
-' "$ROOT/share/tools/search_web/fence.jsonc" >/dev/null

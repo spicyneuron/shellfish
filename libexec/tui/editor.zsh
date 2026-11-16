@@ -3,34 +3,36 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/zselect
 zmodload zsh/zpty
 
-typeset -g SF_PRESENT_PERMISSION_DRAFT=''
-typeset -gi SF_PRESENT_PERMISSION_CURSOR=0
-typeset -gi SF_PRESENT_HEARTBEAT_TIMEOUT=10
-typeset -g SF_PRESENT_HEARTBEAT_FD=''
-typeset -gr SF_PRESENT_HEARTBEAT_WORKER=sf-tui-heartbeat
-typeset -gi SF_PRESENT_ACTIVITY_FRAME=0
-typeset -gi SF_PRESENT_VERTICAL_COLUMN=-1
-typeset -g SF_PRESENT_HISTORY_DRAFT=''
-typeset -gi SF_PRESENT_HISTORY_CURSOR=0 SF_PRESENT_HISTORY_NO=0
-typeset -gi SF_PRESENT_HISTORY_LIMIT=100
-typeset -ga SF_PRESENT_HISTORY=()
-typeset -gi SF_PRESENT_COMPLETION_START=0
+typeset -g SF_TUI_PERMISSION_DRAFT=''
+typeset -gi SF_TUI_PERMISSION_CURSOR=0
+typeset -gi SF_TUI_HEARTBEAT_TIMEOUT=10
+typeset -g SF_TUI_HEARTBEAT_FD=''
+typeset -gr SF_TUI_HEARTBEAT_WORKER=sf-tui-heartbeat
+typeset -gi SF_TUI_ACTIVITY_FRAME=0
+typeset -gi SF_TUI_VERTICAL_COLUMN=-1
+typeset -g SF_TUI_HISTORY_DRAFT=''
+typeset -gi SF_TUI_HISTORY_CURSOR=0 SF_TUI_HISTORY_NO=0
+typeset -gi SF_TUI_HISTORY_LIMIT=100
+typeset -ga SF_TUI_HISTORY=()
+typeset -gi SF_TUI_COMPLETION_START=0
+# Pasted images live until the chat ends, so recalled prompts can resend them.
+typeset -ga SF_TUI_PASTES=()
 KEYTIMEOUT=5
 
 # Keep the editor alive for /refresh and /quit after renderer failure.
 sf_tui_stop() {
-  SF_PRESENT_ERROR=$1
-  [[ -z ${2-} ]] || SF_PRESENT_ERROR+=$'\n'${2}
-  SF_PRESENT_STATE=stopped
-  SF_PRESENT_EXIT_STATUS=1
-  SF_PRESENT_SAFE_ROWS=0
+  SF_TUI_ERROR=$1
+  [[ -z ${2-} ]] || SF_TUI_ERROR+=$'\n'${2}
+  SF_TUI_STATE=stopped
+  SF_TUI_EXIT_STATUS=1
+  SF_TUI_SAFE_ROWS=0
   sf_tui_heartbeat_stop
   sf_tui_terminal_sync_end force
   sf_tui_stopped_view
 }
 
 sf_tui_repaint_checked() {
-  if [[ $SF_PRESENT_STATE == stopped ]]; then
+  if [[ $SF_TUI_STATE == stopped ]]; then
     sf_tui_stopped_view
     return 1
   fi
@@ -42,7 +44,7 @@ sf_tui_repaint_checked() {
 }
 
 sf_tui_draw_pending() {
-  PREDISPLAY=$SF_PRESENT_PENDING_TEXT
+  PREDISPLAY=$SF_TUI_PENDING_TEXT
   BUFFER=''
   CURSOR=0
   POSTDISPLAY=''
@@ -61,23 +63,23 @@ sf_tui_heartbeat_worker() {
 
 sf_tui_heartbeat_arm() {
   local mode=${1-} fd
-  [[ $SF_PRESENT_STATE == (working|permission|cancelling) || $mode == drain ]] || return 0
-  [[ -z $SF_PRESENT_HEARTBEAT_FD ]] || return 0
-  zpty -b "$SF_PRESENT_HEARTBEAT_WORKER" sf_tui_heartbeat_worker \
-    "$SF_PRESENT_HEARTBEAT_TIMEOUT" || return 1
+  [[ $SF_TUI_STATE == (working|permission|cancelling) || $mode == drain ]] || return 0
+  [[ -z $SF_TUI_HEARTBEAT_FD ]] || return 0
+  zpty -b "$SF_TUI_HEARTBEAT_WORKER" sf_tui_heartbeat_worker \
+    "$SF_TUI_HEARTBEAT_TIMEOUT" || return 1
   fd=$REPLY
   if ! zle -F -w "$fd" sf_tui_heartbeat_ready; then
-    zpty -d "$SF_PRESENT_HEARTBEAT_WORKER" 2>/dev/null || true
+    zpty -d "$SF_TUI_HEARTBEAT_WORKER" 2>/dev/null || true
     return 1
   fi
-  SF_PRESENT_HEARTBEAT_FD=$fd
+  SF_TUI_HEARTBEAT_FD=$fd
 }
 
 sf_tui_heartbeat_stop() {
-  local fd=$SF_PRESENT_HEARTBEAT_FD
-  SF_PRESENT_HEARTBEAT_FD=''
+  local fd=$SF_TUI_HEARTBEAT_FD
+  SF_TUI_HEARTBEAT_FD=''
   [[ -z $fd ]] || zle -F "$fd" 2>/dev/null || true
-  zpty -d "$SF_PRESENT_HEARTBEAT_WORKER" 2>/dev/null || true
+  zpty -d "$SF_TUI_HEARTBEAT_WORKER" 2>/dev/null || true
 }
 
 sf_tui_heartbeat_ready() {
@@ -95,25 +97,25 @@ sf_tui_heartbeat_ready() {
     read -k 1 -u "$fd" || { sf_tui_heartbeat_stop; return 1; }
   done
   if [[ -n $transport ]] && zselect -r "$transport" -t 0 2>/dev/null; then
-    sf_tui_exec_ready "$transport" || return 1
+    sf_tui_turn_ready "$transport" || return 1
   fi
   sf_tui_heartbeat_tick || tick_status=$?
   (( ! tick_status )) && return 0
   (( tick_status != 2 )) || sf_tui_handoff_exec
   # Only an active turn can keep draining after a tick failure.
-  [[ $SF_PRESENT_STATE == (working|permission|cancelling) ]] || sf_tui_heartbeat_stop
+  [[ $SF_TUI_STATE == (working|permission|cancelling) ]] || sf_tui_heartbeat_stop
   return $tick_status
 }
 
 sf_tui_heartbeat_tick() {
-  if [[ $SF_PRESENT_STATE == working ]]; then
-    SF_PRESENT_ACTIVITY_FRAME=$((
-      (SF_PRESENT_ACTIVITY_FRAME + 1) % ${#SF_PRESENT_ACTIVITY_FRAMES}
+  if [[ $SF_TUI_STATE == working ]]; then
+    SF_TUI_ACTIVITY_FRAME=$((
+      (SF_TUI_ACTIVITY_FRAME + 1) % ${#SF_TUI_ACTIVITY_FRAMES}
     ))
-    SF_PRESENT_ACTIVITY=${SF_PRESENT_ACTIVITY_FRAMES[SF_PRESENT_ACTIVITY_FRAME + 1]}
+    SF_TUI_ACTIVITY=${SF_TUI_ACTIVITY_FRAMES[SF_TUI_ACTIVITY_FRAME + 1]}
   fi
   while true; do
-    if [[ $SF_PRESENT_STATE == stopped ]]; then
+    if [[ $SF_TUI_STATE == stopped ]]; then
       sf_tui_stopped_view
       zle -R
       return 0
@@ -123,14 +125,14 @@ sf_tui_heartbeat_tick() {
       continue
     fi
     if sf_tui_transport_is_complete; then
-      sf_tui_exec_finish || return 1
+      sf_tui_turn_finish || return 1
       continue
     fi
     if ! sf_tui_repaint_checked stage; then
       zle -R
       return 0
     fi
-    if (( SF_PRESENT_SAFE_ROWS )); then
+    if (( SF_TUI_SAFE_ROWS )); then
       sf_tui_terminal_stage || return 1
       # Commit settled rows as the entire display, then rebuild below them.
       sf_tui_draw_pending || return 1
@@ -148,20 +150,20 @@ sf_tui_heartbeat_tick() {
     fi
     zle -R
     sf_tui_terminal_sync_end
-    if [[ $SF_PRESENT_ACTION == handoff ]]; then
+    if [[ $SF_TUI_ACTION == handoff ]]; then
       sf_tui_terminal_sync_end force
       return 2
-    elif [[ $SF_PRESENT_ACTION == quit ]]; then
+    elif [[ $SF_TUI_ACTION == quit ]]; then
       zle accept-line
       return 0
-    elif [[ $SF_PRESENT_STATE == queued ]]; then
-      SF_PRESENT_STATE=idle
-      sf_tui_turn "$SF_PRESENT_SUBMITTED" || return 1
+    elif [[ $SF_TUI_STATE == queued ]]; then
+      SF_TUI_STATE=idle
+      sf_tui_turn "$SF_TUI_SUBMITTED" || return 1
       continue
     else
       sf_tui_heartbeat_arm
     fi
-    [[ $SF_PRESENT_STATE == (working|permission|cancelling) ]] || sf_tui_heartbeat_stop
+    [[ $SF_TUI_STATE == (working|permission|cancelling) ]] || sf_tui_heartbeat_stop
     return
   done
 }
@@ -170,25 +172,25 @@ sf_tui_line_init() {
   # Working turns render a viewport; other states stage commits.
   local mode=''
   sf_tui_terminal_restore
-  sf_tui_transport_watch sf_tui_exec_ready
-  [[ $SF_PRESENT_STATE == working ]] || mode=stage
+  sf_tui_transport_watch sf_tui_turn_ready
+  [[ $SF_TUI_STATE == working ]] || mode=stage
   if ! sf_tui_repaint_checked "$mode"; then
     zle -R
     return 0
   fi
-  if (( SF_PRESENT_SAFE_ROWS )) && [[ $mode == stage ]]; then
+  if (( SF_TUI_SAFE_ROWS )) && [[ $mode == stage ]]; then
     sf_tui_terminal_stage || return 1
-    SF_PRESENT_ACTION=epoch
+    SF_TUI_ACTION=epoch
     sf_tui_draw_pending || return 1
     if ! zle accept-line; then
-      SF_PRESENT_ACTION=''
+      SF_TUI_ACTION=''
       sf_tui_stop 'cannot commit chat rows'
     fi
-  elif [[ $SF_PRESENT_STATE == queued ]]; then
-    SF_PRESENT_DRAFT=$BUFFER
-    SF_PRESENT_DRAFT_CURSOR=$CURSOR
-    SF_PRESENT_DRAFT_SAVED=1
-    SF_PRESENT_ACTION=submit
+  elif [[ $SF_TUI_STATE == queued ]]; then
+    SF_TUI_DRAFT=$BUFFER
+    SF_TUI_DRAFT_CURSOR=$CURSOR
+    SF_TUI_DRAFT_SAVED=1
+    SF_TUI_ACTION=submit
     zle accept-line
   else
     zle -R
@@ -198,7 +200,7 @@ sf_tui_line_init() {
 }
 
 sf_tui_line_finish() {
-  integer pending=$SF_PRESENT_PENDING_ROWS
+  integer pending=$SF_TUI_PENDING_ROWS
   if ! sf_tui_terminal_finish; then
     sf_tui_stop 'cannot commit chat rows'
     return 0
@@ -206,7 +208,7 @@ sf_tui_line_finish() {
   if (( pending )); then
     sf_tui_update_highlights pending || return 1
     zle -R
-  elif [[ $SF_PRESENT_ACTION == (submit|quit) ]]; then
+  elif [[ $SF_TUI_ACTION == (submit|quit) ]]; then
     PREDISPLAY=''
     BUFFER=''
     CURSOR=0
@@ -217,9 +219,9 @@ sf_tui_line_finish() {
 }
 
 sf_tui_pre_redraw() {
-  (( ! SF_PRESENT_PENDING_ROWS )) || return 0
-  if (( SF_PRESENT_HISTORY_NO )) && [[ $SF_PRESENT_STATE != permission &&
-      $BUFFER != $SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO] ]]; then
+  (( ! SF_TUI_PENDING_ROWS )) || return 0
+  if (( SF_TUI_HISTORY_NO )) && [[ $SF_TUI_STATE != permission &&
+      $BUFFER != $SF_TUI_HISTORY[$SF_TUI_HISTORY_NO] ]]; then
     sf_tui_history_reset
   fi
   sf_tui_repaint_checked || return 0
@@ -227,30 +229,30 @@ sf_tui_pre_redraw() {
 }
 
 sf_tui_record_prompt() {
-  [[ $1 != ${SF_PRESENT_HISTORY[-1]-} ]] || return 0
-  SF_PRESENT_HISTORY+=( "$1" )
-  (( ${#SF_PRESENT_HISTORY} <= SF_PRESENT_HISTORY_LIMIT )) || SF_PRESENT_HISTORY[1]=()
+  [[ $1 != ${SF_TUI_HISTORY[-1]-} ]] || return 0
+  SF_TUI_HISTORY+=( "$1" )
+  (( ${#SF_TUI_HISTORY} <= SF_TUI_HISTORY_LIMIT )) || SF_TUI_HISTORY[1]=()
 }
 
 sf_tui_editor_permission() {
   local mode=$1
   if [[ $mode == open ]]; then
-    SF_PRESENT_COMPLETIONS=()
-    SF_PRESENT_PERMISSION_DRAFT=${BUFFER-}
-    SF_PRESENT_PERMISSION_CURSOR=${CURSOR:-0}
+    SF_TUI_COMPLETIONS=()
+    SF_TUI_PERMISSION_DRAFT=${BUFFER-}
+    SF_TUI_PERMISSION_CURSOR=${CURSOR:-0}
     BUFFER=''
     CURSOR=0
     return
   fi
   [[ $mode == restore ]] || return 1
-  BUFFER=$SF_PRESENT_PERMISSION_DRAFT
-  CURSOR=$SF_PRESENT_PERMISSION_CURSOR
-  SF_PRESENT_PERMISSION_DRAFT=''
-  SF_PRESENT_PERMISSION_CURSOR=0
+  BUFFER=$SF_TUI_PERMISSION_DRAFT
+  CURSOR=$SF_TUI_PERMISSION_CURSOR
+  SF_TUI_PERMISSION_DRAFT=''
+  SF_TUI_PERMISSION_CURSOR=0
 }
 
 TRAPWINCH() {
-  SF_PRESENT_VERTICAL_COLUMN=-1
+  SF_TUI_VERTICAL_COLUMN=-1
   zle reset-prompt 2>/dev/null || true
 }
 
@@ -269,27 +271,27 @@ sf_tui_accept() {
       ;;
     quit) zle accept-line ;;
     submit)
-      SF_PRESENT_DRAFT=''
-      SF_PRESENT_DRAFT_CURSOR=0
-      SF_PRESENT_DRAFT_SAVED=0
+      SF_TUI_DRAFT=''
+      SF_TUI_DRAFT_CURSOR=0
+      SF_TUI_DRAFT_SAVED=0
       sf_tui_history_reset
       BUFFER=''
       CURSOR=0
-      SF_PRESENT_ACTION=submit
+      SF_TUI_ACTION=submit
       if ! sf_tui_repaint_checked; then
-        SF_PRESENT_ACTION=''
-        [[ $SF_PRESENT_STATE == stopped ]] || sf_tui_stop 'cannot stage chat rows'
+        SF_TUI_ACTION=''
+        [[ $SF_TUI_STATE == stopped ]] || sf_tui_stop 'cannot stage chat rows'
         return 0
       fi
       if sf_tui_terminal_stage prompt; then
         sf_tui_draw_pending || return 1
-      elif (( SF_PRESENT_SAFE_ROWS )); then
-        SF_PRESENT_ACTION=''
+      elif (( SF_TUI_SAFE_ROWS )); then
+        SF_TUI_ACTION=''
         sf_tui_stop 'cannot stage chat rows'
         return 0
       fi
       if ! zle accept-line; then
-        SF_PRESENT_ACTION=''
+        SF_TUI_ACTION=''
         sf_tui_stop 'cannot commit chat rows'
       fi
       ;;
@@ -302,34 +304,34 @@ sf_tui_insert_newline() {
 }
 
 sf_tui_history_reset() {
-  SF_PRESENT_HISTORY_DRAFT=''
-  SF_PRESENT_HISTORY_CURSOR=0
-  SF_PRESENT_HISTORY_NO=0
+  SF_TUI_HISTORY_DRAFT=''
+  SF_TUI_HISTORY_CURSOR=0
+  SF_TUI_HISTORY_NO=0
 }
 
 sf_tui_history_move() {
-  integer direction=$1 newest=${#SF_PRESENT_HISTORY}
+  integer direction=$1 newest=${#SF_TUI_HISTORY}
   (( newest )) || return 0
   if (( direction < 0 )); then
-    if (( SF_PRESENT_HISTORY_NO )); then
-      (( SF_PRESENT_HISTORY_NO > 1 )) || return 0
-      SF_PRESENT_HISTORY_NO=$(( SF_PRESENT_HISTORY_NO - 1 ))
+    if (( SF_TUI_HISTORY_NO )); then
+      (( SF_TUI_HISTORY_NO > 1 )) || return 0
+      SF_TUI_HISTORY_NO=$(( SF_TUI_HISTORY_NO - 1 ))
     else
-      SF_PRESENT_HISTORY_DRAFT=$BUFFER
-      SF_PRESENT_HISTORY_CURSOR=$CURSOR
-      SF_PRESENT_HISTORY_NO=$newest
+      SF_TUI_HISTORY_DRAFT=$BUFFER
+      SF_TUI_HISTORY_CURSOR=$CURSOR
+      SF_TUI_HISTORY_NO=$newest
     fi
-    BUFFER=$SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO]
+    BUFFER=$SF_TUI_HISTORY[$SF_TUI_HISTORY_NO]
     CURSOR=${#BUFFER}
-  elif (( ! SF_PRESENT_HISTORY_NO )); then
+  elif (( ! SF_TUI_HISTORY_NO )); then
     return 0
-  elif (( SF_PRESENT_HISTORY_NO < newest )); then
-    SF_PRESENT_HISTORY_NO=$(( SF_PRESENT_HISTORY_NO + 1 ))
-    BUFFER=$SF_PRESENT_HISTORY[$SF_PRESENT_HISTORY_NO]
+  elif (( SF_TUI_HISTORY_NO < newest )); then
+    SF_TUI_HISTORY_NO=$(( SF_TUI_HISTORY_NO + 1 ))
+    BUFFER=$SF_TUI_HISTORY[$SF_TUI_HISTORY_NO]
     CURSOR=${#BUFFER}
   else
-    BUFFER=$SF_PRESENT_HISTORY_DRAFT
-    CURSOR=$SF_PRESENT_HISTORY_CURSOR
+    BUFFER=$SF_TUI_HISTORY_DRAFT
+    CURSOR=$SF_TUI_HISTORY_CURSOR
     sf_tui_history_reset
   fi
 }
@@ -376,12 +378,12 @@ sf_tui_move_vertical() {
   target_row=$(( current_row + direction ))
   if (( target_row < rows[1] || target_row > rows[-1] )); then
     sf_tui_history_move $direction
-    SF_PRESENT_VERTICAL_COLUMN=-1
+    SF_TUI_VERTICAL_COLUMN=-1
     return
   fi
   if [[ ${LASTWIDGET-} == (sf_tui_up|sf_tui_down) ]] &&
-      (( SF_PRESENT_VERTICAL_COLUMN >= 0 )); then
-    target_column=$SF_PRESENT_VERTICAL_COLUMN
+      (( SF_TUI_VERTICAL_COLUMN >= 0 )); then
+    target_column=$SF_TUI_VERTICAL_COLUMN
   else
     target_column=$current_column
   fi
@@ -395,7 +397,7 @@ sf_tui_move_vertical() {
     fi
   done
   CURSOR=$best
-  SF_PRESENT_VERTICAL_COLUMN=$target_column
+  SF_TUI_VERTICAL_COLUMN=$target_column
 }
 
 sf_tui_up() {
@@ -413,9 +415,9 @@ sf_tui_complete_range() {
   integer start=$1 end=$2
   shift 2
   local token=${BUFFER:$start:$(( end - start ))} match prefix=''
-  SF_PRESENT_COMPLETIONS=()
-  SF_PRESENT_COMPLETION_NO=0
-  SF_PRESENT_COMPLETION_START=$start
+  SF_TUI_COMPLETIONS=()
+  SF_TUI_COMPLETION_NO=0
+  SF_TUI_COMPLETION_START=$start
   (( $# )) || return 0
   prefix=$1
   for match in "$@"; do
@@ -424,32 +426,32 @@ sf_tui_complete_range() {
   (( $# == 1 )) || [[ $prefix == "$token"* ]] || prefix=$token
   BUFFER="${BUFFER:0:$start}$prefix${BUFFER:$end}"
   CURSOR=$(( start + ${#prefix} ))
-  (( $# < 2 )) || SF_PRESENT_COMPLETIONS=( "$@" )
+  (( $# < 2 )) || SF_TUI_COMPLETIONS=( "$@" )
 }
 
 # An open list cycles in STEP's direction, replacing the text inserted so far.
 sf_tui_complete_cycle() {
-  integer step=$1 count=${#SF_PRESENT_COMPLETIONS} start=$SF_PRESENT_COMPLETION_START
+  integer step=$1 count=${#SF_TUI_COMPLETIONS} start=$SF_TUI_COMPLETION_START
   local match
-  if (( SF_PRESENT_COMPLETION_NO )); then
-    SF_PRESENT_COMPLETION_NO=$(( (SF_PRESENT_COMPLETION_NO - 1 + step + count) % count + 1 ))
+  if (( SF_TUI_COMPLETION_NO )); then
+    SF_TUI_COMPLETION_NO=$(( (SF_TUI_COMPLETION_NO - 1 + step + count) % count + 1 ))
   else
-    SF_PRESENT_COMPLETION_NO=$(( step > 0 ? 1 : count ))
+    SF_TUI_COMPLETION_NO=$(( step > 0 ? 1 : count ))
   fi
-  match=$SF_PRESENT_COMPLETIONS[SF_PRESENT_COMPLETION_NO]
+  match=$SF_TUI_COMPLETIONS[SF_TUI_COMPLETION_NO]
   BUFFER="${BUFFER:0:$start}$match${BUFFER:$CURSOR}"
   CURSOR=$(( start + ${#match} ))
 }
 
 sf_tui_complete_back() {
-  (( ! ${#SF_PRESENT_COMPLETIONS} )) || sf_tui_complete_cycle -1
+  (( ! ${#SF_TUI_COMPLETIONS} )) || sf_tui_complete_cycle -1
 }
 
 # Paths complete one folder at a time under the session's working directory.
 # A name without a folder also matches deeper file names in a Git work tree.
 sf_tui_complete_files() {
   setopt local_options extended_glob
-  local word=$1 query=${1#@} cwd=$SF_PRESENT_CWD listed
+  local word=$1 query=${1#@} cwd=$SF_TUI_CWD listed
   local -a paths=( "$cwd/$query"*(NM) )
   paths=( "${(@)paths#"$cwd/"}" )
   if [[ -n $query && $query != */* ]] &&
@@ -462,24 +464,58 @@ sf_tui_complete_files() {
 # Completes the word ending at the cursor: a leading slash command or an @path.
 sf_tui_complete() {
   local word
-  if (( ${#SF_PRESENT_COMPLETIONS} )); then
+  if (( ${#SF_TUI_COMPLETIONS} )); then
     sf_tui_complete_cycle 1
     return
   fi
   [[ ${BUFFER:$CURSOR:1} == ([[:space:]]|) ]] || return 0
   word=${${BUFFER:0:$CURSOR}##*[[:space:]]}
   if [[ $word == /* ]] && (( ${#word} == CURSOR )); then
-    sf_tui_complete_range 0 $CURSOR ${(M)SF_PRESENT_COMMANDS:#${(b)word}*}
+    sf_tui_complete_range 0 $CURSOR ${(M)SF_TUI_COMMANDS:#${(b)word}*}
   elif [[ $word == @* ]]; then
     sf_tui_complete_files "$word"
   fi
 }
 
+# Saves the clipboard's image and inserts a marker that attaches it when the
+# prompt is sent. Only a captured, supported image gets a marker.
+sf_tui_paste_image() {
+  local file type pattern='^image/(png|jpeg|gif|webp)$'
+  local -a size
+  file=$(mktemp "${TMPDIR:-/tmp}/shellfish-paste.XXXXXX") || return 0
+  if (( $+commands[osascript] )); then
+    osascript -e "set f to open for access POSIX file \"$file\" with write permission" \
+      -e 'write (the clipboard as «class PNGf») to f' -e 'close access f'
+  elif (( $+commands[wl-paste] )); then
+    type=$(wl-paste --list-types | grep -Em 1 "$pattern") && wl-paste --type "$type" >"$file"
+  elif (( $+commands[xclip] )); then
+    type=$(xclip -selection clipboard -target TARGETS -out | grep -Em 1 "$pattern") &&
+      xclip -selection clipboard -target "$type" -out >"$file"
+  else
+    false
+  fi >/dev/null 2>&1 && sf_tui_image_format "$file" || { rm -f -- "$file"; return 0; }
+  # Shrinking to fit 2000 pixels is optional, so a failure keeps the original.
+  if (( $+commands[magick] )); then
+    magick "${file}[0]" -resize '2000x2000>' "$file"
+  elif (( $+commands[sips] )); then
+    # sips enlarges smaller images, so it resizes only larger ones.
+    size=( $(sips -g pixelWidth -g pixelHeight "$file" | awk '/pixel/ { print $2 }') )
+    (( ${size[1]:-0} <= 2000 && ${size[2]:-0} <= 2000 )) || sips -Z 2000 "$file"
+  fi >/dev/null 2>&1 || true
+  SF_TUI_PASTES+=( "$file" )
+  LBUFFER+="[Image: $file]"
+}
+
+sf_tui_paste_cleanup() {
+  (( ! ${#SF_TUI_PASTES} )) || rm -f -- "${SF_TUI_PASTES[@]}"
+  SF_TUI_PASTES=()
+}
+
 # A key may finish decoding after an asynchronous permission request arrives.
 sf_tui_input() {
   local widget=$WIDGET paste
-  [[ $widget == (sf_tui_complete|sf_tui_complete_back) ]] || SF_PRESENT_COMPLETIONS=()
-  if [[ $SF_PRESENT_STATE == permission ]]; then
+  [[ $widget == (sf_tui_complete|sf_tui_complete_back) ]] || SF_TUI_COMPLETIONS=()
+  if [[ $SF_TUI_STATE == permission ]]; then
     case $widget in
       self-insert) sf_tui_permission_choice ;;
       sf_tui_interrupt|sf_tui_send) "$widget" "$@" ;;
@@ -490,7 +526,7 @@ sf_tui_input() {
     return 0
   fi
   case $widget in
-    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete|sf_tui_complete_back)
+    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete|sf_tui_complete_back|sf_tui_paste_image)
       "$widget" "$@"
       ;;
     *)
@@ -524,7 +560,7 @@ sf_tui_permission_choice() {
 }
 
 sf_tui_interrupt() {
-  if [[ $SF_PRESENT_STATE == (idle|stopped) && -n $BUFFER ]]; then
+  if [[ $SF_TUI_STATE == (idle|stopped) && -n $BUFFER ]]; then
     BUFFER=''
     CURSOR=0
     zle -R
@@ -540,13 +576,13 @@ sf_tui_interrupt() {
 
 # Send the draft or the oldest queued prompt, interrupting an active turn.
 sf_tui_send() {
-  if [[ $SF_PRESENT_STATE == idle && -z $BUFFER ]] && (( ${#SF_PRESENT_QUEUE} )); then
+  if [[ $SF_TUI_STATE == idle && -z $BUFFER ]] && (( ${#SF_TUI_QUEUE} )); then
     sf_tui_dequeue
-    [[ $SF_PRESENT_STATE != queued ]] || SF_PRESENT_ACTION=submit
+    [[ $SF_TUI_STATE != queued ]] || SF_TUI_ACTION=submit
     zle accept-line
     return
   fi
-  if [[ $SF_PRESENT_STATE == (idle|stopped) ]]; then
+  if [[ $SF_TUI_STATE == (idle|stopped) ]]; then
     sf_tui_accept
     return
   fi
@@ -561,25 +597,25 @@ sf_tui_escape() {
 
 sf_tui_handoff_exec() {
   sf_tui_heartbeat_stop
-  [[ $SF_PRESENT_STATE == idle ]] || sf_tui_transport_stop
+  [[ $SF_TUI_STATE == idle ]] || sf_tui_transport_stop
   zle -I
   print
   # ZLE can overwrite tty settings as it exits; restore in the new process.
   exec zsh -f -c 'stty "$1" < /dev/tty; shift; exec -- "$@"' handoff \
-    "$SF_PRESENT_TTY" "${SF_PRESENT_HANDOFF[@]}" \
+    "$SF_TUI_TTY" "${SF_TUI_HANDOFF[@]}" \
     </dev/tty >/dev/tty 2>/dev/tty
   print -u2 -r -- 'Cannot execute handoff.'
   exit 1
 }
 
 sf_tui_bind() {
-  SF_PRESENT_HISTORY=()
-  SF_PRESENT_PERMISSION_DRAFT=''
-  SF_PRESENT_PERMISSION_CURSOR=0
-  SF_PRESENT_HEARTBEAT_FD=''
-  SF_PRESENT_VERTICAL_COLUMN=-1
+  SF_TUI_HISTORY=()
+  SF_TUI_PERMISSION_DRAFT=''
+  SF_TUI_PERMISSION_CURSOR=0
+  SF_TUI_HEARTBEAT_FD=''
+  SF_TUI_VERTICAL_COLUMN=-1
   sf_tui_history_reset
-  zle -N sf_tui_exec_ready
+  zle -N sf_tui_turn_ready
   zle -N sf_tui_heartbeat_ready
   zle -N zle-line-init sf_tui_line_init
   zle -N zle-line-finish sf_tui_line_finish
@@ -607,6 +643,7 @@ sf_tui_bind() {
     '^C' sf_tui_interrupt
     '^[' sf_tui_escape
     '^[[200~' bracketed-paste
+    '^V' sf_tui_paste_image
     '^A' beginning-of-line
     '^E' end-of-line
     '^[[H' beginning-of-line

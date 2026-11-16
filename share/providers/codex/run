@@ -5,11 +5,13 @@ setopt err_exit no_aliases no_multios pipe_fail
 umask 077
 
 source "${0:A:h:h}/_provider.zsh"
-typeset -gr ENDPOINT=https://chatgpt.com/backend-api/codex/responses
 unset OPENAI_API_KEY SHELLFISH_RESPONSES_ACCOUNT_ID
 
 sf_provider_setup codex
 trap 'rm -rf -- "$SF_PROVIDER_TEMP_DIR"' EXIT
+typeset endpoint
+endpoint=$(jq -er .endpoint "${0:A:h}/manifest.json") ||
+  sf_provider_die 'cannot read built-in endpoint'
 typeset prepared_file=$SF_PROVIDER_TEMP_DIR/prepared.json
 typeset codex_home auth_file credentials
 typeset access_token='' account_id=''
@@ -20,7 +22,7 @@ cat >"$SF_PROVIDER_REQUEST_FILE"
 sf_provider_request '(.request | has("reasoning") | not) or
   (.request.reasoning | type == "object")' ||
   sf_provider_die 'invalid request'
-[[ $SF_PROVIDER_ENDPOINT == $ENDPOINT && $SF_PROVIDER_INSECURE_TLS == 0 ]] ||
+[[ $SF_PROVIDER_ENDPOINT == $endpoint && $SF_PROVIDER_INSECURE_TLS == 0 ]] ||
   sf_provider_die 'Codex transport must use the built-in secure endpoint'
 
 # Reasoning comes back encrypted, so a summary is its only readable trace. Asked
@@ -31,7 +33,7 @@ sf_provider_request '(.request | has("reasoning") | not) or
 # before the Responses provider can normalize one into that field.
 jq -c '.request |=
   (del(.max_tokens,.max_completion_tokens,.max_output_tokens) |
-   .reasoning = ((.reasoning // {} | if . == {effort:""} then {} else . end) * {summary:"auto"}))' \
+   .reasoning = ((.reasoning // {}) * {summary:"auto"}))' \
   "$SF_PROVIDER_REQUEST_FILE" >"$prepared_file" || sf_provider_die "cannot prepare canonical request"
 
 command -v codex >/dev/null 2>&1 || sf_provider_die "Codex CLI is not installed"

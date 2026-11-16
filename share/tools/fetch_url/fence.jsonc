@@ -1,12 +1,6 @@
 {
+  "extends": "../base.fence.jsonc",
   "network": {
-    "allowedDomains": ["r.jina.ai"],
-    "deniedDomains": [],
-    "allowLocalBinding": false,
-    "allowLocalOutbound": false
-  },
-  "filesystem": {
-    "defaultDenyRead": true
-  },
-  "command": {"useDefaults": true}
+    "allowedDomains": ["r.jina.ai"]
+  }
 }

@@ -176,6 +176,10 @@ jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
   (.[1].user_text | contains("/verbose, /v") and contains("/copy [N]") and
     test("/compact\\s"))' "$command_session" >/dev/null ||
   fail 'help did not list profile commands'
+submit /sandbox
+jq -e -s 'map(.type) == ["session","hook_result"] and
+  .[1].user_preview_lines == "full" and .[1].action == "deny"' \
+  "$command_session" >/dev/null || fail 'sandbox output did not request a full preview'
 submit '/copy x'
 jq -e -s '(.[1].user_text | rtrimstr("\n")) == "usage: /copy [N]" and .[1].action == "deny"' \
   "$command_session" >/dev/null || fail 'command did not receive its arguments'
@@ -189,9 +193,8 @@ jq -e -s 'map(.type) == ["session","hook_result"] and
   (.[1].model_text | contains("The user ran this shell command:\n$ printf") and contains("${output.stderr}") and contains("(exit 7)")) and
   (.[1].user_text | startswith("**Shell** printf"))' "$command_session" >/dev/null
 
-# Copy and fork address the sections the transcript shows. Command notices
-# ride with the next prompt; output from hooks that ran on a submission is
-# dropped by a cut so that resending runs them again.
+# Copy and fork address core IDs. Command notices remain in a retained prefix;
+# submission hook output is dropped before a prompt so that resending reruns it.
 typeset turns="$tmp/turns.jsonl" clip="$tmp/clip" cut_actions="$tmp/turn-actions" cut
 mkdir -p "$tmp/clip-bin"
 print -r -- "#!/bin/sh
@@ -199,82 +202,101 @@ cat >'$clip'" >"$tmp/clip-bin/pbcopy"
 chmod +x "$tmp/clip-bin/pbcopy"
 {
   cat "$tmp/command-header"
-  print -r -- '{"type":"user","content":[{"type":"text","text":"one"}]}'
-  print -r -- '{"type":"assistant","content":[{"type":"text","text":"reply one"}],"stop":"end"}'
-  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"h1","user_text":"help","action":"deny"}'
-  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"h2","model_text":"context"}'
-  print -r -- '{"type":"user","content":[{"type":"text","text":"two"}]}'
-  print -r -- '{"type":"assistant","content":[{"type":"text","text":"reply two"}],"stop":"end"}'
-  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"h3","user_text":"Copied.","action":"deny"}'
+  print -r -- '{"type":"user","section":1,"content":[{"type":"text","text":"one"}]}'
+  print -r -- '{"type":"assistant","section":2,"content":[{"type":"text","text":"reply one"}],"stop":"end"}'
+  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1","user_text":"help","action":"deny"}'
+  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"2","model_text":"context"}'
+  print -r -- '{"type":"user","section":10,"content":[{"type":"text","text":"two"}]}'
+  print -r -- '{"type":"assistant","section":12,"content":[{"type":"text","text":"reply two"}],"stop":"end"}'
+  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"3","user_text":"Copied.","action":"deny"}'
 } >"$turns"
 copy_section() {
   print -rn -- "$1" | PATH="$tmp/clip-bin:$PATH" SHELLFISH_SESSION="$turns" \
     "$ROOT/share/commands/copy/run" 2>&1
 }
 : >"$clip"
-[[ $(copy_section 3) == Copied. && $(<$clip) == two ]] || fail 'copy missed the prompt after a notice'
+[[ $(copy_section 10) == Copied. && $(<$clip) == two ]] || fail 'copy missed the prompt after a notice'
 [[ $(copy_section '') == Copied. && $(<$clip) == 'reply two' ]] ||
   fail 'copy without a target did not skip a trailing notice'
-[[ $(copy_section 5) == 'Nothing to copy.' ]] || fail 'copy of a pending notice copied text'
+[[ $(copy_section 5) == 'copy target does not exist' ]] || fail 'a notice acquired a copy target'
 [[ $(copy_section 6) == 'copy target does not exist' ]] || fail 'copy invented a section'
+# A project's own jq files cannot replace the bundled section rule.
+mkdir -p "$tmp/shadow"
+print -r -- 'def sections: [{texts:["hijacked"]}];' >"$tmp/shadow/sections.jq"
+(builtin cd -- "$tmp/shadow" && copy_section 10 >/dev/null)
+[[ $(<$clip) == two ]] || fail 'copy loaded section rules from the project'
 cut_at() {
   print -rn -- "$2" | SHELLFISH_SESSION="$turns" SHELLFISH_EXECUTABLE=shellfish \
     SHELLFISH_TURN_STATE="$tmp" "$ROOT/share/commands/fork/run" $1 3>|"$cut_actions" >/dev/null
   cut=$(jq -r '.argv[2]' "$cut_actions")
 }
-cut_at '' 3
+cut_at '' 10
 jq -e -s '[.[1:][] | .user_text // .content[0].text] == ["one","reply one","help"]' "$cut" >/dev/null &&
   jq -e '.argv[3:] == ["--draft","two"]' "$cut_actions" >/dev/null ||
   fail 'fork did not restore the moment before the prompt'
 rm -f -- "$cut"
-cut_at '' 4
-[[ $(jq -s length "$cut") == 8 ]] && jq -e '.argv | length == 3' "$cut_actions" >/dev/null ||
-  fail 'fork before a pending notice did not keep the whole session'
+cut_at '' 12
+[[ $(jq -s length "$cut") == 7 ]] && jq -e '.argv | length == 3' "$cut_actions" >/dev/null ||
+  fail 'fork after an agent section included a later notice'
 rm -f -- "$cut"
 cut_at --rewind ''
 jq -e -s 'length == 4 and .[-1].user_text == "help"' "$turns" >/dev/null &&
   jq -e '.argv[3:] == ["--draft","two"]' "$cut_actions" >/dev/null ||
   fail 'rewind did not restore the last prompt'
+head -n 1 "$turns" | jq -e '.section_floor == 12' >/dev/null
+sf_test_run 'after rewind' "$turns" >/dev/null
+jq -es '[.[] | select(.type == "user" or .type == "assistant") | .section] == [1,2,13,14]' \
+  "$turns" >/dev/null || fail 'rewind reused a retired section ID'
+[[ $(copy_section 12) == 'copy target does not exist' ]] || fail 'a retired ID was redirected'
 # Bundled sandbox policy distinguishes absolute and home-relative grants.
 typeset sandbox="$ROOT/share/commands/sandbox/run" sandbox_session="$tmp/sandbox.jsonl"
 mkdir -p "$tmp/project/dir" "$tmp/home/share"
 jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
   .profile.tools=["@tools/shell","@tools/read_file"] |
   .profile.sandbox={enabled:true, tools:{
-    shell:{read:["@system"], write:[$cwd + "/dir","~/share"],domains:["*.example.com"]}}}' \
+    shell:{filesystem:{allowRead:["@system"],allowWrite:[$cwd + "/dir","~/share"]},network:{allowedDomains:["*.example.com"]}}}}' \
   "$SF_TEST_SESSIONS/header_only.jsonl" >"$sandbox_session"
 (
   builtin cd -- "$tmp/project"; export HOME="$tmp/home"
   call() {
-    print -rn -- "${1#/sandbox }" | SHELLFISH_SESSION="$sandbox_session" SHELLFISH_SHARE_DIR="$ROOT/share" \
+    print -rn -- "${1#/sandbox }" | SHELLFISH_SESSION="$sandbox_session" \
       zsh -f "$sandbox" 3>"$tmp/control" >/dev/null 2>"$tmp/sandbox.err" || fail 'sandbox command failed'
     jq -rs 'last' "$tmp/control"
   }
+  call '/sandbox ' >/dev/null
+  assert_equal "Sandbox: enabled
+Tool policies (merged unless replace is true):
+shell:
+  {\"filesystem\":{\"allowRead\":[\"@system\"],\"allowWrite\":[\"${tmp:A}/project/dir\",\"~/share\"]},\"network\":{\"allowedDomains\":[\"*.example.com\"]}}" "$(<"$tmp/sandbox.err")" 'sandbox listing includes tool policies'
+  call '/sandbox read_file' >/dev/null
+  assert_equal 'Sandbox: enabled
+Tool policies (merged unless replace is true):
+  (none)' "$(<"$tmp/sandbox.err")" 'sandbox inspection summarizes empty grants'
   # A bundled grant matches by "@" or by its absolute path.
   [[ $(call "/sandbox shell +read $ROOT/share/system" | jq -r .action) == null ]] ||
     fail 'bundled grant duplicated'
   call "/sandbox shell -read $ROOT/share/system" | jq -e '.action == "session_update" and
-    .profile.sandbox.tools.shell.read == []' >/dev/null || fail 'bundled grant removal by path failed'
+    .profile.sandbox.tools.shell.filesystem.allowRead == []' >/dev/null || fail 'bundled grant removal by path failed'
   call '/sandbox shell -read @system' | jq -e '.action == "session_update" and
-    .profile.sandbox.tools.shell.read == []' >/dev/null || fail 'bundled grant removal by @ failed'
+    .profile.sandbox.tools.shell.filesystem.allowRead == []' >/dev/null || fail 'bundled grant removal by @ failed'
   [[ $(call '/sandbox shell +write dir' | jq -r .action) == null ]] || fail 'absolute grant duplicated'
   [[ $(call '/sandbox shell +write ~/share' | jq -r .action) == null ]] || fail 'home grant duplicated'
   call '/sandbox shell -write dir' | jq -e '.action == "session_update" and
-    .profile.sandbox.tools.shell.write == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
+    .profile.sandbox.tools.shell.filesystem.allowWrite == ["~/share"]' >/dev/null || fail 'absolute grant removal failed'
   call '/sandbox shell -write ~/share' | jq -e --arg path "${tmp:A}/project/dir" '
-    .action == "session_update" and .profile.sandbox.tools.shell.write == [$path]' >/dev/null ||
+    .action == "session_update" and .profile.sandbox.tools.shell.filesystem.allowWrite == [$path]' >/dev/null ||
     fail 'home grant removal failed'
   call '/sandbox read_file +read dir' | jq -e --arg path "${tmp:A}/project/dir" '
-    .profile.sandbox.tools.read_file == {read:[$path],write:[],domains:[]} and
-    .profile.sandbox.tools.shell.read == ["@system"] and
-    .profile.sandbox.tools.shell.write == [$path,"~/share"]
+    .profile.sandbox.tools.read_file == {filesystem:{allowRead:[$path]}} and
+    .profile.sandbox.tools.shell.filesystem.allowRead == ["@system"] and
+    .profile.sandbox.tools.shell.filesystem.allowWrite == [$path,"~/share"]
   ' >/dev/null || fail 'tool-specific grant changed another tool'
   [[ $(call '/sandbox shell' | jq -r .action) == null ]] || fail 'tool inspection mutated grants'
   grep -q '^shell:$' "$tmp/sandbox.err" && ! grep -q '^read_file:$' "$tmp/sandbox.err" ||
     fail 'tool inspection included another tool'
   call '/sandbox ' >/dev/null
-  grep -q '^shell:$' "$tmp/sandbox.err" && grep -q '^read_file:$' "$tmp/sandbox.err" ||
-    fail 'sandbox inspection omitted a selected tool'
+  grep -q '^shell:$' "$tmp/sandbox.err" && ! grep -q '^read_file:$' "$tmp/sandbox.err" ||
+    fail 'sandbox inspection did not omit an empty tool'
   [[ $(call '/sandbox missing +read dir' | jq -r .action) == null ]] ||
     fail 'sandbox command granted access to an unselected tool'
   [[ $(call '/sandbox +read dir' | jq -r .action) == null ]] &&
@@ -282,14 +304,14 @@ jq -c --arg cwd "${tmp:A}/project" '.cwd=$cwd |
   [[ $(call '/sandbox shell +r dir' | jq -r .action) == null ]] &&
     grep -q '^usage: /sandbox' "$tmp/sandbox.err" || fail 'an operation alias was accepted'
   call '/sandbox read_file +domain GitHub.COM' | jq -e '
-    .profile.sandbox.tools.read_file == {read:[],write:[],domains:["github.com"]} and
-    .profile.sandbox.tools.shell.domains == ["*.example.com"]
+    .profile.sandbox.tools.read_file == {network:{allowedDomains:["github.com"]}} and
+    .profile.sandbox.tools.shell.network.allowedDomains == ["*.example.com"]
   ' >/dev/null || fail 'domain grant changed another tool or kept its case'
   [[ $(call '/sandbox shell +domain *.Example.com' | jq -r .action) == null ]] ||
     fail 'wildcard domain grant duplicated'
   call '/sandbox shell -domain *.example.com' | jq -e '
-    .profile.sandbox.tools.shell.domains == [] and
-    .profile.sandbox.tools.shell.read == ["@system"]
+    .profile.sandbox.tools.shell.network.allowedDomains == [] and
+    .profile.sandbox.tools.shell.filesystem.allowRead == ["@system"]
   ' >/dev/null || fail 'domain removal changed a path grant'
   for domain in 'https://github.com' 'github.com:443' '*' 'a..com' $'example.\ncom'; do
     [[ $(call "/sandbox shell +domain $domain" | jq -r .action) == null ]] ||

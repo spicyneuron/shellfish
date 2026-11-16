@@ -6,17 +6,10 @@ setopt no_aliases no_multios pipe_fail
 (( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
 (( $+functions[sf_environment_dir] )) || source "$SF_ROOT/lib/environment.zsh"
 
-typeset -g SF_PROFILE_ERROR=''
-
-sf_profile_fail() {
-  SF_PROFILE_ERROR=$1
-  return 1
-}
-
 sf_profile_validation_error() {
   local output=$1 fallback=$2
   sf_cli_diagnostic "$output"
-  sf_profile_fail "$fallback${REPLY:+: $REPLY}"
+  sf_fail "$fallback${REPLY:+: $REPLY}"
 }
 
 # JSONC files keyed by path. One bad file spoils the batch, so name it.
@@ -28,7 +21,7 @@ sf_profile_read_files() {
       detail=$(sf_jsonc_read "$file" 2>&1) ||
         sf_profile_validation_error "$detail" "$label: $file" || return
     done
-    sf_profile_fail "$label"
+    sf_fail "$label"
     return
   }
   REPLY=$content
@@ -37,10 +30,10 @@ sf_profile_read_files() {
 sf_profile_manifest() {
   local directory=$1
   local -a files=( "$directory"/manifest.(json|jsonc)(N) )
-  (( ${#files} <= 1 )) || sf_profile_fail "multiple component manifests: $directory" || return
+  (( ${#files} <= 1 )) || sf_fail "multiple component manifests: $directory" || return
   REPLY=${files[1]-}
   [[ -z $REPLY || ( -f $REPLY && -r $REPLY ) ]] ||
-    sf_profile_fail "cannot read component manifest: $directory"
+    sf_fail "cannot read component manifest: $directory"
 }
 
 # The parsed manifest of a component folder.
@@ -81,7 +74,7 @@ sf_profile_model_files() {
   (( ${#names} )) || { REPLY=$items; return 0; }
   for name in "${names[@]}"; do
     sf_profile_lookup "$config_dir" models "$name" .jsonc ||
-      sf_profile_fail "unknown model: $name" || return
+      sf_fail "unknown model: $name" || return
     files+=( "$REPLY" )
   done
   sf_profile_read_files 'invalid model' "${(u)files[@]}" || return
@@ -104,21 +97,21 @@ sf_profile_model_files() {
 sf_profile_model() {
   local config_dir=$1 items=$2 entry=$3 names model provider resolved final
   names=$(jq -r '.[] | strings' <<<"$items") ||
-    sf_profile_fail 'cannot read model references' || return
+    sf_fail 'cannot read model references' || return
   sf_profile_model_files "$config_dir" "$items" ${(f)names} || return
   model=$(sf_jq -cn --argjson models "$REPLY" '
     include "lib/profile";
     model_merge($models)
   ' 2>&1) || sf_profile_validation_error "$model" 'invalid model' || return
   provider=$(jq -r '.provider' <<<"$model") ||
-    sf_profile_fail 'cannot read model provider' || return
+    sf_fail 'cannot read model provider' || return
   sf_profile_lookup "$config_dir" providers "$provider" ||
-    sf_profile_fail "cannot resolve providers reference: $provider" || return
+    sf_fail "cannot resolve providers reference: $provider" || return
   resolved=$REPLY
   [[ -d $resolved ]] ||
-    sf_profile_fail "invalid providers reference: $provider" || return
+    sf_fail "invalid providers reference: $provider" || return
   [[ -f $resolved/$entry && -x $resolved/$entry ]] ||
-    sf_profile_fail "provider has no $entry entrypoint: $provider" || return
+    sf_fail "provider has no $entry entrypoint: $provider" || return
   sf_profile_read_manifest "$resolved" || return
   final=$(sf_jq -nce --argjson model "$model" --arg provider "$resolved" \
       --argjson manifest "$REPLY" '
@@ -139,8 +132,7 @@ sf_profile_model() {
 sf_profile_model_refs() {
   local entry=$1 config_dir items
   shift
-  SF_PROFILE_ERROR=''
-  sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
+  sf_environment_dir || return
   config_dir=$REPLY
   items=$(sf_jq -cn --arg cwd "${PWD:A}" '
     include "lib/profile";
@@ -148,7 +140,7 @@ sf_profile_model_refs() {
     config_profile(["options"]; ["model"]) | config_relative("profile"; $cwd) | .model
   ' --args -- "$@" 2>&1) || {
     sf_cli_diagnostic "$items"
-    sf_profile_fail "$REPLY"
+    sf_fail "$REPLY"
     return 2
   }
   sf_profile_model "$config_dir" "$items" "$entry"
@@ -160,11 +152,11 @@ sf_profile_components() {
   local -a entries files=()
   projection=$(jq -r '
     ("tools", "commands", "hooks") as $kind | .[$kind][] | $kind, .
-  ' <<<"$profile") || sf_profile_fail 'cannot read profile components' || return
+  ' <<<"$profile") || sf_fail 'cannot read profile components' || return
   entries=( ${(f)projection} )
   for kind directory in "${entries[@]}"; do
     [[ -d $directory && -x $directory/run ]] ||
-      sf_profile_fail "invalid $kind reference: $directory" || return
+      sf_fail "invalid $kind reference: $directory" || return
     sf_profile_manifest "$directory" || return
     [[ -z $REPLY ]] || files+=( "$REPLY" )
   done
@@ -205,22 +197,21 @@ sf_profile_resolve() {
   local -a references resolutions=() system_files=()
   local -A decoded
 
-  SF_PROFILE_ERROR=''
   REPLY=''
-  sf_environment_dir || sf_profile_fail "$SF_ENVIRONMENT_ERROR" || return
+  sf_environment_dir || return
   config_dir=$REPLY
   # Without -p, profiles/default.jsonc is the base, user-owned or bundled. An inline
   # profile resolves relative paths against PWD, like other inline items.
   if [[ $name == '{'* ]]; then
     profile=$(jq -ce 'objects' <<<"$name" 2>/dev/null) ||
-      sf_profile_fail '--profile requires a reference or JSON object' || return
+      sf_fail '--profile requires a reference or JSON object' || return
     name=inline base=${PWD:A}
   elif sf_profile_lookup "$config_dir" profiles "$name" .jsonc; then
     file=$REPLY base=${file:h}
     profile=$(sf_jsonc_read "$file" 2>&1) ||
       sf_profile_validation_error "$profile" "invalid profile: $file" || return
   else
-    sf_profile_fail "unknown profile: $name"
+    sf_fail "unknown profile: $name"
     return 1
   fi
   sf_jq_fields -rn --argjson profile "$profile" --argjson extra "$extra" \
@@ -238,12 +229,12 @@ sf_profile_resolve() {
     entry("profile"; tojson),
     entry("models"; .model | tojson),
     ("ok" | field)
-  ' || { sf_profile_validation_error "$REPLY" 'invalid configuration'; return; }
+  ' || { sf_profile_validation_error "$SF_ERROR" 'invalid configuration'; return; }
   decoded=( "${reply[@]}" )
   profile=$decoded[profile]
   if [[ $decoded[models] == '["default"]' ]] &&
       ! sf_profile_lookup "$config_dir" models default .jsonc; then
-    sf_profile_fail 'no model selected: run shellfish init, or pass -m'
+    sf_fail 'no model selected: run shellfish init, or pass -m'
     return
   fi
   sf_profile_model "$config_dir" "$decoded[models]" run || return
@@ -259,7 +250,7 @@ sf_profile_resolve() {
         map(join(" ")) | join("\n")),
       ("ok" | field)
   ' || {
-    sf_profile_validation_error "$REPLY" 'invalid configuration'
+    sf_profile_validation_error "$SF_ERROR" 'invalid configuration'
     return
   }
   decoded=( "${reply[@]}" )
@@ -269,12 +260,12 @@ sf_profile_resolve() {
   for reference in "${references[@]}"; do
     kind=${reference%% *}
     sf_profile_lookup "$config_dir" "$kind" "${reference#* }" ||
-      sf_profile_fail "cannot resolve $kind reference: ${reference#* }" || return
+      sf_fail "cannot resolve $kind reference: ${reference#* }" || return
     resolved=$REPLY
     case $kind in
       system) [[ -f $resolved && -r $resolved ]] ;;
       *) [[ -d $resolved && -x $resolved/run ]] ;;
-    esac || sf_profile_fail "invalid $kind reference: ${reference#* }" || return
+    esac || sf_fail "invalid $kind reference: ${reference#* }" || return
     [[ $kind != system ]] || system_files+=( --rawfile "$reference" "$resolved" )
     resolutions+=( "$reference" "$resolved" )
   done
@@ -317,20 +308,19 @@ sf_profile_resolve_args() {
   local -A fields=( -m model --model model --system system
     -t tools --tool tools --command commands --hook hooks )
 
-  SF_PROFILE_ERROR=''
   while (( $# )); do
     case $1 in
       --sandbox)
         [[ -n $2 && $2 == '{'* ]] ||
-          sf_profile_fail '--sandbox requires a JSON object' || return 2
+          sf_fail '--sandbox requires a JSON object' || return 2
         items+=( "$1" sandbox "$2" )
         shift 2
         ;;
       -p|--profile|-m|--model|--system|-t|--tool|--command|--hook)
         [[ -n $2 && ( $2 == '{'* || $2 != *[[:cntrl:]]* ) ]] ||
-          sf_profile_fail "$1 requires a reference or JSON object" || return 2
+          sf_fail "$1 requires a reference or JSON object" || return 2
         if [[ $1 == (-p|--profile) ]]; then
-          [[ -z $name ]] || sf_profile_fail '--profile may only be specified once' || return 2
+          [[ -z $name ]] || sf_fail '--profile may only be specified once' || return 2
           name=$2
         else
           items+=( "$1" "$fields[$1]" "$2" )
@@ -338,7 +328,7 @@ sf_profile_resolve_args() {
         shift 2
         ;;
       *)
-        sf_profile_fail "unknown argument: $1"
+        sf_fail "unknown argument: $1"
         return 2
         ;;
     esac
@@ -359,7 +349,7 @@ sf_profile_resolve_args() {
         else .[$field] += [$item] end)
   ' --args -- "${items[@]}" 2>&1) || {
     sf_cli_diagnostic "$extra"
-    sf_profile_fail "$REPLY"
+    sf_fail "$REPLY"
     return 2
   }
   sf_profile_resolve "$name" "$extra"

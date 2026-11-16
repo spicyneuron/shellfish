@@ -8,53 +8,49 @@ setopt no_aliases no_multios pipe_fail
 (( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
 (( $+functions[sf_environment_dir] )) || source "$SF_ROOT/lib/environment.zsh"
 
-typeset -g SF_PRESENTATION=''
-typeset -g SF_PRESENTATION_ERROR=''
-typeset -g SF_PRESENTATION_VERBOSE=0
+typeset -g SF_TUI_CONFIG=''
+typeset -g SF_TUI_CONFIG_ERROR=''
+typeset -g SF_TUI_CONFIG_VERBOSE=0
 
-sf_presentation_fail() {
-  SF_PRESENTATION_ERROR=$1
+sf_tui_config_fail() {
+  SF_TUI_CONFIG_ERROR=$1
   return 1
 }
 
-sf_presentation_resolve() {
+sf_tui_config_resolve() {
   local config_path defaults raw='{}' output
   local invalid_marker=': shellfish:invalid-config'
   local theme_marker=': shellfish:unknown-theme:'
 
-  SF_PRESENTATION=''
-  SF_PRESENTATION_ERROR=''
+  SF_TUI_CONFIG=''
+  SF_TUI_CONFIG_ERROR=''
   config_path=''
   ! sf_environment_dir || config_path=$REPLY/tui.jsonc
   defaults=$(sf_jsonc_read "$SF_SHARE/tui.jsonc" 2>/dev/null) ||
-    sf_presentation_fail 'invalid bundled TUI config' || return
+    sf_tui_config_fail 'invalid bundled TUI config' || return
   if [[ -n $config_path && ( -e $config_path || -L $config_path ) ]]; then
     [[ -f $config_path && -r $config_path ]] ||
-      sf_presentation_fail "cannot read TUI config: $config_path" || return
+      sf_tui_config_fail "cannot read TUI config: $config_path" || return
     raw=$(sf_jsonc_read "$config_path" 2>&1) || {
       sf_cli_diagnostic "$raw"
-      sf_presentation_fail "invalid TUI config: $config_path${REPLY:+: $REPLY}"
+      sf_tui_config_fail "invalid TUI config: $config_path${REPLY:+: $REPLY}"
       return
     }
   fi
 
   output=$(jq -nce --argjson defaults "$defaults" --argjson raw "$raw" \
-    -f "$SF_ROOT/libexec/tui/presentation.jq" 2>&1) || {
+    --slurpfile schema "$SF_SHARE/tui.schema.json" --argjson verbose "$SF_TUI_CONFIG_VERBOSE" \
+    -f "$SF_ROOT/libexec/tui/config.jq" 2>&1) || {
     if [[ $output == *"$theme_marker"* ]]; then
-      sf_presentation_fail "unknown theme: ${output#*"$theme_marker"}"
+      sf_tui_config_fail "unknown theme: ${output#*"$theme_marker"}"
     elif [[ $output == *"$invalid_marker" ]]; then
-      sf_presentation_fail "invalid TUI config: $config_path"
+      sf_tui_config_fail "invalid TUI config: $config_path"
     else
       sf_cli_diagnostic "$output"
-      sf_presentation_fail \
+      sf_tui_config_fail \
         "invalid TUI config: ${config_path:-<defaults>}${REPLY:+: $REPLY}"
     fi
     return
   }
-  SF_PRESENTATION=$output
-  # --verbose widens previews for a stored session too.
-  (( SF_PRESENTATION_VERBOSE )) || return 0
-  SF_PRESENTATION=$(jq -c '.preview_lines_reasoning = "full" |
-    .preview_lines = "full"' <<<"$output") ||
-    sf_presentation_fail 'cannot apply verbose preview limits'
+  SF_TUI_CONFIG=$output
 }

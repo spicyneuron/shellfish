@@ -39,6 +39,17 @@ assert_mode 700 "$REPLY"
   [[ $REPLY == "${tmp:a}/explicit" ]]
 )
 
+# A diagnostic survives successful lookups and library sourcing.
+(
+  unset HOME SHELLFISH_DIR
+  builtin cd -- "$tmp/elsewhere"
+  if sf_environment_dir; then fail 'environment lookup without a home succeeded'; fi
+  assert_equal 'HOME or SHELLFISH_DIR is required' "$SF_ERROR"
+  SHELLFISH_DIR="$tmp/explicit" sf_environment_dir
+  sf_test_source lib/cli.zsh
+  assert_equal 'HOME or SHELLFISH_DIR is required' "$SF_ERROR"
+)
+
 # Appends write one complete record and report the failing path plainly.
 sf_session_append "$session" \
   '{"type":"user","content":[{"type":"text","text":"hello"}]}'
@@ -48,20 +59,22 @@ mkdir "$session"
 if sf_session_append "$session" '{"type":"error","user_text":"not written"}'; then
   fail 'append to an unavailable session file succeeded'
 fi
-[[ $SF_SESSION_ERROR == "cannot append session record: $session" ]]
+[[ $SF_ERROR == "cannot append session record: $session" ]]
 rmdir "$session"
 mv "$session.saved" "$session"
 
 # Runtime replacement is atomic and leaves every durable record unchanged.
+jq -c 'if .type == "session" then .section_floor=53 else . end' "$session" >"$tmp/reserved"
+mv "$tmp/reserved" "$session"
 before=$(tail -n +2 "$session")
-profile=$(jq -c '.sandbox.tools.shell={read:["/tmp/reference"],write:["/tmp/reference"],domains:[]}' \
+profile=$(jq -c '.sandbox.tools.shell={filesystem:{allowRead:["/tmp/reference"],allowWrite:["/tmp/reference"]},network:{allowedDomains:[]}}' \
   <<<"$SF_TEST_PROFILE")
 model=$(jq -c '.context_window=1234' <<<"$SF_TEST_MODEL")
 sf_session_update "$session" "$(jq -cn --argjson profile "$profile" --argjson model "$model" \
-  '{profile:$profile,model:$model}')" || fail "$SF_SESSION_ERROR"
+  '{profile:$profile,model:$model}')" || fail "$SF_ERROR"
 head -n 1 "$session" | jq -e '
-  .profile.sandbox.tools.shell.read == ["/tmp/reference"] and
-  .profile.sandbox.tools.shell.write == ["/tmp/reference"] and .model.context_window == 1234
+  .section_floor == 53 and .profile.sandbox.tools.shell.filesystem.allowRead == ["/tmp/reference"] and
+  .profile.sandbox.tools.shell.filesystem.allowWrite == ["/tmp/reference"] and .model.context_window == 1234
 ' >/dev/null
 assert_equal "$before" "$(tail -n +2 "$session")"
 assert_mode 600 "$session"
@@ -72,10 +85,12 @@ for update in '{}' "{\"profile\":{},\"model\":$model}"; do
     fail "invalid session update succeeded: $update"
   fi
 done
+assert_equal 'invalid session update' "$SF_ERROR"
 assert_equal "$unchanged" "$(cat "$session")"
 
-sf_session_read_config "$session" || fail "$SF_SESSION_ERROR"
-jq -e '.profile.sandbox.tools.shell.read == ["/tmp/reference"] and .model.context_window == 1234' \
+sf_session_read_config "$session" || fail "$SF_ERROR"
+assert_equal 'invalid session update' "$SF_ERROR"
+jq -e '.profile.sandbox.tools.shell.filesystem.allowRead == ["/tmp/reference"] and .model.context_window == 1234' \
   <<<"$REPLY" >/dev/null
 
 print -r -- ok

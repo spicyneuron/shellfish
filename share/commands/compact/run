@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-source "${0:A:h:h:h}/lib/compact.zsh" || exit 1
+source "$SHELLFISH_SHARE_DIR/lib/compact.zsh" || exit 1
 
 typeset draft='' steering='' instruction request summary split transcript
 
@@ -54,6 +54,7 @@ transcript="$SHELLFISH_TURN_STATE/compact.jsonl"
 # Keep prefix state updates once, then retain the suffix in its original order.
 if ! jq -ce -s --argjson split "$split" --arg summary "$summary" '
     . as $records |
+    ([.[0].section_floor // 0, .[].section // empty] | max) as $floor |
     ([$records[] | select(.type == "state_update" and .name == "compact/first_user")] |
       last) as $saved |
     ($saved.value // ([$records[] | select(.type == "user")][0].content[0].text)) as $first |
@@ -61,12 +62,12 @@ if ! jq -ce -s --argjson split "$split" --arg summary "$summary" '
       "background. Everything after this block is verbatim and takes precedence.\n\n" +
       "<original_request>\n" + $first + "\n</original_request>\n\n" +
       "<summary>\n" + $summary + "\n</summary>") as $context |
-    ($records[:$split.start][]),
+    ($records[:$split.start][] | if .type == "session" then .section_floor = ($floor + 2) else . end),
     ($records[$split.start:$split.cut][] | select(.type == "state_update")),
     (if $saved == null then
       {type:"state_update",name:"compact/first_user",value:$first} else empty end),
-    {type:"user",content:[{type:"text",text:$context}]},
-    {type:"assistant",stop:"end",content:[]},
+    {type:"user",section:($floor + 1),content:[{type:"text",text:$context}]},
+    {type:"assistant",section:($floor + 2),stop:"end",content:[]},
     $records[$split.cut:][]
   ' "$SHELLFISH_SESSION" >"$transcript"; then
   sf_compact_fail 'Could not create compacted session. Original session kept.'

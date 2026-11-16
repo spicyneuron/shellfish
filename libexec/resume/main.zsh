@@ -31,7 +31,7 @@ sf_resume_main() {
 
   (( $+commands[jq] )) || { sf_die 'shellfish requires jq'; return 2; }
   source "$SF_ROOT/libexec/resume/discovery.zsh"
-  sf_resume_find $limit || { sf_die "$SF_SESSION_ERROR"; return 1; }
+  sf_resume_find $limit || { sf_die "$SF_ERROR"; return 1; }
   session=$SF_RESUME_MATCHES[1]
 
   if (( ! limit )); then
@@ -39,7 +39,7 @@ sf_resume_main() {
     source "$SF_ROOT/libexec/resume/picker.zsh"
     sf_resume_run "${SF_RESUME_MATCHES[@]}" || {
       resume_status=$?
-      (( resume_status == 130 )) || sf_die "$SF_RESUME_ERROR"
+      (( resume_status == 130 )) || sf_die "$SF_ERROR"
       return $resume_status
     }
     session=$REPLY

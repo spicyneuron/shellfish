@@ -3,7 +3,7 @@
 source "${0:A:h:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/text.zsh libexec/tui/render/wrap.zsh
 
-rows() { REPLY="${(j:|:)SF_WRAP_ROWS}" }
+rows() { REPLY="${(j:|:)SF_TUI_WRAP_ROWS}" }
 
 # Break spaces do not appear on either wrapped row.
 sf_tui_wrap 5 'hello world' ''

@@ -1,32 +1,32 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 
-typeset -g SF_PRESENT_ERROR=''
-typeset -g SF_PRESENT_IDENTITY='' SF_PRESENT_FOOTER=''
-typeset -ga SF_PRESENT_COMPLETIONS=()
-typeset -gi SF_PRESENT_COMPLETION_NO=0
+typeset -g SF_TUI_ERROR=''
+typeset -g SF_TUI_IDENTITY='' SF_TUI_FOOTER=''
+typeset -ga SF_TUI_COMPLETIONS=()
+typeset -gi SF_TUI_COMPLETION_NO=0
 
 # Chrome spans cover the full display; viewport spans start at PREDISPLAY.
-typeset -ga SF_PRESENT_CHROME_HIGHLIGHTS=()
-typeset -g SF_PRESENT_VIEWPORT_TEXT=''
-typeset -ga SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
+typeset -ga SF_TUI_CHROME_HIGHLIGHTS=()
+typeset -g SF_TUI_VIEWPORT_TEXT=''
+typeset -ga SF_TUI_VIEWPORT_HIGHLIGHTS=()
 # Rows remain here until committed to terminal scrollback.
-typeset -ga SF_PRESENT_ROW_TEXT=() SF_PRESENT_ROW_SPANS=()
-typeset -ga SF_PRESENT_ROW_READY=()
-typeset -gi SF_PRESENT_ROW_HEAD=1
-typeset -ga SF_PRESENT_LIVE_ROW_TEXT=() SF_PRESENT_LIVE_ROW_SPANS=()
+typeset -ga SF_TUI_ROW_TEXT=() SF_TUI_ROW_SPANS=()
+typeset -ga SF_TUI_ROW_READY=()
+typeset -gi SF_TUI_ROW_HEAD=1
+typeset -ga SF_TUI_LIVE_ROW_TEXT=() SF_TUI_LIVE_ROW_SPANS=()
 # The width the transcript last drew; empty until the first draw.
-typeset -g SF_PRESENT_WIDTH=''
+typeset -g SF_TUI_WIDTH=''
 
 sf_tui_reset() {
-  SF_PRESENT_COMPLETIONS=()
-  SF_PRESENT_ROW_TEXT=()
-  SF_PRESENT_ROW_SPANS=()
-  SF_PRESENT_ROW_READY=()
-  SF_PRESENT_ROW_HEAD=1
-  SF_PRESENT_LIVE_ROW_TEXT=()
-  SF_PRESENT_LIVE_ROW_SPANS=()
-  SF_PRESENT_WIDTH=''
+  SF_TUI_COMPLETIONS=()
+  SF_TUI_ROW_TEXT=()
+  SF_TUI_ROW_SPANS=()
+  SF_TUI_ROW_READY=()
+  SF_TUI_ROW_HEAD=1
+  SF_TUI_LIVE_ROW_TEXT=()
+  SF_TUI_LIVE_ROW_SPANS=()
+  SF_TUI_WIDTH=''
   sf_tui_formatters_reset
 }
 
@@ -34,35 +34,35 @@ sf_tui_reset() {
 # never a blank row, which ZLE would collapse at the edge of its display.
 sf_tui_rows_append() {
   integer row
-  for (( row = 1; row <= ${#SF_FORMAT_ROWS}; row++ )); do
-    SF_PRESENT_ROW_TEXT+=( "$SF_FORMAT_ROWS[row]" )
-    SF_PRESENT_ROW_SPANS+=( "$SF_FORMAT_SPANS[row]" )
-    SF_PRESENT_ROW_READY+=( $(( row > SF_FORMAT_LEADING && ${#SF_FORMAT_ROWS[row]} )) )
+  for (( row = 1; row <= ${#SF_TUI_FORMAT_ROWS}; row++ )); do
+    SF_TUI_ROW_TEXT+=( "$SF_TUI_FORMAT_ROWS[row]" )
+    SF_TUI_ROW_SPANS+=( "$SF_TUI_FORMAT_SPANS[row]" )
+    SF_TUI_ROW_READY+=( $(( row > SF_TUI_FORMAT_LEADING && ${#SF_TUI_FORMAT_ROWS[row]} )) )
   done
 }
 
 sf_tui_rows_settle() {
   sf_tui_rows_append
   # A separator waits for the next entry or prompt commit.
-  SF_PRESENT_ROW_TEXT+=( '' )
-  SF_PRESENT_ROW_SPANS+=( '' )
-  SF_PRESENT_ROW_READY+=( 0 )
+  SF_TUI_ROW_TEXT+=( '' )
+  SF_TUI_ROW_SPANS+=( '' )
+  SF_TUI_ROW_READY+=( 0 )
 }
 
 sf_tui_rows_consume() {
-  integer count=$1 row available=$(( ${#SF_PRESENT_ROW_TEXT} - SF_PRESENT_ROW_HEAD + 1 ))
+  integer count=$1 row available=$(( ${#SF_TUI_ROW_TEXT} - SF_TUI_ROW_HEAD + 1 ))
   (( count >= 0 && count <= available )) || return 1
-  for (( row = SF_PRESENT_ROW_HEAD; row < SF_PRESENT_ROW_HEAD + count; row++ )); do
-    SF_PRESENT_ROW_TEXT[row]=''
-    SF_PRESENT_ROW_SPANS[row]=''
-    SF_PRESENT_ROW_READY[row]=0
+  for (( row = SF_TUI_ROW_HEAD; row < SF_TUI_ROW_HEAD + count; row++ )); do
+    SF_TUI_ROW_TEXT[row]=''
+    SF_TUI_ROW_SPANS[row]=''
+    SF_TUI_ROW_READY[row]=0
   done
-  SF_PRESENT_ROW_HEAD=$(( SF_PRESENT_ROW_HEAD + count ))
-  if (( SF_PRESENT_ROW_HEAD > ${#SF_PRESENT_ROW_TEXT} )); then
-    SF_PRESENT_ROW_TEXT=()
-    SF_PRESENT_ROW_SPANS=()
-    SF_PRESENT_ROW_READY=()
-    SF_PRESENT_ROW_HEAD=1
+  SF_TUI_ROW_HEAD=$(( SF_TUI_ROW_HEAD + count ))
+  if (( SF_TUI_ROW_HEAD > ${#SF_TUI_ROW_TEXT} )); then
+    SF_TUI_ROW_TEXT=()
+    SF_TUI_ROW_SPANS=()
+    SF_TUI_ROW_READY=()
+    SF_TUI_ROW_HEAD=1
   fi
 }
 
@@ -70,54 +70,54 @@ sf_tui_transcript() {
   integer columns=$1 budget=$2 stable take row index total start offset=0 safe_offset=0
   local mode=${3-} text spans
 
-  SF_PRESENT_VIEWPORT_TEXT=''
-  SF_PRESENT_VIEWPORT_HIGHLIGHTS=()
-  SF_PRESENT_SAFE_TEXT=''
-  SF_PRESENT_SAFE_HIGHLIGHTS=()
-  SF_PRESENT_SAFE_ROWS=0
-  SF_PRESENT_WIDTH=$columns
+  SF_TUI_VIEWPORT_TEXT=''
+  SF_TUI_VIEWPORT_HIGHLIGHTS=()
+  SF_TUI_SAFE_TEXT=''
+  SF_TUI_SAFE_HIGHLIGHTS=()
+  SF_TUI_SAFE_ROWS=0
+  SF_TUI_WIDTH=$columns
   sf_tui_rows_prepare $columns || return 1
-  stable=$(( ${#SF_PRESENT_ROW_TEXT} - SF_PRESENT_ROW_HEAD + 1 ))
+  stable=$(( ${#SF_TUI_ROW_TEXT} - SF_TUI_ROW_HEAD + 1 ))
   (( stable > 0 )) || stable=0
   take=$(( stable < budget ? stable : budget ))
-  while (( take )) && (( ! SF_PRESENT_ROW_READY[SF_PRESENT_ROW_HEAD + take - 1] )); do
+  while (( take )) && (( ! SF_TUI_ROW_READY[SF_TUI_ROW_HEAD + take - 1] )); do
     take=$(( take - 1 ))
   done
   for (( row = 0; row < take; row++ )); do
-    index=$(( SF_PRESENT_ROW_HEAD + row ))
-    text=$SF_PRESENT_ROW_TEXT[index]
-    spans=$SF_PRESENT_ROW_SPANS[index]
+    index=$(( SF_TUI_ROW_HEAD + row ))
+    text=$SF_TUI_ROW_TEXT[index]
+    spans=$SF_TUI_ROW_SPANS[index]
     (( row == 0 )) || {
-      SF_PRESENT_SAFE_TEXT+=$'\n'
+      SF_TUI_SAFE_TEXT+=$'\n'
       safe_offset=$(( safe_offset + 1 ))
     }
-    sf_tui_shift_spans SF_PRESENT_SAFE_HIGHLIGHTS $safe_offset "$spans"
-    SF_PRESENT_SAFE_TEXT+=$text
+    sf_tui_shift_spans SF_TUI_SAFE_HIGHLIGHTS $safe_offset "$spans"
+    SF_TUI_SAFE_TEXT+=$text
     safe_offset=$(( safe_offset + ${#text} ))
   done
-  SF_PRESENT_SAFE_ROWS=$take
+  SF_TUI_SAFE_ROWS=$take
   if [[ $mode == stage ]] && (( take )); then
     return 0
   fi
 
-  total=$(( stable + ${#SF_PRESENT_LIVE_ROW_TEXT} ))
+  total=$(( stable + ${#SF_TUI_LIVE_ROW_TEXT} ))
   start=$(( total > budget ? total - budget + 1 : 1 ))
   for (( row = start; row <= total; row++ )); do
     if (( row <= stable )); then
-      index=$(( SF_PRESENT_ROW_HEAD + row - 1 ))
-      text=$SF_PRESENT_ROW_TEXT[index]
-      spans=$SF_PRESENT_ROW_SPANS[index]
+      index=$(( SF_TUI_ROW_HEAD + row - 1 ))
+      text=$SF_TUI_ROW_TEXT[index]
+      spans=$SF_TUI_ROW_SPANS[index]
     else
       index=$(( row - stable ))
-      text=$SF_PRESENT_LIVE_ROW_TEXT[index]
-      spans=$SF_PRESENT_LIVE_ROW_SPANS[index]
+      text=$SF_TUI_LIVE_ROW_TEXT[index]
+      spans=$SF_TUI_LIVE_ROW_SPANS[index]
     fi
     (( row == start )) || {
-      SF_PRESENT_VIEWPORT_TEXT+=$'\n'
+      SF_TUI_VIEWPORT_TEXT+=$'\n'
       offset=$(( offset + 1 ))
     }
-    sf_tui_shift_spans SF_PRESENT_VIEWPORT_HIGHLIGHTS $offset "$spans"
-    SF_PRESENT_VIEWPORT_TEXT+=$text
+    sf_tui_shift_spans SF_TUI_VIEWPORT_HIGHLIGHTS $offset "$spans"
+    SF_TUI_VIEWPORT_TEXT+=$text
     offset=$(( offset + ${#text} ))
   done
 }
@@ -207,16 +207,16 @@ sf_tui_chat_end() {
 
 sf_tui_chrome() {
   integer start=$1 length=$2
-  local style=$SF_PRESENT_STYLE[$3]
+  local style=$SF_TUI_STYLE[$3]
   (( length > 0 )) || return 0
   [[ -n $style ]] || return 0
-  SF_PRESENT_CHROME_HIGHLIGHTS+=( $start $(( start + length )) "$style" )
+  SF_TUI_CHROME_HIGHLIGHTS+=( $start $(( start + length )) "$style" )
 }
 
 # This view must not call the failed renderer.
 sf_tui_stopped_view() {
-  PREDISPLAY=$'\n'"Shellfish stopped: ${SF_PRESENT_ERROR:-unknown failure}"$'\n\n'
-  if [[ -n $SF_PRESENT_SESSION ]]; then
+  PREDISPLAY=$'\n'"Shellfish stopped: ${SF_TUI_ERROR:-unknown failure}"$'\n\n'
+  if [[ -n $SF_TUI_SESSION ]]; then
     PREDISPLAY+=$'Submit /refresh to rebuild from the session, or /quit to leave.'
   else
     PREDISPLAY+=$'Submit /quit to leave.'
@@ -232,9 +232,9 @@ sf_tui_update_highlights() {
   integer index
   case $set in
     view)
-      spans=( "${(@)SF_PRESENT_VIEWPORT_HIGHLIGHTS}" "${(@)SF_PRESENT_CHROME_HIGHLIGHTS}" )
+      spans=( "${(@)SF_TUI_VIEWPORT_HIGHLIGHTS}" "${(@)SF_TUI_CHROME_HIGHLIGHTS}" )
       ;;
-    pending) spans=( "${(@)SF_PRESENT_PENDING_HIGHLIGHTS}" ) ;;
+    pending) spans=( "${(@)SF_TUI_PENDING_HIGHLIGHTS}" ) ;;
     *) return 1 ;;
   esac
   region_highlight=()
@@ -247,7 +247,7 @@ sf_tui_update_highlights() {
 # the session.
 sf_tui_permission_choices() {
   reply=( approve deny stop )
-  [[ $SF_PRESENT_PERMISSION_KIND != listed ]] || reply[2,1]=( approve_session )
+  [[ $SF_TUI_PERMISSION_KIND != listed ]] || reply[2,1]=( approve_session )
 }
 
 sf_tui_divider() {
@@ -295,25 +295,25 @@ sf_tui_repaint() {
   local -a reply drawers=() items=()
   local -A labels
   integer remaining
-  if [[ $SF_PRESENT_STATE == idle && ${SF_PRESENT_ACTION-} != submit ]]; then
+  if [[ $SF_TUI_STATE == idle && ${SF_TUI_ACTION-} != submit ]]; then
     prompt_style=prompt_waiting
   fi
-  SF_PRESENT_CHROME_HIGHLIGHTS=()
+  SF_TUI_CHROME_HIGHLIGHTS=()
   (( columns > 0 )) || columns=80
   columns=$(( columns > 1 ? columns - 1 : 1 ))
-  if [[ $SF_PRESENT_STATE == permission ]]; then
-    reserve=$(( 13 + ${#${SF_PRESENT_PERMISSION_TEXT//[^$'\n']}} ))
-    [[ $SF_PRESENT_PERMISSION_KIND != listed ]] || (( reserve += 1 ))
+  if [[ $SF_TUI_STATE == permission ]]; then
+    reserve=$(( 13 + ${#${SF_TUI_PERMISSION_TEXT//[^$'\n']}} ))
+    [[ $SF_TUI_PERMISSION_KIND != listed ]] || (( reserve += 1 ))
     # Raw input is often one long line, so its wrapped rows count too.
-    for line in "${(@f)SF_PRESENT_PERMISSION_TEXT}"; do
+    for line in "${(@f)SF_TUI_PERMISSION_TEXT}"; do
       reserve+=$(( ${#line} / columns ))
     done
   fi
-  if [[ $SF_PRESENT_STATE != permission ]]; then
+  if [[ $SF_TUI_STATE != permission ]]; then
     for label in queue completions; do
       row=0
       if [[ $label == queue ]]; then
-        items=( "${SF_PRESENT_QUEUE[@]}" )
+        items=( "${SF_TUI_QUEUE[@]}" )
         for (( index = 1; index <= ${#items}; index++ )); do
           items[index]="$index. $items[index]"
         done
@@ -321,11 +321,11 @@ sf_tui_repaint() {
       else
         # The heading shows the total, then the selection's position within it.
         # The list scrolls to keep a selection in view.
-        (( ${#SF_PRESENT_COMPLETIONS} )) || continue
-        selected=$SF_PRESENT_COMPLETION_NO
+        (( ${#SF_TUI_COMPLETIONS} )) || continue
+        selected=$SF_TUI_COMPLETION_NO
         first=$(( selected > limit ? selected - limit + 1 : 1 ))
-        items=( "${(@)SF_PRESENT_COMPLETIONS[first,first + limit - 1]}" )
-        text=${#SF_PRESENT_COMPLETIONS}
+        items=( "${(@)SF_TUI_COMPLETIONS[first,first + limit - 1]}" )
+        text=${#SF_TUI_COMPLETIONS}
         if (( selected )); then
           row=$(( selected - first + 1 ))
           text="$selected/$text"
@@ -343,21 +343,21 @@ sf_tui_repaint() {
   budget=$(( rows - reserve ))
   sf_tui_transcript $columns $budget "$mode" || return 1
   # A nonempty staging pass commits instead of drawing a viewport.
-  [[ $mode != stage ]] || (( ! SF_PRESENT_SAFE_ROWS )) || return 0
-  PREDISPLAY=$SF_PRESENT_VIEWPORT_TEXT
+  [[ $mode != stage ]] || (( ! SF_TUI_SAFE_ROWS )) || return 0
+  PREDISPLAY=$SF_TUI_VIEWPORT_TEXT
   if [[ -n $PREDISPLAY ]]; then
     PREDISPLAY=${PREDISPLAY%$'\n'}$'\n\n'
-  elif (( SF_PRESENT_PREFIX_VISIBLE )); then
+  elif (( SF_TUI_PREFIX_VISIBLE )); then
     PREDISPLAY=$'\n'
   fi
   prompt_divider_top=${(l:columns::─:)""}
   prompt_divider_bottom=$prompt_divider_top
-  if [[ $SF_PRESENT_STATE == permission ]]; then
+  if [[ $SF_TUI_STATE == permission ]]; then
     prompt_style=permission
-    if [[ $SF_PRESENT_PERMISSION_KIND == listed ]]; then
-      label="Grant $SF_PRESENT_PERMISSION_TOOL this sandbox access?"
+    if [[ $SF_TUI_PERMISSION_KIND == listed ]]; then
+      label="Grant $SF_TUI_PERMISSION_TOOL this sandbox access?"
     else
-      label="Allow $SF_PRESENT_PERMISSION_TOOL outside of sandbox?"
+      label="Allow $SF_TUI_PERMISSION_TOOL outside of sandbox?"
     fi
     sf_tui_divider $columns "$label"
     prompt_divider_top=$REPLY
@@ -365,15 +365,15 @@ sf_tui_repaint() {
     PREDISPLAY+="$prompt_divider_top"
     sf_tui_chrome $start ${#prompt_divider_top} $prompt_style
     PREDISPLAY+=$'\n'
-    PREDISPLAY+="$SF_PRESENT_PERMISSION_TEXT"$'\n'
-    if [[ -n $SF_PRESENT_PERMISSION_REVIEW ]]; then
-      PREDISPLAY+="Reviewer: $SF_PRESENT_PERMISSION_REVIEW"$'\n'
+    PREDISPLAY+="$SF_TUI_PERMISSION_TEXT"$'\n'
+    if [[ -n $SF_TUI_PERMISSION_REVIEW ]]; then
+      PREDISPLAY+="Reviewer: $SF_TUI_PERMISSION_REVIEW"$'\n'
     fi
-    remaining=$(( SF_PRESENT_PERMISSION_DEADLINE - SECONDS ))
+    remaining=$(( SF_TUI_PERMISSION_DEADLINE - SECONDS ))
     (( remaining >= 0 )) || remaining=0
     labels=( approve '[a]pprove' approve_session 'approve for [t]his session'
       deny '[d]eny and continue' stop '[s]top and discuss' )
-    labels[$SF_PRESENT_PERMISSION_DEFAULT]+=" (${remaining}s)"
+    labels[$SF_TUI_PERMISSION_DEFAULT]+=" (${remaining}s)"
     sf_tui_permission_choices
     for index in {1..${#reply}}; do
       reply[index]="$index. $labels[$reply[index]]"
@@ -395,11 +395,11 @@ sf_tui_repaint() {
       line=${(pj:\n:)items[1,row]}
       sf_tui_chrome $(( start + ${#line} + 1 )) ${#items[row + 1]} selected
     done
-    if (( SF_PRESENT_HISTORY_NO )); then
-      history_item=$(( ${#SF_PRESENT_HISTORY} - SF_PRESENT_HISTORY_NO + 1 ))
+    if (( SF_TUI_HISTORY_NO )); then
+      history_item=$(( ${#SF_TUI_HISTORY} - SF_TUI_HISTORY_NO + 1 ))
     fi
     if (( history_item )); then
-      label="history ($history_item/${#SF_PRESENT_HISTORY})"
+      label="history ($history_item/${#SF_TUI_HISTORY})"
       if (( ${#label} + 4 <= columns )); then
         sf_tui_divider $columns "$label"
         prompt_divider_top=$REPLY
@@ -419,10 +419,10 @@ sf_tui_repaint() {
   POSTDISPLAY=$'\n'"$prompt_divider_bottom"
   sf_tui_chrome $(( ${#PREDISPLAY} + ${#BUFFER} + 1 )) \
     ${#prompt_divider_bottom} $prompt_style
-  if [[ -n $SF_PRESENT_FOOTER ]]; then
+  if [[ -n $SF_TUI_FOOTER ]]; then
     start=$(( ${#PREDISPLAY} + ${#BUFFER} + ${#POSTDISPLAY} + 1 ))
-    POSTDISPLAY+=$'\n'"$SF_PRESENT_FOOTER"
-    sf_tui_chrome $start ${#SF_PRESENT_FOOTER} footer
+    POSTDISPLAY+=$'\n'"$SF_TUI_FOOTER"
+    sf_tui_chrome $start ${#SF_TUI_FOOTER} footer
   fi
   sf_tui_update_highlights view || return 1
 }

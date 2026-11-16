@@ -8,18 +8,7 @@ typeset context_window="$ROOT/share/providers/anthropic/context_window"
 typeset req="$tmp/request.json"
 typeset res="$tmp/output.jsonl"
 
-cat >"$tmp/curl" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "$@" >"$PROVIDER_TEST_ARGS"
-while (($#)); do
-  case $1 in
-    --data-binary) cp "${2#@}" "$PROVIDER_TEST_BODY" ; shift 2 ;;
-    *) shift ;;
-  esac
-done
-cat "$PROVIDER_TEST_RESPONSE"
-printf 200 >&2
-EOF
+cp "$ROOT/tests/fixtures/curl" "$tmp/curl"
 chmod +x "$tmp/curl"
 export PATH="$tmp:$PATH"
 export PROVIDER_TEST_RESPONSE="$tmp/response"
@@ -50,9 +39,13 @@ assert_usage() {
   ' <<<"$REPLY" >/dev/null || fail 'anthropic lost text or usage'
 }
 
-# Parse buffered responses.
+# Translate common options and combine streamed usage events.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
+data: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":0}}}
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
+data: {"type":"message_stop"}
 EOF
 (builtin cd -- "$tmp" && ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res")
 assert_usage
@@ -62,18 +55,6 @@ jq -e '
   .output_config == {foo:"keep",effort:"medium",format:{type:"json_schema",
     schema:{type:"object",required:["answer"],properties:{answer:{type:"string"}}}}}
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not normalize common request parameters'
-
-# Combine streamed usage events.
-cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-data: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":0}}}
-data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
-data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
-data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}
-data: {"type":"message_stop"}
-
-EOF
-ANTHROPIC_API_KEY=test zsh -f "$run" <"$req" >"$res"
-assert_usage
 
 # Preserve streamed reasoning and calls.
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
@@ -135,7 +116,9 @@ cat >"$batch_request" <<'JSON'
 }
 JSON
 cat >"$PROVIDER_TEST_RESPONSE" <<'EOF'
-{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"ok"}}
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}
+data: {"type":"message_stop"}
 EOF
 ANTHROPIC_API_KEY=test zsh -f "$run" <"$batch_request" >"$res"
 jq -e '
@@ -149,18 +132,31 @@ jq -e '
   (.messages[2].content | map(.is_error)) == [false,true]
 ' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not regroup a call batch'
 
-# Tool result images.
-jq -c '.messages[3].content = [{type:"text",text:"shot"},
+# Prompt and tool result images.
+jq -c '.messages[0].content += [{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}] |
+  .messages[3].content = [{type:"text",text:"shot"},
   {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}] |
   .messages[5].content = [{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]' \
   "$batch_request" >"$tmp/images.json"
 ANTHROPIC_API_KEY=test zsh -f "$run" <"$tmp/images.json" >"$res"
 jq -e '
-  .messages[2].content | map(.content) == [
+  .messages[0].content == [{type:"text",text:"run both"},
+    {type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}}] and
+  (.messages[2].content | map(.content)) == [
     [{type:"text",text:"shot"},
      {type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}}],
     [{type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}}]]
-' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not send tool result images'
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic did not send prompt or tool result images'
+
+# Every part of an image-bearing prompt keeps its order.
+jq -c '.messages[0].content = [{type:"text",text:"context"},
+  {type:"image",url:"data:image/png;base64,iVBORw0KGgo="},{type:"text",text:"question"}]' \
+  "$req" >"$tmp/parts.json"
+ANTHROPIC_API_KEY=test zsh -f "$run" <"$tmp/parts.json" >"$res"
+jq -e '.messages[0].content == [{type:"text",text:"context"},
+    {type:"image",source:{type:"base64",media_type:"image/png",data:"iVBORw0KGgo="}},
+    {type:"text",text:"question"}]
+' "$PROVIDER_TEST_BODY" >/dev/null || fail 'anthropic dropped or reordered prompt parts'
 
 # The provider always streams, so a stream option is refused.
 jq -c '.request.stream = false' "$req" >"$tmp/no-stream.json"

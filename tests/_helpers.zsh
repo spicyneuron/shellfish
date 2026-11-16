@@ -6,6 +6,8 @@ setopt err_exit no_aliases no_bg_nice no_multios pipe_fail
 typeset -gr ROOT=${${(%):-%x}:A:h:h}
 typeset -g SF_ROOT=$ROOT
 typeset -g SF_SHARE=$ROOT/share
+# Bundled scripts that tests run directly find helpers as Shellfish tells them.
+export SHELLFISH_SHARE_DIR=$SF_SHARE
 typeset -gr SF_TEST_SESSIONS=$ROOT/tests/fixtures/session
 typeset -gr SF_TEST_PROVIDER=$ROOT/tests/fixtures/provider/run
 typeset -g tmp=''
@@ -85,6 +87,15 @@ fail() {
   return 1
 }
 
+# Readiness predicates may fail transiently while another process starts.
+sf_test_wait() {
+  integer attempts=0
+  until "$@" 2>/dev/null; do
+    (( ++attempts < 250 )) || return 1
+    sleep 0.02
+  done
+}
+
 # The optional stop reason must match the final record.
 # The response a provider's output ends with, when every line before it is a
 # delta. REPLY is the response; fails on any other stream.
@@ -112,7 +123,7 @@ assert_canonical_session() {
   }
 }
 
-# Frozen profile and model used by tool and exec tests.
+# Frozen profile and model used by tool and run tests.
 sf_test_frozen_profile() {
   typeset -g SF_TEST_PROFILE SF_TEST_MODEL
   SF_TEST_PROFILE=$(jq -cn --arg tool "$ROOT/share/tools/shell" '
@@ -133,6 +144,7 @@ sf_test_shell_tool() {
   mkdir -p "$tool"
   cp -f "${run:-$bundled/run}" "$tool/run"
   cp -f "$bundled/fence.jsonc" "$tool/fence.jsonc"
+  cp -f "$bundled/../base.fence.jsonc" "$tool/../base.fence.jsonc"
   jq "$filter" "$bundled/manifest.json" >"$tool/manifest.json"
   SF_TEST_PROFILE=$(jq -c --arg tool "$tool" '.tools=[$tool]' <<<"$SF_TEST_PROFILE")
 }
