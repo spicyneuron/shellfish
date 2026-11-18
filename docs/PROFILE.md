@@ -199,6 +199,21 @@ Without the choice lists, every subagent uses the parent's profile and model. Su
 
 Background work returns control after launch. Inspection distinguishes running work from a stopped subagent without a final outcome. Continuing a stopped subagent recovers unfinished work. A subagent killed during its stop hooks can appear settled, and those hooks do not run again.
 
+### Stop review
+
+Add `"stop/review"` to a profile's `hooks` to review each final answer against the user's intent before the turn finishes. It is not enabled by default. A rejection returns the reviewer's reason to the agent so it can continue. Failed or invalid reviews let the turn finish and display why. By default, at most two consecutive rejections are allowed per turn, then the next stop finishes without another review.
+
+Settings live under `config.stop.review`. The reviewer inherits the session model unless you set `"model": "review"`. Alternatively, set `"decision_model": "d3"` to use a decision provider. Every question must pass, with each decision probability at least `allow_threshold` (default `0.8`). Set `max_rejections` to change the retry cap. Set `max_input_kb` to change the default 24 KB context budget. Startup context, the latest user message, and final assistant text stay pinned, with recent records fitted into the remaining budget and older tool output shortened. Set `http_timeout` in the review model to bound request duration.
+
+The bundled [policy](../share/hooks/stop/review/policy.json) asks about fulfillment, reasonable execution, and scope. Replace the complete question list with `config.stop.review.questions`, an object mapping question names to `{"instructions": "A yes/no question"}` and optional `criteria` with `true` and `false` descriptions. Use positive questions: a true answer permits stopping. For example:
+
+```json
+{"hooks": ["stop/review"], "config": {"stop": {"review": {
+  "decision_model": "d3", "allow_threshold": 0.8, "max_rejections": 2,
+  "questions": {"complete": {"instructions": "Did the agent fulfill the user's request?"}}
+}}}}
+```
+
 ### Sandbox approver
 
 Add `"sandbox/approver"` to a profile's `hooks` to have a model review sandbox access requests against the user's instructions. It approves or denies each request. Review failures fall back to asking the user.

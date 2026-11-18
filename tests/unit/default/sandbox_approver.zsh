@@ -413,3 +413,115 @@ jq -e '(has("action") | not) and .state_update[0].value ==
   {content:null,reason:"Permission review decision request failed."}
 ' "$control" >/dev/null || fail 'decision failure did not defer'
 session=$parent_session
+
+# Stop review uses the same context budget but gates final text, not tools.
+hook="$ROOT/share/hooks/stop/review"
+typeset stop_config='{}' final_text='Finished the requested setup.'
+typeset stop_mode stop_session="$tmp/stop.jsonl"
+session=$stop_session
+jq -c 'select(.type != "hook_result" or .lifecycle != "permission_request")' \
+  "$parent_session" >"$session"
+sf_session_append "$session" '{"type":"tool_result","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}},"exit_code":0,"model_text":"Setup succeeded."}'
+sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Finished the requested setup."}]}'
+assert_canonical_session "$session"
+stop_review() {
+  print -r -- "$1" >"$mode"
+  rm -f -- "$sent" "$captured"
+  hook_status=0
+  SF_TEST_REQUEST="$sent" SF_TEST_MODE="$mode" \
+    SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$session" \
+    SHELLFISH_CONFIG="{\"stop\":{\"review\":$stop_config}}" \
+    SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
+    zsh -f "$hook/run" 3 \
+    3>"$tmp/lines" >"$tmp/feedback" 2>"$tmp/user" <<<"$final_text" || hook_status=$?
+  (( hook_status == 0 )) || fail 'stop review failed the turn'
+}
+typeset approved='{"answers":{"fulfilled":true,"reasonable":true,"scope":true},"reason":"Task completed reasonably."}'
+typeset denied='{"answers":{"fulfilled":false,"reasonable":true,"scope":true},"reason":"Finish the requested tests."}'
+before=$(shasum <"$session")
+stop_review "$approved"
+[[ ! -s $tmp/lines && ! -s $tmp/feedback ]] || fail 'approved stop emitted model feedback or action'
+grep -Fq 'Approved: Task completed reasonably.' "$tmp/user" || fail 'stop approval was hidden'
+jq -es '
+  (.[1].content[0].text | fromjson) as $context |
+  .[0].profile.tools == [] and .[0].profile.hooks == [] and
+  $context.target_assistant_text == "Finished the requested setup.\n" and
+  $context.startup_context[1].content[0].text == "opening request" and
+  $context.latest_user_message.content[0].text == "run the local setup" and
+  $context.recent_timeline[-2].model_text == "Setup succeeded." and
+  ($context | has("target_tool_call") | not)
+' "$tmp/stop-review.jsonl" >/dev/null || fail 'stop review did not pin final text and user context'
+jq -e '.request.response_schema.properties.answers.required == ["fulfilled","reasonable","scope"] and
+  (.request.response_schema.properties | keys) == ["answers","reason"]' "$sent" >/dev/null ||
+  fail 'stop review did not request its question schema'
+assert_equal "$before" "$(shasum <"$session")" 'stop review changed the parent session'
+stop_review "$denied"
+jq -e '.action == "deny" and .reason == "Finish the requested tests."' "$tmp/lines" >/dev/null ||
+  fail 'stop review did not deny unfinished work'
+assert_equal 'Finish the requested tests.' "$(<"$tmp/feedback")" 'stop denial omitted model feedback'
+stop_review "$denied"
+stop_review "$denied"
+[[ ! -s $tmp/lines && ! -e $sent ]] || fail 'stop review exceeded its rejection limit'
+grep -Fq 'Rejection limit (2) reached' "$tmp/user" || fail 'rejection limit was hidden'
+rm -f "$tmp/stop-review-rejections"
+
+# Exercise the bundled hook through the public turn boundary, including a fresh
+# retry allowance for the next turn in the same session.
+SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '.hooks=[$hook] | .config={}' <<<"$SF_TEST_PROFILE")
+session="$tmp/stop-turn.jsonl"
+sf_test_session "$session"
+print -r -- "$denied" >"$mode"
+for stop_mode in first second; do
+  SF_TEST_REQUEST="$sent" SF_TEST_MODE="$mode" \
+    sf_test_run 'Finish the setup' "$session" >"$tmp/stop-stream" || fail 'bundled stop review failed a turn'
+  assert_canonical_session "$session"
+  jq -es '
+    [ .[] | select(.type == "assistant") ] | length == 3
+  ' "$tmp/stop-stream" >/dev/null || fail 'bundled stop review did not bound continuations per turn'
+  jq -es '
+    [ .[] | select(.type == "hook_result" and .action == "deny") ] |
+    length == 2 and all(.[]; .reason == "Finish the requested tests." and
+      (.model_text | contains("Finish the requested tests.")))
+  ' "$tmp/stop-stream" >/dev/null || fail 'bundled stop review did not persist rejection feedback'
+done
+session=$stop_session
+
+# Approval and failure do not consume retry allowance. Custom questions replace
+# the list for both chat and decision providers.
+stop_config='{"model":"review/fast.v1","max_rejections":1,"questions":{"complete":{"instructions":"Is the task complete?"}}}'
+stop_review '{"answers":{"complete":true},"reason":"Complete."}'
+jq -e '.request.model == "updated-model" and
+  .request.response_schema.properties.answers.required == ["complete"] and
+  (.request.response_schema.properties.answers.properties | keys) == ["complete"]' \
+  "$sent" >/dev/null || fail 'stop review ignored its model or custom questions'
+for stop_mode in failure '{}' '{"answers":{"complete":1},"reason":"bad"}' \
+    '{"answers":{"complete":true,"extra":true},"reason":"bad"}' \
+    '{"answers":{"complete":false},"reason":"bad\nreason"}'; do
+  stop_review "$stop_mode"
+  [[ ! -s $tmp/lines && ! -s $tmp/feedback ]] || fail 'failed stop review blocked completion'
+  grep -Fq 'Review failed, letting the turn finish:' "$tmp/user" || fail 'failed stop review was hidden'
+done
+for stop_config in '{"model":"missing"}' '{"max_rejections":0}' '{"max_input_kb":0}' \
+    '{"allow_threshold":0.5}' '{"questions":{}}' '{"questions":null}' \
+    '{"questions":{"complete":{"instructions":4}}}' '{"unknown":true}'; do
+  stop_review "$approved"
+  [[ ! -s $tmp/lines && ! -e $sent ]] || fail "invalid stop configuration called provider: $stop_config"
+done
+stop_config='{"max_input_kb":1}'
+stop_review "$approved"
+[[ ! -e $sent ]] || fail 'oversized pinned stop context called provider'
+grep -Fq 'context exceeds' "$tmp/user" || fail 'stop context budget failure was hidden'
+
+stop_config='{"decision_model":"decider","allow_threshold":0.6,"questions":{"complete":{"instructions":"Is the task complete?"}}}'
+stop_review '{"model":"d","answers":{"complete":{"type":"predicate","probability":0.7}}}'
+[[ ! -s $tmp/lines ]] || fail 'stop decision ignored configured threshold'
+jq -e '.questions == {complete:{type:"predicate",instructions:"Is the task complete?"}} and
+  .input[0].data.target_assistant_text == "Finished the requested setup.\n"' "$sent" >/dev/null ||
+  fail 'stop decision sent the wrong policy or target'
+stop_review '{"model":"d","answers":{"complete":{"type":"predicate","probability":0.5}}}'
+jq -e '.action == "deny" and (.reason | contains("50%"))' "$tmp/lines" >/dev/null ||
+  fail 'stop decision allowed a failed question'
+stop_review '{"model":"d","answers":{"complete":{"type":"refusal"}}}'
+[[ ! -s $tmp/lines ]] || fail 'stop decision refusal blocked completion'
+grep -Fq 'Review failed' "$tmp/user" || fail 'stop decision refusal was hidden'
+rm -f "$tmp/stop-review-rejections"
