@@ -23,7 +23,7 @@
 
   // Hooks run in this order within the lifecycle their manifest names.
   "hooks": [
-    "project/environment", "git/environment", "project/instructions", "skills/list",
+    "project/environment", "git/environment", "project/instructions", "skills/list", "sandbox/grants",
     "autocompact", "git/identity", "skills/mention",
     // Have a model review sandbox access requests.
     // "sandbox/approver",

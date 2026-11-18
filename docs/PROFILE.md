@@ -144,6 +144,7 @@ The default profile's `session_start` hooks record context once:
 | `git/environment` | Branch or commit, recent commits, and working-tree summary |
 | `project/instructions` | `AGENTS.md`, falling back to `CLAUDE.md` |
 | `skills/list` | Skills the `skill` tool can load |
+| `sandbox/grants` | Initial per-tool read, write, and domain grants, or a notice that sandboxing is disabled |
 
 The bundled commands are selected by the profile:
 

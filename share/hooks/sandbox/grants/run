@@ -1,0 +1,26 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+typeset header grants
+IFS= read -r header <"$SHELLFISH_SESSION" || exit 1
+grants=$(jq -r '
+  .profile.sandbox |
+  if .enabled | not then "Sandboxing is disabled for this session."
+  else
+    [ .tools | to_entries[] | .key as $tool | .value |
+      ("read", "write", "domains") as $kind |
+      (if $kind == "read" then .filesystem.allowRead
+       elif $kind == "write" then .filesystem.allowWrite
+       else .network.allowedDomains end) |
+      select(length > 0) | "- \($tool) \($kind): \(tojson)"
+    ] |
+    select(length > 0) |
+    "Initial sandbox grants by tool (not the full policy). Deny rules still apply. " +
+    "Paths prefixed with @ refer to the bundled Shellfish directory.\n" + join("\n")
+  end
+' <<<"$header") || exit 1
+[[ -n $grants ]] || exit 0
+print -r -- "**Initial sandbox grants**"$'\n'"$grants" >&2
+print -rn -- "$grants"

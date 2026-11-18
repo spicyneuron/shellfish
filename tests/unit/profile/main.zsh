@@ -211,6 +211,7 @@ for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
       (.commands | any(endswith("/help"))) and
       (.system[0].text | contains($sandbox | sub("\n+$"; ""))) and
       (.tools | any(endswith("/subagent")) | not) and
+      (.hooks | any(endswith("/sandbox/grants"))) and
       (.hooks | any(endswith("/sandbox/approver")) | not))
   ' <<<"$REPLY" >/dev/null || fail "starter profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")

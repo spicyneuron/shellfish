@@ -47,13 +47,13 @@ sf_test_profile default '{
   "system": ["general.md", "tools.md"],
   "tools": ["read_file", "edit_file", "write_file", "skill", "search_web", "fetch_url", "shell"],
   "hooks": ["project/environment", "git/environment", "project/instructions", "skills/list",
-    "git/identity"]
+    "sandbox/grants", "git/identity"]
 }'
 startup() {
   rm -f "$tmp/startup.jsonl"
   PATH="$environment_bin:$git_bin:$PATH" GIT_STATE="$git_state" \
     "$ROOT/bin/shellfish" run --jsonl --session-create --session-out "$tmp/startup.jsonl" \
-    --profile "${1:-default}" >"$tmp/startup.stream" || return
+    --profile "${1:-default}" "${@:2}" >"$tmp/startup.stream" || return
   assert_canonical_session "$tmp/startup.jsonl"
 }
 startup
@@ -90,6 +90,26 @@ jq -e -s 'all(.[]; .type != "state_update" and
   (.user_text // "" | startswith("**Git environment**") | not))' \
   "$tmp/startup.jsonl" >/dev/null || fail 'no-repository startup was not silent'
 print -r -- 'branch:main' >"$git_state"
+
+startup default --sandbox '{"tools":{
+  "shell":{"filesystem":{"allowRead":["~/reference"],"allowWrite":["build"],"denyWrite":["private"]},
+    "network":{"allowedDomains":["Example.COM"]}},
+  "read_file":{"filesystem":{"allowRead":["@system"]}}
+}}'
+jq -e -s 'any(.[]; .type == "hook_result" and
+  (.user_text // "" | startswith("**Initial sandbox grants**")) and
+  (.model_text | startswith("<context script=\"sandbox/grants\">\n") and
+    contains("- read_file read: [\"@system\"]") and
+    contains("- shell read: [\"~/reference\"]") and
+    contains("- shell write: [\"build\"]") and
+    contains("- shell domains: [\"example.com\"]") and
+    (contains("private") | not)))' "$tmp/startup.jsonl" >/dev/null ||
+  fail 'startup did not report initial sandbox grants by tool'
+startup default --sandbox '{"enabled":false,"tools":{"shell":{"filesystem":{"allowWrite":["build"]}}}}'
+jq -e -s 'any(.[]; .type == "hook_result" and
+  (.model_text // "" | contains("<context script=\"sandbox/grants\">\nSandboxing is disabled for this session.") and
+    (contains("build") | not)))' "$tmp/startup.jsonl" >/dev/null ||
+  fail 'startup advertised inactive sandbox grants'
 
 # A version-manager shim must not stall startup under an isolated HOME.
 cat >"$environment_bin/uv" <<'EOF'
