@@ -431,6 +431,99 @@ def test_permission_keys_do_not_edit():
         session.close()
 
 
+def test_external_draft_and_pager():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        editor = root / "editor"
+        editor.write_text(
+            '#!/bin/sh\n'
+            'cat "$1" >"$PROBE/original"\n'
+            'touch "$PROBE/open"\n'
+            'while [ ! -f "$PROBE/close" ]; do sleep 0.05; done\n'
+            'cat "$PROBE/replacement" >"$1"\n'
+            'exit "$(cat "$PROBE/result")"\n'
+        )
+        editor.chmod(0o755)
+        pager = root / "pager"
+        pager.write_text('#!/bin/sh\ncp "$1" "$PROBE/paged"\n')
+        pager.chmod(0o755)
+        (root / "result").write_text("0")
+        (root / "replacement").write_text("edited\nmultiline\n")
+        session = Session(env={"VISUAL": str(editor), "PAGER": str(pager),
+                               "EDITOR": "/bin/false",
+                               "PROBE": directory, "SF_TEST_PROVIDER_DELAY": "0.03"})
+        terminal = Terminal(session)
+        try:
+            session.send((" ".join(WORDS) + "\r").encode())
+            terminal.wait_for("streamed scrollback",
+                              lambda: "w020" in terminal.scrollback())
+            session.send(b"draft\x07")
+            terminal.wait_for("editor", lambda: (root / "open").exists())
+            before = terminal.everything()
+            assert (root / "original").read_text() == "draft"
+            # Nothing may draw while the editor owns the tty, so watch a fixed window.
+            end = time.monotonic() + 0.5
+            while time.monotonic() < end:
+                terminal.pump()
+            assert terminal.everything() == before, terminal.dump()
+            (root / "close").touch()
+            terminal.wait_for("edited draft", lambda: "❯ edited" in terminal.frame()
+                              and "multiline" in terminal.frame())
+            terminal.wait_for("turn finished", terminal.turn_finished)
+            terminal.wait_for("queued rows", lambda: terminal.everything().count("w200") == 2)
+            _, records = session.wait_session_records(3)
+            assert len([r for r in records if r["type"] == "user"]) == 1
+            for word in WORDS:
+                assert terminal.everything().count(word) == 2, (word, terminal.dump())
+            (root / "result").write_text("1")
+            (root / "replacement").write_text("must not replace the draft")
+            (root / "open").unlink()
+            session.send(b"\x07")
+            terminal.wait_for("failed editor opened", lambda: (root / "open").exists())
+            terminal.wait_for("failed editor preserves draft",
+                              lambda: "❯ edited" in terminal.frame()
+                              and "must not replace" not in terminal.frame())
+            assert (root / "original").read_text() == "edited\nmultiline\n"
+            (root / "result").write_text("0")
+            (root / "replacement").write_text("")
+            (root / "open").unlink()
+            session.send(b"\x07")
+            terminal.wait_for("empty editor opened", lambda: (root / "open").exists())
+            terminal.wait_for("empty draft", lambda: "❯ edited" not in terminal.frame())
+            session.send(b"/verbose\r")
+            terminal.wait_for("pager", lambda: (root / "paged").exists())
+            assert all(word in (root / "paged").read_text() for word in WORDS)
+            session.send(b"still here")
+            terminal.wait_for("same chat", lambda: "❯ still here" in terminal.frame())
+            for word in WORDS:
+                assert terminal.everything().count(word) == 2, (word, terminal.dump())
+        finally:
+            session.close()
+
+
+def test_idle_editor_fallback():
+    with tempfile.TemporaryDirectory() as directory:
+        editor = Path(directory) / "draft editor"
+        editor.write_text('#!/bin/sh\n[ "$1" = --draft ] || exit 1\n'
+                          'printf "idle replacement" >"$2"\n')
+        editor.chmod(0o755)
+        session = Session(env={"VISUAL": "", "EDITOR": f'"{editor}" --draft'})
+        terminal = Terminal(session)
+        try:
+            session.wait_session_records(1)
+            session.send(b"unsent\x07")
+            terminal.wait_for("idle edited draft",
+                              lambda: "❯ idle replacement" in terminal.frame())
+            _, records = session.wait_session_records(1)
+            assert not any(r["type"] == "user" for r in records)
+            session.send(b"\x18")
+            _, records = session.wait_session_records(3)
+            user = next(r for r in records if r["type"] == "user")
+            assert user["content"][0]["text"] == "idle replacement"
+        finally:
+            session.close()
+
+
 if __name__ == "__main__":
     run("scrollback PTY scenarios", [
         test_help_notice_keeps_one_separator,
@@ -441,4 +534,6 @@ if __name__ == "__main__":
         test_file_changes_use_full_preview,
         test_permission_countdown,
         test_permission_keys_do_not_edit,
+        test_external_draft_and_pager,
+        test_idle_editor_fallback,
     ])
