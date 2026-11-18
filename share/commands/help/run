@@ -20,10 +20,12 @@ ctrl+enter, cmd+enter
                    Send now, if supported by the terminal
 ctrl+c             Cancel an active request, keeping the queue pending; otherwise exit
 ctrl+v             Paste a clipboard image as an [Image: PATH] marker
+ctrl+g             Edit the draft in VISUAL, EDITOR, or vi without sending it
 ↑, ↓               Navigate prompt history
 /queue drop <N>    Discard queued prompt
 /queue clear       Discard all queued prompts
 $listed
 /refresh, /r       Rerender current session; fix layout
+/verbose, /v       View expanded session output in PAGER, or less -R
 /quit, /q          Exit
 HELP
