@@ -28,6 +28,7 @@ This project is pre-release. Remove obsolete behavior rather than adding depreca
 - Consult the relevant docs when changing a subsystem: `docs/ARCHITECTURE.md`, `docs/CONFIG.md`, `docs/PROFILE.md`, `docs/MODELS.md`, `docs/COMPONENTS.md`, or `docs/CURSED.md`.
 - Docs are exclusively for high-level, user-facing concepts. They should not go into implementation details or restate the code as prose.
 - For code changes, run the nearest focused test first, then bare `./tests/run`. Use `./tests/run pty` only for behavior requiring a terminal; its scrollback test skips without `pyte`, so prefer `uv run --with pyte ./tests/run pty`. Do not run tests for documentation- or comment-only changes.
+- The TUI and its PTY tests are intricate and brittle. When a PTY test flakes, find and explain the cause before fixing it, and prefer simplifying the code over adding delays, retries, or special cases.
 - Run `./tests/run` outside your sandbox. Fence can't nest inside another sandbox, so some tests fail there.
 - In zsh, avoid names that collide with special parameters such as `status` and `commands`. When a command substitution's exit status matters, declare the variable first and assign it separately.
 - Treat the worktree as shared. Only `git checkout`, `restore`, `reset`, or `stash` with user permission. Never discard or hide another agent's changes.
