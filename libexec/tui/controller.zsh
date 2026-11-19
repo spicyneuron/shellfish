@@ -517,8 +517,8 @@ sf_tui_controller() {
 
   while (( ! exit_status )); do
     [[ $SF_TUI_ACTION == epoch ]] || SF_TUI_ACTION=''
-    stty intr undef 2>/dev/null || { exit_status=1; break; }
     {
+      stty intr undef 2>/dev/null || { exit_status=1; break; }
       if vared -h -M sf-present -p "$PROMPT" input; then
         editor_status=0
       else
