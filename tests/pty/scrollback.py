@@ -77,10 +77,10 @@ class Terminal:
         if not self.turn_finished() and "agent" in self.scrollback().lower():
             self.agent_committed_mid_turn = True
 
-    def turn_finished(self):
+    def turn_finished(self, footer=r" · [\d.]+[km]? ↑"):
         frame = self.frame()
         return (
-            re.search(r" · [\d.]+[km]? ↑", frame) is not None
+            re.search(footer, frame) is not None
             and not any(mark in frame for mark in ("⡀", "⡄", "⠆", "⠃", "⠁"))
         )
 
@@ -510,7 +510,9 @@ def test_idle_editor_fallback():
         session = Session(env={"VISUAL": "", "EDITOR": f'"{editor}" --draft'})
         terminal = Terminal(session)
         try:
-            session.wait_session_records(1)
+            # The header can reach disk before chat stops its startup activity.
+            terminal.wait_for("idle startup prompt",
+                              lambda: terminal.turn_finished(r"provider/fake-model"))
             session.send(b"unsent\x07")
             terminal.wait_for("idle edited draft",
                               lambda: "❯ idle replacement" in terminal.frame())
