@@ -437,9 +437,10 @@ sf_tui_load() {
 sf_tui_resume() {
   setopt localoptions localtraps no_monitor no_notify
   local worker
-  integer load_status=0
-  trap 'return 130' INT
-  trap 'return 143' TERM
+  integer load_status=0 signal_status=0
+  # A trap's return can stop inside a nested loader function.
+  trap 'signal_status=130; return 130' INT
+  trap 'signal_status=143; return 143' TERM
   sf_tui_loading_frame "$SF_TUI_ACTIVITY_FRAMES[1]"
   sf_tui_loading &
   worker=$!
@@ -450,7 +451,7 @@ sf_tui_resume() {
     wait "$worker" 2>/dev/null || true
     print -rn -- $'\r\e[2K'
   }
-  return $load_status
+  return $(( signal_status ? signal_status : load_status ))
 }
 
 sf_tui_controller() {
@@ -495,7 +496,8 @@ sf_tui_controller() {
     return 1
   }
   [[ $session_mode == startup ]] || sf_tui_resume "$session" || return
-  PROMPT=''
+  # ZLE invalidation temporarily allows tty echo, which can move the cursor.
+  PROMPT=$'%{\r%}'
   saved_tty=$(stty -g 2>/dev/null) || return 1
   SF_TUI_TTY=$saved_tty
   if [[ -n $initial ]]; then

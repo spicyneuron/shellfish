@@ -29,8 +29,8 @@ sf_tui_terminal_reset() {
 
 sf_tui_terminal_sync_start() {
   (( ! SF_TUI_SYNC_ACTIVE )) || return 0
-  SF_TUI_SYNC_ACTIVE=1
   if [[ -o zle ]]; then
+    SF_TUI_SYNC_ACTIVE=1
     print -rn -- $'\e[?2026h'
   fi
   return 0
@@ -39,9 +39,10 @@ sf_tui_terminal_sync_start() {
 sf_tui_terminal_sync_end() {
   local force=${1-}
   (( SF_TUI_SYNC_ACTIVE )) || return 0
-  SF_TUI_SYNC_ACTIVE=0
   if [[ -o zle || $force == force ]]; then
     print -rn -- $'\e[?2026l'
+    # SIGTERM must still close the frame if it interrupts the write.
+    SF_TUI_SYNC_ACTIVE=0
   fi
   return 0
 }

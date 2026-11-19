@@ -4,12 +4,11 @@ import json
 import os
 import sys
 import tempfile
-import termios
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _session import Session, run  # noqa: E402
+from _session import Session, assert_terminal_restored, run  # noqa: E402
 
 SWITCH_HOOK = r"""#!/usr/bin/env zsh
 emulate -R zsh
@@ -216,7 +215,7 @@ def test_prompt_hook_hands_off_to_another_session():
         session.close()
 
 
-def test_handoff_runs_command_on_path_and_restores_interrupt():
+def test_handoff_runs_command_on_path_and_restores_terminal():
     with tempfile.TemporaryDirectory() as directory:
         command = Path(directory) / "sf-handoff-probe"
         marker = Path(directory) / "ran"
@@ -234,12 +233,12 @@ jq -cn --arg path '%s' '{action:"handoff",argv:["sf-handoff-probe",$path]}' >&3
             while not marker.exists() and time.monotonic() < end:
                 session.pump()
             assert marker.exists(), session.visible()[-1000:]
-            assert termios.tcgetattr(session.fd)[6][termios.VINTR] == b"\x03"
+            assert_terminal_restored(session.fd, session.initial_tty)
         finally:
             session.close()
 
 
-def test_failed_handoff_restores_interrupt():
+def test_failed_handoff_restores_terminal():
     hook = """#!/bin/sh
 cat >/dev/null
 printf '%s\\n' '{"action":"handoff","argv":["sf-missing-handoff-command"]}' >&3
@@ -255,7 +254,7 @@ printf '%s\\n' '{"action":"handoff","argv":["sf-missing-handoff-command"]}' >&3
             session.pump()
         assert result is not None, session.visible()[-1000:]
         assert result.si_status == 127, result
-        assert termios.tcgetattr(session.fd)[6][termios.VINTR] == b"\x03"
+        assert_terminal_restored(session.fd, session.initial_tty)
     finally:
         session.close()
 
@@ -327,8 +326,8 @@ if __name__ == "__main__":
         test_blocked_prompt_notice_is_unnumbered,
         test_help_shows_its_full_listing,
         test_prompt_hook_hands_off_to_another_session,
-        test_handoff_runs_command_on_path_and_restores_interrupt,
-        test_failed_handoff_restores_interrupt,
+        test_handoff_runs_command_on_path_and_restores_terminal,
+        test_failed_handoff_restores_terminal,
         test_prompt_hook_hands_off_to_new_session,
         test_fork_restores_removed_user_prompt_as_draft,
         test_rewind_truncates_session_and_restores_prompt_as_draft,

@@ -6,6 +6,7 @@ import os
 import pty
 import re
 import select
+import shlex
 import shutil
 import signal
 import subprocess
@@ -17,7 +18,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _session import APP, COLUMNS, ROWS, THEME, Session, run  # noqa: E402
+from _session import APP, COLUMNS, ROWS, THEME, Session, assert_terminal_restored, run  # noqa: E402
 
 
 ECHO_HOOK = r"""#!/usr/bin/env zsh
@@ -90,21 +91,20 @@ def test_slash_command_completion():
     try:
         path, _ = session.wait_session_records(1)
         submitted = path.parent / "submitted"
-        session.settle()
+        session.wait("provider/fake-model")
         mark = len(session.output)
         session.send(b"/qu\t")
         session.wait_screen(mark, "─ completions ")
         if session.screen() is not None:
+            session.wait_screen(mark, "  /queue", "  /quit", "provider/fake-model")
             lines = session.screen().splitlines()
             assert lines.index("  /queue".ljust(COLUMNS)) < lines.index("  /quit".ljust(COLUMNS))
-            assert "provider/fake-model" in session.screen()
         for key in (b"\x1b", b"\x02", b"X"):
             mark = len(session.output)
             session.send(key)
-            session.wait_screen(mark, "provider/fake-model")
-            session.settle()
             if session.screen() is not None:
-                assert "─ completions " not in session.screen()
+                session.wait_for(lambda: "─ completions " not in session.screen(),
+                                 "completion drawer closing")
             session.send(b"\x15/qu\t")
             session.wait_screen(mark, "─ completions ")
         session.send(b"\x15")
@@ -112,23 +112,23 @@ def test_slash_command_completion():
         session.send(b"/\t")
         session.wait_screen(mark, "─ completions (6) ")
         if session.screen() is not None:
-            assert "/fork" in session.screen() and "/help" in session.screen()
-            assert "provider/fake-model" in session.screen()
+            session.wait_screen(mark, "/fork", "/help", "provider/fake-model")
         for rows in (ROWS + 4, ROWS):
+            mark = len(session.output)
             fcntl.ioctl(session.fd, termios.TIOCSWINSZ,
                         struct.pack("HHHH", rows, COLUMNS, 0, 0))
-            session.settle()
+            session.wait_after(mark, "─ completions (6) ")
             session.wait_screen(mark, "─ completions (6) ")
         mark = len(session.output)
         session.send(b"\t")
         session.wait_screen(mark, "─ completions (1/6) ")
         if session.screen() is not None:
-            assert "▸ /fork" in session.screen() and "❯ /fork" in session.screen()
+            session.wait_screen(mark, "▸ /fork", "❯ /fork")
         mark = len(session.output)
         session.send(b"\x1b[Z\x1b[Z")
         session.wait_screen(mark, "─ completions (5/6) ")
         if session.screen() is not None:
-            assert "▸ /refresh" in session.screen() and "❯ /refresh" in session.screen()
+            session.wait_screen(mark, "▸ /refresh", "❯ /refresh")
         session.send(b"\x15")
         (session.project_dir / "notes.md").write_text("")
         (session.project_dir / "src").mkdir()
@@ -177,18 +177,17 @@ def test_completion_drawer_during_streaming():
         session.wait_session_records(2, path=session.explicit_session)
         session.wait_after(mark, "stream0")
         session.send(b"queued\r/qu\t")
-        session.wait_screen(mark, "─ queue ")
-        session.wait_screen(mark, "─ completions ")
+        session.wait_screen(mark, "─ queue ", "─ completions ")
         if session.screen() is not None:
-            assert "1. queued" in session.screen()
-            assert "/queue" in session.screen() and "/quit" in session.screen()
-            assert "provider/fake-model" in session.screen()
+            session.wait_screen(mark, "1. queued", "/queue", "/quit", "provider/fake-model")
         session.wait_session_records(5, timeout=8, path=session.explicit_session)
-        session.settle()
         if session.screen() is not None:
-            assert "─ queue " not in session.screen()
-            assert "─ completions " in session.screen()
-            assert "❯ /qu" in session.screen()
+            def only_completion_drawer():
+                screen = session.screen()
+                return ("─ queue " not in screen and "─ completions " in screen
+                        and "❯ /qu" in screen)
+
+            session.wait_for(only_completion_drawer, "completion drawer after queue drains")
         session.send(b"X\r")
         _, records = session.wait_session_records(6, path=session.explicit_session)
         assert records[5]["content"][0]["text"] == "/quX"
@@ -287,16 +286,28 @@ def test_tool_uses_manifest_display():
         session.close()
 
 
-def test_activity_input_does_not_delay_interrupt():
+def start_delayed_turn():
     session = Session(
         explicit_session=True,
-        env={"SF_TEST_PROVIDER_DELAY_MATCH_SECONDS": "2"},
+        env={
+            "SF_TEST_PROVIDER_DELAY_MATCH_SECONDS": "30",
+            "SF_TEST_PROVIDER_REQUEST": "provider-request.json",
+        },
     )
     try:
-        mark = len(session.output)
         session.send(b"delay response\r")
-        session.wait_session_records(2, path=session.explicit_session)
+        session.wait_for((session.project_dir / "provider-request.json").exists,
+                         "provider receiving the delayed turn")
+    except Exception:
+        session.close()
+        raise
+    return session
 
+
+def test_activity_input_does_not_delay_interrupt():
+    session = start_delayed_turn()
+    try:
+        mark = len(session.output)
         # The heartbeat must forward adjacent input and interrupt bytes.
         session.send(b"draft\x03")
         session.wait_after(mark, "Cancelled.", timeout=1.5)
@@ -309,41 +320,34 @@ def test_activity_input_does_not_delay_interrupt():
 
 def test_steer_cancels_and_sends_draft():
     for key in (b"\x18", b"\x1b[13;5u", b"\x1b[13;9u"):
-        session = Session(
-            explicit_session=True,
-            env={"SF_TEST_PROVIDER_DELAY_MATCH_SECONDS": "2"},
-        )
+        session = start_delayed_turn()
         try:
-            session.send(b"delay response\r")
-            path, _ = session.wait_session_records(2, path=session.explicit_session)
-            session.send(b"later\rsteer now" + key)
-            _, records = session.wait_session_records(7, path=path)
+            mark = len(session.output)
+            session.send(b"later\r")
+            session.wait_screen(mark, "1. later")
+            session.send(b"steer now" + key)
+            _, records = session.wait_session_records(7, timeout=5, path=session.explicit_session)
             prompts = [
                 record["content"][0]["text"]
                 for record in records if record["type"] == "user"
             ]
             assert prompts == ["delay response", "steer now", "later"], prompts
             assert records[-1]["type"] == "assistant", records
-            assert records[2] in (
-                {"type": "error", "section": 2, "user_text": "Cancelled."},
-                {"type": "error", "section": 2, "user_text": "Turn interrupted."},
-            ), (key, records)
+            assert records[2] == {
+                "type": "error", "section": 2, "user_text": "Cancelled.",
+            }, (key, records)
         finally:
             session.close()
 
 
 def test_interrupt_preserves_queue_until_send_now():
-    session = Session(
-        explicit_session=True,
-        env={"SF_TEST_PROVIDER_DELAY_MATCH_SECONDS": "2"},
-    )
+    session = start_delayed_turn()
     try:
-        session.send(b"delay response\r")
-        path, _ = session.wait_session_records(2, path=session.explicit_session)
+        path = session.explicit_session
         mark = len(session.output)
         session.send(b"first\rsecond\r\x03")
         session.wait_after(mark, "Cancelled.", timeout=1.5)
-        session.pump(0.2)
+        session.wait_screen(mark, "2. second")
         _, records = session.wait_session_records(3, path=path)
         prompts = [
             record["content"][0]["text"]
@@ -418,11 +422,16 @@ def test_permission_decision_restores_draft():
         release.touch()
         session.wait_after(mark, "Allow shell outside of sandbox?")
         session.wait_after(mark, "2. [d]eny and continue (120s)")
+        session.wait_for(
+            lambda: not termios.tcgetattr(session.fd)[3] & (termios.ECHO | termios.ICANON)
+            and session.output.rfind(b"\x1b[?2026l") >= session.output.rfind(b"\x1b[?2026h"),
+            "permission prompt accepting input after redraw",
+        )
         session.send(b"d")
 
         # The silent prompt hook records nothing before the turn.
         _, records = session.wait_session_records(5, path=session.explicit_session)
-        session.wait_after(mark, "Tool complete.")
+        session.wait_screen(mark, "Tool complete.")
         edit = len(session.output)
         session.send(b"X\x0c")
         session.wait_after(edit, draft + "X", view=session.typed)
@@ -475,7 +484,7 @@ print -r -u3 -- '{"action":"allow","reason":"ok"}'
                 session.send(b"x")
                 session.wait_screen(mark, "[d]eny and continue (")
                 session.send(b"d")
-            session.wait_after(mark, "Tool complete.")
+            session.wait_screen(mark, "Tool complete.")
             _, records = session.wait_session_records(5, path=session.explicit_session)
             results = [r for r in records if r.get("type") == "tool_result"]
             assert len(results) == 1
@@ -569,7 +578,7 @@ def test_chat_end():
         session = Session()
         try:
             path, _ = session.wait_session_records(1)
-            session.settle()
+            session.wait("provider/fake-model")
             mark = len(session.output)
             session.send(submitted)
             session.wait_after(mark, str(path))
@@ -589,30 +598,46 @@ def test_chat_end():
             session.close()
 
 
+def hold_projection(directory):
+    directory = Path(directory)
+    release = directory / "release"
+    wrapper = directory / "jq"
+    wrapper.write_text(
+        '#!/bin/sh\n'
+        'case "$*" in *libexec/tui/project.jq*)\n'
+        f'  while [ ! -e {shlex.quote(str(release))} ]; do sleep 0.02; done;;\n'
+        'esac\n'
+        f'exec {shlex.quote(shutil.which("jq"))} "$@"\n'
+    )
+    wrapper.chmod(0o755)
+    return release, str(directory) + ":" + os.environ["PATH"]
+
+
 def test_resume_loading():
     fixture = Path(__file__).resolve().parents[1] / "fixtures/session/complete.jsonl"
     records = [json.loads(line) for line in fixture.read_text().splitlines()]
     with tempfile.TemporaryDirectory() as directory:
-        # Delay the external parser, not the renderer or its activity worker.
-        wrapper = Path(directory) / "jq"
-        wrapper.write_text(
-            '#!/bin/sh\ncase "$*" in *libexec/tui/project.jq*) sleep 0.7;; esac\n'
-            f'exec "{shutil.which("jq")}" "$@"\n'
-        )
-        wrapper.chmod(0o755)
-        session = Session(explicit_session=True, session_records=records,
-                          env={"PATH": directory + ":" + os.environ["PATH"]})
+        release, path = hold_projection(directory)
+        session = None
         try:
+            session = Session(explicit_session=True, session_records=records,
+                              env={"PATH": path}, startup_token="Loading session…")
+            session.wait("⠃ Loading session…")
+            session.wait("⠆ Loading session…")
+            session.wait_for(lambda: session.output.count("Loading session…".encode()) >= 3,
+                             "a third loading frame")
+            mark = len(session.output)
+            release.touch()
+            session.wait_after(mark, "test/fake-model")
             output = bytes(session.output).decode("utf-8", "replace")
             assert output.index("Session:") < output.index("Loading session…")
-            assert output.count("Loading session…") >= 3, output
-            assert "⠃ Loading session…" in output and "⠆ Loading session…" in output
             assert "\r\x1b[2K" in output[output.rfind("Loading session…"):]
-            session.settle()
             assert "Loading session…" not in (session.screen() or "")
             assert [json.loads(line) for line in session.explicit_session.read_text().splitlines()] == records
         finally:
-            session.close()
+            release.touch()
+            if session is not None:
+                session.close()
 
 
 def test_sigterm_leaves_terminal_state(loading=False):
@@ -652,13 +677,7 @@ def test_sigterm_leaves_terminal_state(loading=False):
     env["SHELLFISH_DIR"] = str(shellfish_dir)
     env["HOME"] = config_dir.name
     if loading:
-        wrapper = Path(config_dir.name) / "jq"
-        wrapper.write_text(
-            '#!/bin/sh\ncase "$*" in *libexec/tui/project.jq*) sleep 0.7;; esac\n'
-            f'exec "{shutil.which("jq")}" "$@"\n'
-        )
-        wrapper.chmod(0o755)
-        env["PATH"] = config_dir.name + ":" + env["PATH"]
+        release, env["PATH"] = hold_projection(config_dir.name)
     process = subprocess.Popen(
         [APP, "--session", str(session_file)],
         stdin=slave, stdout=slave, stderr=slave, env=env,
@@ -671,22 +690,21 @@ def test_sigterm_leaves_terminal_state(loading=False):
             ready, _, _ = select.select([master], [], [], 0.05)
             if ready:
                 output += os.read(master, 65536)
-            if loading and b"Loading session" in output:
+            if loading and output.count(b"Loading session") >= 2:
                 break
             if not loading and output.count(b"\x1b[?2026h") > output.count(b"\x1b[?2026l"):
                 break
         if loading:
-            assert b"Loading session" in output
+            assert output.count(b"Loading session") >= 2
         else:
             assert output.count(b"\x1b[?2026h") > output.count(b"\x1b[?2026l"), (
                 "chat never entered synchronized output"
             )
         all_output = output
 
-        if not loading:
-            assert not termios.tcgetattr(slave)[3] & termios.ICANON
-
         process.send_signal(signal.SIGTERM)
+        if loading:
+            release.touch()
         end = time.monotonic() + 1
         while process.poll() is None and time.monotonic() < end:
             if select.select([master], [], [], 0.02)[0]:
@@ -694,7 +712,7 @@ def test_sigterm_leaves_terminal_state(loading=False):
                     all_output += os.read(master, 65536)
                 except OSError:
                     pass
-        assert process.poll() == 143
+        assert process.poll() == 143, (process.poll(), all_output[-1500:])
         # Process exit can be observed before its final terminal bytes are read.
         while select.select([master], [], [], 0)[0]:
             try:
@@ -704,15 +722,16 @@ def test_sigterm_leaves_terminal_state(loading=False):
             if not chunk:
                 break
             all_output += chunk
-        assert before[6][termios.VINTR] == termios.tcgetattr(slave)[6][termios.VINTR]
-        sync_starts = all_output.count(b"\x1b[?2026h")
-        sync_ends = all_output.count(b"\x1b[?2026l")
-        assert (loading or sync_starts > 0) and sync_starts == sync_ends, (
-            f"unbalanced synchronized output: {sync_starts} starts, {sync_ends} ends"
+        assert_terminal_restored(slave, before)
+        sync = re.findall(rb"\x1b\[\?2026([hl])", all_output)
+        assert (loading or b"h" in sync) and sync[-1:] != [b"h"], (
+            f"synchronized output still enabled at exit: {sync}"
         )
         if loading:
             assert all_output.endswith(b"\r\x1b[2K"), all_output
     finally:
+        if loading:
+            release.touch()
         if process.poll() is None:
             process.kill()
             process.wait()

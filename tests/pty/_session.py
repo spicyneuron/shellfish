@@ -37,6 +37,14 @@ THEME = {
 }
 
 
+def assert_terminal_restored(fd, before):
+    after = termios.tcgetattr(fd)
+    for name in ("ICANON", "ECHO", "ISIG"):
+        flag = getattr(termios, name)
+        assert after[3] & flag == before[3] & flag, f"{name} was not restored"
+    assert after[6][termios.VINTR] == before[6][termios.VINTR], "VINTR was not restored"
+
+
 def run(label, tests):
     """Run every independent scenario before reporting failures."""
     failures = 0
@@ -55,7 +63,8 @@ def run(label, tests):
 
 class Session:
     def __init__(self, explicit_session=False, hooks=None, env=None, args=None,
-                 session_start=None, session_records=None, commands=None, stdin=None):
+                 session_start=None, session_records=None, commands=None, stdin=None,
+                 startup_token=None):
         env_overrides = env or {}
         self.state_home = tempfile.TemporaryDirectory()
         self.project_home = tempfile.TemporaryDirectory(prefix="shellfish-pty.")
@@ -116,8 +125,12 @@ class Session:
             self.explicit_session.write_text(
                 "".join(json.dumps(record) + "\n" for record in session_records)
             )
+        start, release = os.pipe()
         pid, fd = pty.fork()
         if pid == 0:
+            os.close(release)
+            os.read(start, 1)
+            os.close(start)
             env = os.environ.copy()
             env.pop("NO_COLOR", None)
             env.update(
@@ -152,14 +165,20 @@ class Session:
             os.execve(APP, argv, env)
         self.pid = pid
         self.fd = fd
+        os.close(start)
         # A 0x0 window disables wrapping and scrollback flushing.
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLUMNS, 0, 0))
         attrs = termios.tcgetattr(fd)
         attrs[3] |= termios.TOSTOP
         termios.tcsetattr(fd, termios.TCSANOW, attrs)
+        self.initial_tty = termios.tcgetattr(fd)
+        os.close(release)
         self.output = bytearray()
         try:
-            self.wait_ready()
+            if startup_token is None:
+                self.wait_ready()
+            else:
+                self.wait(startup_token)
         except Exception:
             self.close()
             raise
@@ -200,19 +219,23 @@ class Session:
         pyte.ByteStream(screen).feed(bytes(self.output))
         return "\n".join(screen.display)
 
-    def wait_screen(self, start, token, timeout=3):
-        """Wait for TOKEN on the rendered screen.
+    def wait_screen(self, start, *tokens, timeout=3):
+        """Wait for the tokens to be present together on the rendered screen.
 
         zle rewrites only the changed part of a line, so a line's full text may
         never appear in the output. Without pyte, search the output after START.
         """
-        if self.screen() is None:
-            return self.wait_after(start, token, timeout)
+        screen = self.screen()
+        if screen is None:
+            for token in tokens:
+                self.wait_after(start, token, timeout)
+            return
         end = time.monotonic() + timeout
-        while token not in self.screen() and time.monotonic() < end:
+        while not all(token in screen for token in tokens):
+            if time.monotonic() >= end:
+                raise AssertionError(f"did not show {tokens!r}\n{screen}")
             self.pump()
-        if token not in self.screen():
-            raise AssertionError(f"did not show {token!r}\n{self.screen()}")
+            screen = self.screen()
 
     def wait_ready(self, start=0, timeout=3):
         end = time.monotonic() + timeout
@@ -226,9 +249,13 @@ class Session:
             self.pump()
         raise AssertionError(f"did not render a ready prompt\n{self.visible(start)[-1500:]}")
 
-    def settle(self, seconds=0.3):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
+    def wait_for(self, predicate, description, timeout=5):
+        end = time.monotonic() + timeout
+        while True:
+            if predicate():
+                return
+            if time.monotonic() >= end:
+                raise AssertionError(f"did not observe {description}\n{self.visible()[-1500:]}")
             self.pump()
 
     def send(self, value):
@@ -255,11 +282,13 @@ class Session:
                 else list(self.shellfish_dir.glob("sessions/**/*.jsonl"))
             )
             if len(paths) == 1 and paths[0].exists():
-                records = [json.loads(line) for line in paths[0].read_text().splitlines()]
+                # The writer may still be appending the last record.
+                complete = paths[0].read_text().rpartition("\n")[0]
+                records = [json.loads(line) for line in complete.splitlines()]
                 if len(records) >= count:
                     return paths[0], records
             self.pump(0.02)
-        raise AssertionError(f"session did not reach {count} records")
+        raise AssertionError(f"session did not reach {count} records\n{self.visible()[-1500:]}")
 
     def close(self):
         try:

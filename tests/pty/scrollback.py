@@ -5,7 +5,9 @@ import os
 import re
 import sys
 import tempfile
+import termios
 import time
+from collections import Counter
 from pathlib import Path
 
 try:
@@ -204,11 +206,17 @@ def test_tall_turn_loses_neither_text_nor_draft():
             "nothing here shows commits landing progressively" + terminal.dump())
         # Require stream progress between keys across commit epochs.
         def echoed_words():
-            text = terminal.everything()
-            return sum(text.count(word) >= 2 for word in WORDS)
+            counts = Counter(terminal.everything().split())
+            return sum(counts[word] >= 2 for word in WORDS)
 
         before = echoed_words()
         assert before < len(WORDS), "turn finished before typing probe" + terminal.dump()
+        # ZLE briefly allows kernel echo while handing rows to scrollback.
+        # Sample the tty directly, not the timing of any escape sequence.
+        deadline = time.monotonic() + 2
+        while not termios.tcgetattr(session.fd)[3] & termios.ECHO:
+            assert time.monotonic() < deadline, "tty never enabled echo during a commit"
+            session.pump(0)
         session.send(b"d")
         terminal.wait_for("the stream to progress after one typed key",
                           lambda: echoed_words() > before)
@@ -240,7 +248,9 @@ def test_tall_turn_loses_neither_text_nor_draft():
             assert count == 1, f"{heading} committed {count} times" + terminal.dump()
         # Submitting flushes output withheld by the clamp.
         session.send(b"\r")
-        session.wait_session_records(5, path=session_path)
+        _, records = session.wait_session_records(5, path=session_path)
+        assert records[3]["type"] == "user", records[3]
+        assert records[3]["content"] == [{"type": "text", "text": "done"}], records[3]
         terminal.wait_for(
             "the second turn to finish rendering",
             lambda: terminal.turn_finished()
@@ -249,16 +259,15 @@ def test_tall_turn_loses_neither_text_nor_draft():
             and terminal.everything().lower().count("─ agent ─") == 2,
         )
 
-        # Completed turns can still have rows queued behind the live viewport.
-        terminal.wait_for("all queued rows to reach the terminal",
-                          lambda: all(terminal.everything().count(word) >= 2
-                                      for word in WORDS))
-        # Each word appears in both the user block and agent echo.
-        text = terminal.everything()
-        lost = [word for word in WORDS if text.count(word) < 2]
-        assert not lost, (
-            f"{len(lost)} of {len(WORDS)} words lost: {lost[:8]}" + terminal.dump()
-        )
+        # The second turn can render before the previous reply finishes draining.
+        def reply_rows():
+            rows = terminal.screen.scrolled + terminal.screen.display
+            start = next(i for i, row in enumerate(rows) if row.startswith("─ agent ─"))
+            end = next((i for i, row in enumerate(rows) if i > start
+                        and row.startswith("─ user ─")), len(rows))
+            return [row.strip() for row in rows[start + 1:end] if row.strip()]
+
+        terminal.wait_for("all reply rows intact and in order", lambda: reply_rows() == WORDS)
         print(f"PASS clamp: {len(WORDS)} words survived a turn taller than {ROWS} rows")
     finally:
         session.close()
@@ -393,18 +402,19 @@ def test_permission_keys_do_not_edit():
             "permission prompt",
             lambda: "2. [d]eny and continue (119s)" in terminal.frame(),
         )
-        for key in (b"xyz", b"\x1b[A", b"\x1bOA", b"\x10", b"\x0e",
-                    b"\x1b[1;1A", b"\x1b[1;1B", b"\x1b[13;2u",
-                    b"\x1b[3;5~", b"\x12", b"\x19", b"\x04", b"\x1bx",
-                    b"\x1b[200~a1s3\x1b[201~", b"\r"):
-            session.send(key)
-            end = time.monotonic() + 0.15
-            while time.monotonic() < end:
-                terminal.pump()
-            frame = terminal.frame()
-            assert "3. [s]top and discuss" in frame, terminal.dump()
-            tail = frame.split("3. [s]top and discuss", 1)[1]
-            assert not tail.split("─", 1)[0].strip(), terminal.dump()
+        session.send(
+            b"xyz\x1b[A\x1bOA\x10\x0e\x1b[1;1A\x1b[1;1B\x1b[13;2u"
+            b"\x1b[3;5~\x12\x19\x04\x1bx\x1b[200~a1s3\x1b[201~\r"
+        )
+        for seconds in (120, 119):
+            terminal.wait_for(
+                f"permission countdown after taking control ({seconds}s)",
+                lambda: f"2. [d]eny and continue ({seconds}s)" in terminal.frame(),
+            )
+        frame = terminal.frame()
+        assert "3. [s]top and discuss" in frame, terminal.dump()
+        tail = frame.split("3. [s]top and discuss", 1)[1]
+        assert not tail.split("─", 1)[0].strip(), terminal.dump()
         session.send(b"d")
         terminal.wait_for(
             "tool completion",
