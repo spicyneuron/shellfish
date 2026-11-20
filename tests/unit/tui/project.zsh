@@ -72,6 +72,7 @@ typeset briefed=$(jq -c '.profile.system = [{text:"be brief"}]' <<<"$header")
 project load "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
 assert_equal 'cwd | /fixture
 commands
+hook_completions
 details |  |  |  |  |  |
 identity | test/fake-model
 message_start | system
@@ -84,6 +85,7 @@ prompt | Hello' "$REPLY"
 project live "$briefed" '{"type":"user","content":[{"type":"text","text":"Hello"}]}'
 assert_equal 'cwd | /fixture
 commands
+hook_completions
 details |  |  |  |  |  |
 identity | test/fake-model
 message_start | user
@@ -187,10 +189,12 @@ assert_equal 'error | Cancelled. | stopped by the user' "$REPLY"
 project load "$header"
 assert_equal 'cwd | /fixture
 commands
+hook_completions
 details |  |  |  |  |  |
 identity | test/fake-model' "$REPLY"
 project live "$update"
 assert_equal 'commands
+hook_completions
 identity | test/fake-model' "$REPLY"
 project live '{"type":"_assistant_start"}' \
   '{"type":"assistant","stop":"end","content":[],"usage":{"input_tokens":75,"cached_tokens":15,"output_tokens":5}}'
@@ -207,6 +211,7 @@ typeset equipped=$(jq -c '.profile += {tools:["@tools/read_file","/x/tools/shell
 project live "$equipped"
 assert_equal 'cwd | /fixture
 commands
+hook_completions | @hooks/project/environment
 details | read_file, shell |  | project/environment | 2 | 1 | 1
 identity | test/fake-model' "$REPLY"
 

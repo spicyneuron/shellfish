@@ -522,7 +522,19 @@ sf_tui_complete_files() {
   sf_tui_complete_range $(( CURSOR - ${#word} )) $CURSOR "${(@u)paths/#/@}"
 }
 
-# Completes the word ending at the cursor: a leading slash command or an @path.
+sf_tui_complete_hook() {
+  local word=$1 candidates candidate
+  local -a matches=()
+  [[ -n $SF_TUI_SESSION ]] || return 0
+  candidates=$("$SF_ENTRY" complete --session "$SF_TUI_SESSION" "$word" 2>/dev/null) || return 0
+  for candidate in ${(f)candidates}; do
+    [[ $candidate == "$word"* && $candidate != *[[:space:][:cntrl:]]* ]] || continue
+    matches+=( "$candidate" )
+  done
+  sf_tui_complete_range $(( CURSOR - ${#word} )) $CURSOR "${(@u)matches}"
+}
+
+# Complete the word ending at the cursor.
 sf_tui_complete() {
   local word
   if (( ${#SF_TUI_COMPLETIONS} )); then
@@ -535,6 +547,8 @@ sf_tui_complete() {
     sf_tui_complete_range 0 $CURSOR ${(M)SF_TUI_COMMANDS:#${(b)word}*}
   elif [[ $word == @* ]]; then
     sf_tui_complete_files "$word"
+  elif (( ${SF_TUI_COMPLETION_PREFIXES[(Ie)${word[1]}]} )); then
+    sf_tui_complete_hook "$word"
   fi
 }
 

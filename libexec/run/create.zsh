@@ -38,8 +38,8 @@ sf_run_create() {
       return 2
     }
     sf_session_select_path "$source_session" || { sf_die "$SF_ERROR"; return 1; }
-    sf_session_read_config "$REPLY" || { sf_die "$SF_ERROR"; return 1; }
-    config=$REPLY
+    sf_session_read_header "$REPLY" || { sf_die "$SF_ERROR"; return 1; }
+    config=$(jq -c '{profile,model}' <<<"$REPLY") || return 1
   else
     sf_profile_resolve_args "${forwarded[@]}" || {
       resolve_status=$?

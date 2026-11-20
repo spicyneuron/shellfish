@@ -8,6 +8,7 @@ Usage:
   shellfish init                     Write starter config into the Shellfish directory
   shellfish request [-m REF|JSON]    Respond once to the transcript on stdin as JSON
   shellfish decide -m REF|JSON       Answer the decision on stdin as JSON
+  shellfish complete --session PATH TOKEN  Print hook completion candidates
 
 General:
   -h, --help           Show this help

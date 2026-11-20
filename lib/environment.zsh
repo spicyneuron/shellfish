@@ -82,3 +82,20 @@ sf_environment_settings() {
     SF_ENVIRONMENT_SETTINGS[${entry%%=*}]=${entry#*=}
   done
 }
+
+# Session environment shared by lifecycle hooks and their completers.
+sf_environment_hook() {
+  sf_environment_load || return
+  # Session values win over .env.
+  reply=(
+    "${(@)SF_ENVIRONMENT_VALUES:#SHELLFISH_TURN_(ID|STATE)=*}"
+    "SHELLFISH_SESSION=${1:A}"
+    "SHELLFISH_CONFIG=$2"
+    "SHELLFISH_MODEL=$3"
+    "SHELLFISH_EXECUTABLE=$SF_ENTRY"
+    "SHELLFISH_MODE=${SHELLFISH_MODE-}"
+    "SHELLFISH_VERBOSE=${SHELLFISH_VERBOSE:-0}"
+    "SHELLFISH_DIR=$REPLY"
+    "SHELLFISH_SHARE_DIR=$SF_SHARE"
+  )
+}

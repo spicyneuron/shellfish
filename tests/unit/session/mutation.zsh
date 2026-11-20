@@ -88,7 +88,7 @@ done
 assert_equal 'invalid session update' "$SF_ERROR"
 assert_equal "$unchanged" "$(cat "$session")"
 
-sf_session_read_config "$session" || fail "$SF_ERROR"
+sf_session_read_header "$session" || fail "$SF_ERROR"
 assert_equal 'invalid session update' "$SF_ERROR"
 jq -e '.profile.sandbox.tools.shell.filesystem.allowRead == ["/tmp/reference"] and .model.context_window == 1234' \
   <<<"$REPLY" >/dev/null

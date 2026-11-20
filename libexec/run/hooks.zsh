@@ -130,7 +130,7 @@ sf_run_hooks() {
   if [[ $1 == --poll ]]; then watch=( "$1" "$2" ); shift 2; fi
   local session=$1 lifecycle=$2 input_text=$3 turn_state=$4
   shift 4
-  local command input config_dir directory error='' control action='' reason='' payload=''
+  local command input directory error='' control action='' reason='' payload=''
   local kind=hooks
   local -a hooks environment content
   local -A SF_COMPONENT=() prepared
@@ -147,22 +147,10 @@ sf_run_hooks() {
     kind=commands hooks=( "$SF_HOOK_PLAN[command]" ) input_text=$SF_HOOK_PLAN[arguments]
   fi
   (( ${#hooks} )) || return 0
-  sf_environment_load || return
-  config_dir=$REPLY
+  sf_environment_hook "$session" "$SF_RUN[config]" "$SF_HOOK_PLAN[model]" || return
+  environment=( "${reply[@]}" )
   sf_scratch hook-input || { sf_fail "cannot prepare $lifecycle hook input"; return; }
   input=${REPLY:A}
-  # Core values follow configured values so that they win.
-  environment=(
-    "${SF_ENVIRONMENT_VALUES[@]}"
-    "SHELLFISH_SESSION=${session:A}"
-    "SHELLFISH_CONFIG=$SF_RUN[config]"
-    "SHELLFISH_MODEL=$SF_HOOK_PLAN[model]"
-    "SHELLFISH_EXECUTABLE=$SF_ENTRY"
-    "SHELLFISH_MODE=${SHELLFISH_MODE-}"
-    "SHELLFISH_VERBOSE=${SHELLFISH_VERBOSE:-0}"
-    "SHELLFISH_DIR=$config_dir"
-    "SHELLFISH_SHARE_DIR=$SF_SHARE"
-  )
   [[ $kind != commands ]] || environment+=( "SHELLFISH_COMMANDS=$SF_HOOK_PLAN[catalog]" )
   if [[ $lifecycle != session_start ]]; then
     environment+=( "SHELLFISH_TURN_ID=$SF_RUN[turn_id]" "SHELLFISH_TURN_STATE=$turn_state" )

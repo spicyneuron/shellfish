@@ -137,7 +137,7 @@ fi
   -p inline -m "$tmp/frozen-model.jsonc" >/dev/null
 sf_test_profile inline '{"config":{"example":"changed"}}'
 print -r -- '{"config":{"example":"changed"}}' >"$tmp/frozen-model.jsonc"
-sf_session_read_config "$tmp/config.jsonl"
+sf_session_read_header "$tmp/config.jsonl"
 jq -e '.profile.config == {example:{paths:["./data", "~/data", "@data"], values:[null,false,2]}} and
   .model.config == .profile.config' <<<"$REPLY" >/dev/null ||
   fail 'session configuration changed with its source files'

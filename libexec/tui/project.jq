@@ -36,7 +36,8 @@ def identity:
 
 def model_actions:
   [["identity", identity]];
-def commands_actions: [["commands"] + (.profile.commands // [])];
+def completion_actions:
+  [["commands"] + (.profile.commands // []), ["hook_completions"] + (.profile.hooks // [])];
 
 # Component names drop their directory prefix. A disabled sandbox has no
 # grant counts.
@@ -119,7 +120,7 @@ def record_actions($mode; $window; $drawn):
     [["execution_end", .id, hook_class, result_text, preview,
       (if has("section") then "agent" elif .lifecycle == "session_start" then "system" else "" end)] + section]
   elif .type == "session" then
-    [.cwd // empty | ["cwd", .]] + commands_actions + details_actions + model_actions +
+    [.cwd // empty | ["cwd", .]] + completion_actions + details_actions + model_actions +
     if $mode == "load" then message_actions("system"; .profile.system[0].text // "") else [] end
   elif .type == "state_update" then []
   else error("unsupported record: " + (.type | tostring))
@@ -152,7 +153,7 @@ def event_actions($window; $drawn):
     [["permission_update", .id, .decision, (.timeout | tostring)]]
   elif .type == "_tool_permission_end" then [["permission_end", .id]]
   elif .type == "_handoff" then [["handoff"] + .argv]
-  elif .type == "_session_update" then commands_actions + model_actions
+  elif .type == "_session_update" then completion_actions + model_actions
   elif .type == "_session_load" then [["session", .path]]
   else error("unsupported event: " + (.type | tostring))
   end;

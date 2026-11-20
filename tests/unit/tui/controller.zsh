@@ -33,6 +33,15 @@ sf_tui_commands
 assert_equal '/queue,/quit,/refresh,/verbose' "${(j:,:)SF_TUI_COMMANDS}"
 assert_equal 0 "${#SF_TUI_COMPLETIONS}"
 
+# Hook prefixes are cataloged independently and reset on a profile update.
+sf_test_hook "$tmp/hooks/example" '{"on":"stop","complete":"%"}' <<<'#!/bin/sh'
+sf_tui_apply hook_completions "$tmp/hooks/example" @hooks/skills/mention
+assert_equal '$,%' "${(j:,:)SF_TUI_COMPLETION_PREFIXES}"
+SF_TUI_COMPLETIONS=( '%example' )
+sf_tui_apply hook_completions
+assert_equal 0 "${#SF_TUI_COMPLETION_PREFIXES}"
+assert_equal 0 "${#SF_TUI_COMPLETIONS}"
+
 # File completion follows the header's stored working directory.
 HOME=$tmp sf_tui_apply cwd '~/project'
 assert_equal "${tmp:A}/project" "$SF_TUI_CWD"

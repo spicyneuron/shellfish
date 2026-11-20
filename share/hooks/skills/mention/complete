@@ -1,0 +1,13 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt no_aliases no_multios pipe_fail
+
+source "$SHELLFISH_SHARE_DIR/lib/skills.zsh" || exit 1
+sf_skills_discover "${SHELLFISH_DIR-}" "$PWD" true || exit 1
+typeset candidate
+integer index
+for (( index = 1; index <= ${#reply}; index += 3 )); do
+  candidate="\$$reply[index]"
+  [[ $candidate != "$1"* ]] || print -r -- "$candidate"
+done

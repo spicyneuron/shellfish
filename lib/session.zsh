@@ -42,8 +42,8 @@ sf_session_select_path() {
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 
-# The session's {profile, model} with absolute paths.
-sf_session_read_config() {
+# The session header with absolute paths.
+sf_session_read_header() {
   local session_path=$1 header
   [[ -f $session_path && ! -L $session_path && -r $session_path ]] || {
     sf_fail "invalid session path: $session_path"
@@ -56,7 +56,7 @@ sf_session_read_config() {
   REPLY=$(sf_jq -cnce --argjson header "$header" --arg share "$SF_SHARE" \
       --arg home "${HOME:+${HOME:A}}" '
     include "lib/profile";
-    $header | select(canonical_session_header) | header_expand($share; $home) | {profile, model}
+    $header | select(canonical_session_header) | header_expand($share; $home)
   ' 2>/dev/null) || {
     sf_fail "cannot read session header: $session_path"
     return

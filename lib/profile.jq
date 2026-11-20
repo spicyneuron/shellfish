@@ -56,7 +56,8 @@ def component_manifest($attrs; $fields):
 
 # "on" names the lifecycle a profile binds the hook to.
 def hook_manifest:
-  component_manifest(["match", "on"]; []) and
+  component_manifest(["complete", "match", "on"]; []) and
+  ((has("complete") | not) or (.complete | type == "string" and test("^[[:punct:]]\\z"))) and
   ((has("on") | not) or (.on | IN(hook_names[]))) and
   ((has("match") | not) or
     (.match | type == "object" and keys == ["pattern"] and

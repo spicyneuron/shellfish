@@ -23,24 +23,41 @@ typeset -grA SF_TUI_CLIENT_COMMANDS=(
   /quit /quit /q /quit /refresh /refresh /r /refresh /queue /queue
   /verbose /verbose /v /verbose )
 typeset -ga SF_TUI_COMMANDS=( ${(ovu)SF_TUI_CLIENT_COMMANDS} )
+typeset -ga SF_TUI_COMPLETION_PREFIXES=()
 
-# Arguments are the session header's stored command paths.
-sf_tui_commands() {
-  local reference profile names
+# Read the manifests for one kind of component from its stored paths.
+sf_tui_component_catalog() {
+  local kind=$1 reference profile
+  shift
+  if (( ! $# )); then REPLY='{}'; return 0; fi
   local -a directories=()
-  SF_TUI_COMPLETIONS=()
-  SF_TUI_COMMANDS=( ${(ovu)SF_TUI_CLIENT_COMMANDS} )
   for reference in "$@"; do
-    sf_cli_path "$reference" || return 0
+    sf_cli_path "$reference" || return 1
     directories+=( "$REPLY" )
   done
-  profile=$(jq -cn --args '{tools:[],hooks:[],commands:$ARGS.positional}' \
-    "${directories[@]}") || return 0
-  sf_profile_components "$profile" || return 0
-  names=$(jq -r '.commands[] | .name, (.manifest.aliases[]? | select(length > 1))' \
+  profile=$(jq -cn --arg kind "$kind" '{tools:[],hooks:[],commands:[],($kind):$ARGS.positional}' \
+    --args -- "${directories[@]}") || return 1
+  sf_profile_components "$profile"
+}
+
+sf_tui_commands() {
+  local names
+  SF_TUI_COMPLETIONS=()
+  SF_TUI_COMMANDS=( ${(ovu)SF_TUI_CLIENT_COMMANDS} )
+  sf_tui_component_catalog commands "$@" || return 0
+  names=$(jq -r '.commands[]? | .name, (.manifest.aliases[]? | select(length > 1))' \
     <<<"$REPLY") || return 0
   [[ -z $names ]] || SF_TUI_COMMANDS+=( ${${(f)names}/#//} )
   SF_TUI_COMMANDS=( ${(ou)SF_TUI_COMMANDS} )
+}
+
+sf_tui_completion_prefixes() {
+  local prefixes
+  SF_TUI_COMPLETION_PREFIXES=()
+  SF_TUI_COMPLETIONS=()
+  sf_tui_component_catalog hooks "$@" || return 0
+  prefixes=$(jq -r '[.hooks[]?.manifest.complete // empty] | unique[]' <<<"$REPLY") || return 0
+  SF_TUI_COMPLETION_PREFIXES=( ${(f)prefixes} )
 }
 
 sf_tui_permission_reset() {
@@ -175,6 +192,7 @@ sf_tui_apply() {
   fi
   case $type in
     commands) sf_tui_commands "${@:2}" ;;
+    hook_completions) sf_tui_completion_prefixes "${@:2}" ;;
     cwd) ! sf_cli_path "$2" || SF_TUI_CWD=$REPLY ;;
     session)
       [[ -n $SF_TUI_SESSION ]] || SF_TUI_TRANSPORT_COMMAND=(

@@ -168,6 +168,33 @@ def test_slash_command_completion():
         session.close()
 
 
+def test_skill_mention_completion():
+    session = Session(hooks={"echo": ECHO_HOOK, "skills/mention": None})
+    try:
+        path, _ = session.wait_session_records(1)
+        for name in ("test-first", "test-second"):
+            skill = session.project_dir / ".agents" / "skills" / name
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: A fixture\n---\nSkill body\n"
+            )
+        session.wait("provider/fake-model")
+        before = path.read_bytes()
+        mark = len(session.output)
+        session.send(b"Use $tes\t")
+        session.wait_screen(mark, "─ completions (2) ")
+        mark = len(session.output)
+        session.send(b"\x1b[Z")
+        session.wait_screen(mark, "─ completions (2/2) ")
+        assert path.read_bytes() == before, "completion changed the transcript"
+        mark = len(session.output)
+        session.send(b"\r")
+        session.wait_after(mark, "accepted")
+        assert (path.parent / "submitted").read_text() == "Use $test-second"
+    finally:
+        session.close()
+
+
 def test_completion_drawer_during_streaming():
     session = Session(explicit_session=True, env={"SF_TEST_PROVIDER_DELAY": "0.04"})
     try:
@@ -761,6 +788,7 @@ if __name__ == "__main__":
         test_piped_prompt_is_submitted,
         test_chat_end,
         test_slash_command_completion,
+        test_skill_mention_completion,
         test_completion_drawer_during_streaming,
         test_zle_multiline_editing,
         test_zle_wrapped_line_navigation,

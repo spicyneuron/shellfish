@@ -17,7 +17,7 @@ providers/PROVIDER/
 
 Tools, commands, and hooks require an executable `run`. Providers supply `run` for conversations, `decide` for decisions, or both. An optional `manifest.json` or `manifest.jsonc` describes the component, with an absent manifest treated as `{}`. Each role requires its own metadata, such as a tool's description and input schema or a hook's lifecycle.
 
-Scripts run from the session working directory. Shellfish isolates their process groups and cleans up ordinary descendants on completion or cancellation. Components must finish their own subprocesses, and daemonizing is unsupported.
+Scripts run from the session working directory. Within a turn, Shellfish isolates their process groups and cleans up ordinary descendants on completion or cancellation. Components must finish their own subprocesses, and daemonizing is unsupported.
 
 Missing or invalid active components fail session creation. Manifests are read on each invocation, so an invalid edit can fail a later run. Only selected components are active. Profiles select tools, commands, and hooks. Models select providers.
 
@@ -85,7 +85,7 @@ Tools and hooks can return images through `content` control lines, such as `{"co
 
 ## Hooks
 
-A hook manifest declares its lifecycle with `on`, such as `{"on":"stop"}`. An optional `match.pattern` jq regular expression filters invocations. A nonmatching hook is skipped. Without a filter, it runs for every invocation at that lifecycle.
+A hook manifest declares its lifecycle with `on`, such as `{"on":"stop"}`. An optional `match.pattern` jq regular expression filters lifecycle invocations. A nonmatching hook is skipped. Without a filter, it runs for every invocation at that lifecycle.
 
 | Lifecycle | Purpose | Arguments | stdin | Available actions |
 | --- | --- | --- | --- | --- |
@@ -107,6 +107,14 @@ Hook actions are JSON lines on fd 3, such as `{"action":"deny","reason":"Run the
 Permission review hooks may attach a `reason` to either `allow` or `deny`. Their decisions apply automatically after a grace period unless the user takes control or answers first. An `allow` approves specific access or unrestricted execution for one call, never for the session. `pre_tool_use` denials remain binding.
 
 `handoff` supplies an `argv` array for a capable client to run after the turn exits cleanly. `session_update` supplies a complete session `profile` to replace atomically. Tool hooks cannot rewrite inputs or results. See the bundled hooks for input and action examples.
+
+### Prompt completion
+
+A hook can declare a single punctuation character with `"complete": "$"` and provide an executable `complete` beside its `run`. `shellfish complete --session PATH TOKEN` invokes the first hook in profile order whose prefix matches the first character of `TOKEN`. With no matching hook, it prints nothing.
+
+The completer receives the full token as its only argument and prints one candidate per line, including the typed prefix, with no whitespace or control characters. It runs in the session working directory with the same profile config, model, and environment as hooks, but with empty stdin, no turn context, and no hook control channel or output capture limits. It does not run a turn or add anything to the transcript. Keep it fast because Tab waits for its results.
+
+In chat, Tab inserts candidates without adding a space. The built-in `/` command and `@` path completions take precedence in their usual positions. The bundled skill mention hook uses `$` to complete skills available to the user.
 
 ## Commands
 
