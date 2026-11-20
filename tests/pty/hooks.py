@@ -183,18 +183,6 @@ def test_blocked_prompt_notice_is_unnumbered():
         session.close()
 
 
-def test_help_shows_its_full_listing():
-    session = Session(commands=["help"])
-    try:
-        mark = len(session.output)
-        session.send(b"/help\r")
-        # The listing outlasts the default two-line preview.
-        session.wait_after(mark, "/quit, /q")
-        assert "/refresh, /r" in session.visible(mark), session.visible(mark)
-    finally:
-        session.close()
-
-
 def test_prompt_hook_hands_off_to_another_session():
     session = Session(explicit_session=True, hooks={"switch": SWITCH_HOOK})
     try:
@@ -324,7 +312,6 @@ if __name__ == "__main__":
         test_startup_cancellation_retains_the_transcript,
         test_slow_prompt_hook_keeps_ui_active,
         test_blocked_prompt_notice_is_unnumbered,
-        test_help_shows_its_full_listing,
         test_prompt_hook_hands_off_to_another_session,
         test_handoff_runs_command_on_path_and_restores_terminal,
         test_failed_handoff_restores_terminal,

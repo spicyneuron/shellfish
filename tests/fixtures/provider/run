@@ -168,6 +168,9 @@ stream_deltas() {
   for (( index = 1; index <= ${#deltas}; index++ )); do
     (( delay == 0 )) || sleep "$delay"
     jq -cn --arg text "$deltas[index]" --arg type "$delta_type" '{type:$type,text:$text}'
+    if [[ -n ${SF_TEST_PROVIDER_RELEASE-} ]] && (( index == 1 )); then
+      until [[ -e $SF_TEST_PROVIDER_RELEASE ]]; do sleep 0.02; done
+    fi
   done
 }
 

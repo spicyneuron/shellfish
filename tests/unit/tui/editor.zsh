@@ -302,6 +302,20 @@ assert_equal '/quit' "$BUFFER"
 assert_equal 2 "$SF_TUI_COMPLETION_NO"
 SF_TUI_COMPLETIONS=()
 
+# Complete only the leading command and preserve the rest of the draft.
+SF_TUI_COMMANDS=( /fork /help /queue /quit /refresh )
+WIDGET=sf_tui_complete
+for before cursor after final_cursor in \
+    /h 2 /help 5 /help 5 /help 5 /qui 4 /quit 5 /ref 4 /refresh 8 /for 4 /fork 5 \
+    /missing 8 /missing 8 ordinary 8 ordinary 8 \
+    '/for arg' 8 '/for arg' 8 '/hel arg' 4 '/help arg' 5 /hel 3 /hel 3 \
+    $'/hel\n/for' 9 $'/hel\n/for' 9 $'/hel\ntail' 4 $'/help\ntail' 5; do
+  BUFFER=$before CURSOR=$cursor
+  sf_tui_input
+  assert_equal "$after" "$BUFFER"
+  assert_equal "$final_cursor" "$CURSOR"
+done
+
 # An @path completes one folder at a time under the session's directory, marking
 # folders and showing hidden files only after a typed dot. A bare name also
 # matches deeper file names that Git does not ignore.

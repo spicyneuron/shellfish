@@ -14,6 +14,11 @@ import time
 import traceback
 from pathlib import Path
 
+try:
+    import pyte
+except ImportError:
+    pyte = None
+
 ROWS, COLUMNS = 18, 50
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -174,6 +179,9 @@ class Session:
         self.initial_tty = termios.tcgetattr(fd)
         os.close(release)
         self.output = bytearray()
+        self._screen = pyte.Screen(COLUMNS, ROWS) if pyte else None
+        self._stream = pyte.ByteStream(self._screen) if self._screen else None
+        self._screen_offset = 0
         try:
             if startup_token is None:
                 self.wait_ready()
@@ -211,13 +219,17 @@ class Session:
 
     def screen(self):
         """Return the rendered screen text, or None without pyte."""
-        try:
-            import pyte
-        except ImportError:
+        if self._screen is None:
             return None
-        screen = pyte.Screen(COLUMNS, ROWS)
-        pyte.ByteStream(screen).feed(bytes(self.output))
-        return "\n".join(screen.display)
+        self._stream.feed(bytes(self.output[self._screen_offset:]))
+        self._screen_offset = len(self.output)
+        return "\n".join(self._screen.display)
+
+    def resize(self, rows, columns):
+        if self._screen is not None:
+            self.screen()
+            self._screen.resize(lines=rows, columns=columns)
+        fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
 
     def wait_screen(self, start, *tokens, timeout=3):
         """Wait for the tokens to be present together on the rendered screen.
