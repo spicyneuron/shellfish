@@ -303,6 +303,67 @@ sf_tui_insert_newline() {
   LBUFFER+=$'\n'
 }
 
+# Leave only settled scrollback behind while another program owns the tty.
+sf_tui_external() {
+  setopt localoptions localtraps
+  local draft=$BUFFER tty
+  integer cursor=$CURSOR result=0
+  tty=$(stty -g </dev/tty) || return 1
+  sf_tui_heartbeat_stop
+  sf_tui_transport_unwatch
+  trap 'SF_TUI_VERTICAL_COLUMN=-1' WINCH
+  {
+    PREDISPLAY='' POSTDISPLAY='' BUFFER='' CURSOR=0
+    region_highlight=()
+    zle -R
+    zle -I
+    sf_tui_terminal_sync_end force
+    stty "$SF_TUI_TTY" </dev/tty
+    "$@" </dev/tty >/dev/tty 2>/dev/tty || result=$?
+  } always {
+    stty "$tty" </dev/tty
+    BUFFER=$draft CURSOR=$cursor
+    sf_tui_transport_watch sf_tui_turn_ready
+    sf_tui_repaint_checked
+    zle reset-prompt
+    sf_tui_heartbeat_arm drain
+  }
+  return $result
+}
+
+sf_tui_edit_draft() {
+  local file edited editor=${VISUAL:-${EDITOR:-vi}}
+  file=$(mktemp "${TMPDIR:-/tmp}/shellfish-draft.XXXXXX") || return 1
+  {
+    print -rn -- "$BUFFER" >"$file" || return 1
+    if sf_tui_external ${(@Q)${(z)editor}} "$file"; then
+      # Preserve intentional trailing newlines, including an empty draft.
+      edited=$(cat -- "$file" && print -n .) || return 1
+      BUFFER=${edited%.}
+      CURSOR=${#BUFFER}
+      sf_tui_history_reset
+    fi
+  } always { rm -f -- "$file" }
+  sf_tui_repaint_checked
+  zle -R
+}
+
+sf_tui_verbose() {
+  local file pager=${PAGER:-less -R}
+  [[ -n $SF_TUI_SESSION ]] || return 0
+  file=$(mktemp "${TMPDIR:-/tmp}/shellfish-verbose.XXXXXX") || return 1
+  {
+    # Rendering the snapshot in a subshell leaves the live projection intact.
+    (
+      SF_TUI_PREVIEW=full SF_TUI_PREVIEW_REASONING=full
+      sf_tui_load "$SF_TUI_SESSION" || exit 1
+      sf_tui_rows_prepare $(( COLUMNS > 1 ? COLUMNS - 1 : 80 )) || exit 1
+      print -rl -- "${SF_TUI_ROW_TEXT[@]}" "${SF_TUI_LIVE_ROW_TEXT[@]}"
+    ) >"$file" || return 1
+    sf_tui_external ${(@Q)${(z)pager}} "$file"
+  } always { rm -f -- "$file" }
+}
+
 sf_tui_history_reset() {
   SF_TUI_HISTORY_DRAFT=''
   SF_TUI_HISTORY_CURSOR=0
@@ -526,7 +587,7 @@ sf_tui_input() {
     return 0
   fi
   case $widget in
-    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete|sf_tui_complete_back|sf_tui_paste_image)
+    sf_tui_accept|sf_tui_send|sf_tui_insert_newline|sf_tui_up|sf_tui_down|sf_tui_interrupt|sf_tui_escape|sf_tui_complete|sf_tui_complete_back|sf_tui_paste_image|sf_tui_edit_draft)
       "$widget" "$@"
       ;;
     *)
@@ -630,6 +691,7 @@ sf_tui_bind() {
     '^[^M' sf_tui_insert_newline
     '^[[13;2u' sf_tui_insert_newline
     '^X' sf_tui_send
+    '^G' sf_tui_edit_draft
     '^[[13;5u' sf_tui_send
     '^[[13;9u' sf_tui_send
     '^P' sf_tui_up

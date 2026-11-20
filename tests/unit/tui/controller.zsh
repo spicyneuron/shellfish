@@ -26,11 +26,11 @@ chmod +x "$tmp/commands/example/run"
 print -r -- '{"description":"Example command","aliases":["e","example-alias"]}' \
   >"$tmp/commands/example/manifest.json"
 sf_tui_commands "$tmp/commands/example" @commands/help
-assert_equal '/example,/example-alias,/help,/queue,/quit,/refresh' \
+assert_equal '/example,/example-alias,/help,/queue,/quit,/refresh,/verbose' \
   "${(j:,:)SF_TUI_COMMANDS}"
 SF_TUI_COMPLETIONS=( /example /example-alias )
 sf_tui_commands
-assert_equal '/queue,/quit,/refresh' "${(j:,:)SF_TUI_COMMANDS}"
+assert_equal '/queue,/quit,/refresh,/verbose' "${(j:,:)SF_TUI_COMMANDS}"
 assert_equal 0 "${#SF_TUI_COMPLETIONS}"
 
 # File completion follows the header's stored working directory.

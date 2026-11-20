@@ -110,25 +110,25 @@ def test_slash_command_completion():
         session.send(b"\x15")
         mark = len(session.output)
         session.send(b"/\t")
-        session.wait_screen(mark, "─ completions (6) ")
+        session.wait_screen(mark, "─ completions (7) ")
         if session.screen() is not None:
             session.wait_screen(mark, "/fork", "/help", "provider/fake-model")
         for rows in (ROWS + 4, ROWS):
             mark = len(session.output)
             fcntl.ioctl(session.fd, termios.TIOCSWINSZ,
                         struct.pack("HHHH", rows, COLUMNS, 0, 0))
-            session.wait_after(mark, "─ completions (6) ")
-            session.wait_screen(mark, "─ completions (6) ")
+            session.wait_after(mark, "─ completions (7) ")
+            session.wait_screen(mark, "─ completions (7) ")
         mark = len(session.output)
         session.send(b"\t")
-        session.wait_screen(mark, "─ completions (1/6) ")
+        session.wait_screen(mark, "─ completions (1/7) ")
         if session.screen() is not None:
             session.wait_screen(mark, "▸ /fork", "❯ /fork")
         mark = len(session.output)
         session.send(b"\x1b[Z\x1b[Z")
-        session.wait_screen(mark, "─ completions (5/6) ")
+        session.wait_screen(mark, "─ completions (6/7) ")
         if session.screen() is not None:
-            session.wait_screen(mark, "▸ /refresh", "❯ /refresh")
+            session.wait_screen(mark, "▸ /rewind", "❯ /rewind")
         session.send(b"\x15")
         (session.project_dir / "notes.md").write_text("")
         (session.project_dir / "src").mkdir()

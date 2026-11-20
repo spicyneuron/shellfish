@@ -62,13 +62,14 @@ Keep credentials in `.env` or the environment, not in profile `config`. See [Com
 
 ## Chat
 
-Run `/help` for the active profile's commands and editor keys. Client-owned `/refresh`, `/quit`, and `/queue` commands do not run a turn. `/refresh` rerenders the current session, and `/quit` exits chat.
+Run `/help` for the active profile's commands and editor keys. Client-owned `/refresh`, `/quit`, `/queue`, and `/verbose` commands do not run a turn. `/refresh` rerenders the current session, and `/quit` exits chat. `/verbose` opens the session's expanded output in `$PAGER`, else `less -R`, and returns to the same chat on exit.
 
 | Key | Action |
 | --- | --- |
 | Enter | Submit a prompt, or queue it behind an active turn |
 | Ctrl-C | Cancel the active turn, leaving queued prompts pending |
 | Ctrl-X | Send the draft, or else the first queued prompt, interrupting an active turn |
+| Ctrl-G | Edit the draft in `$VISUAL`, else `$EDITOR`, else `vi`, without sending it. A failed editor keeps the original draft |
 | Ctrl-Return, Cmd-Return | Send now, when supported by the terminal |
 | Ctrl-V | Paste a clipboard image as an `[Image: PATH]` marker |
 

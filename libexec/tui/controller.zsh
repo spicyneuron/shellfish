@@ -20,7 +20,8 @@ typeset -gi SF_TUI_CREATING=0 SF_TUI_STEER=0
 typeset -g SF_TUI_TTY=''
 # Client command names and aliases, also completed. /queue runs in sf_tui_submit.
 typeset -grA SF_TUI_CLIENT_COMMANDS=(
-  /quit /quit /q /quit /refresh /refresh /r /refresh /queue /queue )
+  /quit /quit /q /quit /refresh /refresh /r /refresh /queue /queue
+  /verbose /verbose /v /verbose )
 typeset -ga SF_TUI_COMMANDS=( ${(ovu)SF_TUI_CLIENT_COMMANDS} )
 
 # Arguments are the session header's stored command paths.
@@ -86,6 +87,11 @@ sf_tui_submit() {
   local submitted=$1
   integer queue_index
   REPLY=ignore
+  if [[ $submitted == (/verbose|/v) ]]; then
+    sf_tui_verbose
+    REPLY=repaint
+    return 0
+  fi
   if [[ $submitted =~ '^/queue[[:space:]]+clear[[:space:]]*$' ]]; then
     SF_TUI_QUEUE=()
     REPLY=repaint
@@ -511,8 +517,8 @@ sf_tui_controller() {
 
   while (( ! exit_status )); do
     [[ $SF_TUI_ACTION == epoch ]] || SF_TUI_ACTION=''
-    stty intr undef 2>/dev/null || { exit_status=1; break; }
     {
+      stty intr undef 2>/dev/null || { exit_status=1; break; }
       if vared -h -M sf-present -p "$PROMPT" input; then
         editor_status=0
       else
