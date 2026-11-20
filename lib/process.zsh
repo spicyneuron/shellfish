@@ -22,8 +22,10 @@ sf_process_isolated_run() {
   local group_file=$1 status_file=$2 working=$3 input=$4 stdout=$5 stderr=$6
   local control=$7 script_set=$8 script_value=$9
   shift 9
-  integer child process_status
+  integer child process_status terminating=0
 
+  # Wait for the command's TERM handler before the caller reaps the group.
+  trap 'terminating=1' TERM
   print -r -- $sysparams[pid] >$group_file || return
   cd -- "$working" || return
   if (( script_set >= 0 )); then
@@ -31,8 +33,11 @@ sf_process_isolated_run() {
   fi
   "$@" <"$input" >"$stdout" 2>"$stderr" 3>"$control" &
   child=$!
-  wait $child
-  process_status=$?
+  while true; do
+    wait $child
+    process_status=$?
+    (( terminating && process_status == 143 )) && kill -0 "$child" 2>/dev/null || break
+  done
   print -r -- $process_status >$status_file
 }
 

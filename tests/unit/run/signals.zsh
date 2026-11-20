@@ -25,12 +25,12 @@ ZSH
 cat >"$model_provider/context_window" <<'ZSH'
 #!/usr/bin/env zsh
 cat >/dev/null
-print -r -- ready >"$MODEL_READY"
-trap 'print -r -- stopped >"$MODEL_STOPPED"; exit 143' TERM
+trap 'zselect -t 5; print -r -- stopped >"$MODEL_STOPPED"; exit 143' TERM
 # Cancellation signals the whole process group. Idle in a builtin so the wait
 # has no forked child: a sleep would take the same TERM, and zsh can exit on a
 # signal-killed foreground job without running its own trap.
 zmodload zsh/zselect
+print -r -- ready >"$MODEL_READY"
 while true; do zselect -t 10; done
 ZSH
 chmod +x "$model_provider/run" "$model_provider/context_window"
