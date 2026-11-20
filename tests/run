@@ -5,6 +5,7 @@ setopt no_aliases no_multios pipe_fail extended_glob
 # Background jobs are the whole point here, so they must not be reniced.
 unsetopt bg_nice
 zmodload zsh/datetime
+zmodload zsh/zselect
 
 typeset test_dir=${0:A:h} project_dir=${test_dir:h}
 typeset suite
@@ -129,7 +130,7 @@ run_test() {
   {
     while (( polls++ < timeout * 5 )); do
       kill -0 $sf_target_pid 2>/dev/null || exit 0
-      sleep 0.2
+      zselect -t 20 || true
     done
     kill -KILL -- -$sf_target_pid $sf_target_pid 2>/dev/null
   } &
@@ -142,9 +143,6 @@ run_test() {
   (( code != 137 )) || print -r -- "timed out after ${timeout}s" >>"$log"
   printf '%d %.1f\n' $code $(( EPOCHREALTIME - start )) >"$result"
 }
-
-# Files are independent, so they run concurrently but are reported in order.
-integer index
 
 report() {
   # Defaults stand in for a run_test that died without recording anything,
@@ -177,6 +175,21 @@ report() {
   }
 }
 
+# Refill whichever slot frees up first, even if its worker wrote no result.
+collect() {
+  integer slot
+  while true; do
+    for (( slot=1; slot <= ${#pids}; ++slot )); do
+      (( pids[slot] )) || continue
+      kill -0 "$pids[slot]" 2>/dev/null && continue
+      report "$slot"
+      return 0
+    done
+    zselect -t 2 || true
+  done
+}
+
+integer active=0
 for test_file in $tests; do
   names+=( ${test_file#$test_dir/} )
   [[ $names[-1] == "$test_file" ]] && names[-1]=${test_file#$project_dir/}
@@ -184,10 +197,13 @@ for test_file in $tests; do
   results+=( "$log_dir/${#names}.result" )
   run_test "$test_file" "$logs[-1]" "$results[-1]" &
   pids+=( $! )
-  (( ${#pids} - index < jobs )) || report $(( ++index ))
+  if (( ++active == jobs )); then
+    collect
+    (( --active ))
+  fi
 done
 
-while (( index < ${#pids} )); do report $(( ++index )); done
+while (( active-- > 0 )); do collect; done
 
 typeset tally="$passed passed, $failed failed"
 (( ! skipped )) || tally+=", $skipped skipped"
