@@ -10,31 +10,26 @@ request_eval() {
   jq -L "$ROOT" -e 'include "lib/session"; include "lib/provider"; '"$1"
 }
 
-# The decoder's NUL-separated fields, one per line.
 decode() {
-  jq -L "$ROOT" -jn 'include "lib/session"; include "lib/provider";
-    decode_provider_response(canonical_response)' | tr '\0' '\n'
+  jq -L "$ROOT" -rn 'include "lib/session"; include "lib/provider";
+    decode_provider_response(canonical_response)'
 }
 
 # Deltas pass through, then one complete response ends the stream.
 typeset decoded
 decoded=$(print -rl -- \
   '{"type":"_assistant_reasoning_delta","text":"think"}' \
-  '{"type":"_assistant_message_delta","text":"run"}' \
+  '{"type":"_assistant_message_delta","text":"run\n\t\u0000"}' \
   '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"signed"}},{"type":"text","text":"run"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":5,"output_tokens":1}}' |
   decode) || fail 'a valid provider stream was rejected'
-assert_equal 'event
-{"type":"_assistant_reasoning_delta","text":"think"}
-event
-{"type":"_assistant_message_delta","text":"run"}
-end
-{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"signed"}},{"type":"text","text":"run"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":5,"output_tokens":1}}' "$decoded"
+assert_equal 'event {"type":"_assistant_reasoning_delta","text":"think"}
+event {"type":"_assistant_message_delta","text":"run\n\t\u0000"}
+end {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"signed"}},{"type":"text","text":"run"},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":5,"output_tokens":1}}' "$decoded"
 
 # The decoder adds no deltas the provider did not stream.
 decoded=$(print -r -- '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"","opaque":{}},{"type":"text","text":"done"}]}' |
   decode) || fail 'a response without deltas was rejected'
-assert_equal 'end
-{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"","opaque":{}},{"type":"text","text":"done"}]}' "$decoded"
+assert_equal 'end {"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"","opaque":{}},{"type":"text","text":"done"}]}' "$decoded"
 
 for stream in \
     '{"type":"_assistant_message_delta","index":0,"text":"indexed"}' \

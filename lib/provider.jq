@@ -41,13 +41,13 @@ def provider_delta:
 # Deltas pass through until one complete response ends the stream. Anything
 # else, including a line after the response, is invalid.
 def decode_provider_response(valid_response):
-  foreach inputs as $line ({ended:false, out:[]};
-    if .ended then halt_error(1)
-    elif $line | provider_delta then .out = ["event", "\u0000", ($line | tojson), "\u0000"]
+  foreach inputs as $line (false;
+    if . then halt_error(1)
+    elif $line | provider_delta then false
     elif $line | type == "object" and .stop != "cancelled" and valid_response then
-      .ended = true | .out = ["end", "\u0000", ($line | tojson), "\u0000"]
+      true
     else halt_error(1) end;
-    .out[]);
+    (if . then "end " else "event " end) + ($line | tojson));
 
 # Deltas joined into the response they were streaming, for a cancelled request.
 def provider_delta_response:

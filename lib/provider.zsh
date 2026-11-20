@@ -97,7 +97,7 @@ sf_provider_run() {
   setopt local_options local_traps no_bg_nice
   local emit=${1:-:} request=$SF_PROVIDER_PLAN[request] command=$SF_PROVIDER_PLAN[command]
   local directory error_file group_file input_file output_pipe status_file
-  local provider_pid decoder_pid assistant event kind=''
+  local provider_pid decoder_pid assistant frame event kind=''
   local -a process_command
   integer provider_status=1 decoder_status=1 ended=0 signal_status=0 guard_fd run_status
 
@@ -142,28 +142,24 @@ sf_provider_run() {
   trap 'signal_status=130; sf_process_stop "$provider_pid" "$group_file"' INT USR1
   trap 'signal_status=129; sf_process_stop "$provider_pid" "$group_file"' HUP
   trap 'signal_status=143; sf_process_stop "$provider_pid" "$group_file"' TERM
-  coproc sf_jq -jn --unbuffered '
+  coproc sf_jq -rn --unbuffered '
     include "lib/session";
     include "lib/provider";
     decode_provider_response((has("section") | not) and canonical_response)
   ' <"$output_pipe" 2>/dev/null
   decoder_pid=$!
   "$emit" '{"type":"_assistant_start"}'
-  while IFS= read -r -d $'\0' kind <&p; do
+  # Zsh's read -d changes the controlling tty even when reading a pipe.
+  while IFS= read -r frame <&p; do
+    kind=${frame%% *}
     case $kind in
       event)
-        if ! IFS= read -r -d $'\0' event <&p; then
-          kind=invalid
-          break
-        fi
+        event=${frame#* }
         SF_PROVIDER_PARTIAL_EVENTS+=( "$event" )
         "$emit" "$event"
         ;;
       end)
-        if ! IFS= read -r -d $'\0' assistant <&p; then
-          kind=invalid
-          break
-        fi
+        assistant=${frame#* }
         ended=1
         break
         ;;
