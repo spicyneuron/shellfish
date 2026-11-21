@@ -1,7 +1,7 @@
 # Live core events and loaded durable records become one presentation action
 # vocabulary. Actions are arrays of strings; the first element is the type.
 # $mode is the starting record policy, $window the known context window, and
-# $drawn the kind and length of each readable block of the open live message.
+# stdin starts with the open live message's drawn blocks, then the batch.
 
 def compact_tokens:
   if . < 1000 then tostring
@@ -75,13 +75,12 @@ def message_actions($role; $text):
 # a delta of another kind starts the next block.
 def delta_kind: if .type == "_assistant_reasoning_delta" then "reasoning" else "text" end;
 def draw($delta):
-  ($delta | delta_kind) as $kind | ($delta.text | length) as $length |
-  if .[-1].type? == $kind then .[-1].length += $length
-  else . + [{type:$kind, length:$length}] end;
+  ($delta | delta_kind) as $kind |
+  if .[-1].type? == $kind then .[-1].text += $delta.text
+  else . + [{type:$kind, text:$delta.text}] end;
 
-# A response draws its blocks after whatever its deltas already drew, since
-# deltas concatenate to the response's own text. $drawn is null when no live
-# message is open.
+# A response draws its blocks after whatever its deltas already drew. $drawn is
+# null when no live message is open.
 def response_actions($drawn):
   . as $response |
   [.content | to_entries[] | select(.value.type | IN("text", "reasoning")) | .key] as $readable |
@@ -90,7 +89,8 @@ def response_actions($drawn):
   [.content | to_entries[] | . as $block |
     if (.value.type | IN("text", "reasoning")) then
       ($readable | index($block.key)) as $n |
-      .value.text[(($drawn // [])[$n].length // 0):] as $rest |
+      (($drawn // [])[$n].text // "") as $shown |
+      (if .value.text | startswith($shown) then .value.text[($shown | length):] else "" end) as $rest |
       # A block its deltas drew completely is already on screen.
       if $n < ($drawn // [] | length) and $rest == "" then empty else
         ["message_delta", ($n | tostring), .value.type, $rest,
@@ -159,6 +159,7 @@ def event_actions($window; $drawn):
 
 def nul_safe: gsub("\u0000"; "�");
 
+(input | fromjson) as $drawn |
 [inputs | fromjson] |
 reduce .[] as $line (
   {mode: $mode, window: (if $window == "" then null else ($window | tonumber) end),
