@@ -551,32 +551,18 @@ sf_tui_controller() {
     fi
   fi
 
-  while (( ! exit_status )); do
-    [[ $SF_TUI_ACTION == epoch ]] || SF_TUI_ACTION=''
-    {
-      stty intr undef 2>/dev/null || { exit_status=1; break; }
-      if vared -h -M sf-present -p "$PROMPT" input; then
-        editor_status=0
-      else
-        editor_status=$?
-      fi
-    } always { stty "$saved_tty" 2>/dev/null || true }
-    [[ $SF_TUI_ACTION == epoch ]] || input=''
-    case $SF_TUI_ACTION in
-      epoch) SF_TUI_ACTION='' ;;
-      submit)
-        SF_TUI_STATE=idle
-        sf_tui_turn "$SF_TUI_SUBMITTED" || exit_status=1
-        ;;
-      handoff|quit) break ;;
-      *)
-        editor_error="Chat editor exited unexpectedly (status $editor_status, state $SF_TUI_STATE)."
-        [[ -z $SF_TUI_ERROR ]] || editor_error="$SF_TUI_ERROR"$'\n'"$editor_error"
-        SF_TUI_ERROR=$editor_error
-        exit_status=1
-        ;;
-    esac
-  done
+  {
+    stty intr undef 2>/dev/null || return 1
+    vared -h -M sf-present -p "$PROMPT" input || editor_status=$?
+  } always { stty "$saved_tty" 2>/dev/null || true }
+  if [[ $SF_TUI_ACTION == failed ]]; then
+    exit_status=1
+  elif [[ $SF_TUI_ACTION != (handoff|quit) ]]; then
+    editor_error="Chat editor exited unexpectedly (status $editor_status, state $SF_TUI_STATE)."
+    [[ -z $SF_TUI_ERROR ]] || editor_error="$SF_TUI_ERROR"$'\n'"$editor_error"
+    SF_TUI_ERROR=$editor_error
+    exit_status=1
+  fi
   sf_tui_heartbeat_stop
   sf_tui_terminal_sync_end force
   [[ $SF_TUI_STATE == idle ]] || sf_tui_transport_stop

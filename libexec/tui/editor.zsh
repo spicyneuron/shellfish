@@ -43,13 +43,23 @@ sf_tui_repaint_checked() {
   return 1
 }
 
-sf_tui_draw_pending() {
-  PREDISPLAY=$SF_TUI_PENDING_TEXT
-  BUFFER=''
-  CURSOR=0
-  POSTDISPLAY=''
-  sf_tui_update_highlights pending || return 1
-  sf_tui_terminal_sync_start
+sf_tui_commit() {
+  sf_tui_terminal_commit || { sf_tui_stop 'cannot commit chat rows'; return 1; }
+}
+
+sf_tui_turn_submitted() {
+  SF_TUI_STATE=idle
+  sf_tui_turn "$SF_TUI_SUBMITTED" || return 1
+  sf_tui_heartbeat_arm || true
+}
+
+sf_tui_send_submitted() {
+  if ! sf_tui_turn_submitted; then
+    SF_TUI_ACTION=failed
+    zle accept-line
+  else
+    zle -R
+  fi
 }
 
 sf_tui_heartbeat_worker() {
@@ -133,15 +143,7 @@ sf_tui_heartbeat_tick() {
       return 0
     fi
     if (( SF_TUI_SAFE_ROWS )); then
-      sf_tui_terminal_stage || return 1
-      # Commit settled rows as the entire display, then rebuild below them.
-      sf_tui_draw_pending || return 1
-      if ! zle -R || ! zle -I; then
-        sf_tui_stop 'cannot commit chat rows'
-        return 0
-      fi
-      sf_tui_terminal_finish || return 1
-      sf_tui_terminal_restore
+      sf_tui_commit || return 0
       sf_tui_repaint_checked || return 1
       zle -R
       sf_tui_terminal_sync_end
@@ -157,8 +159,7 @@ sf_tui_heartbeat_tick() {
       zle accept-line
       return 0
     elif [[ $SF_TUI_STATE == queued ]]; then
-      SF_TUI_STATE=idle
-      sf_tui_turn "$SF_TUI_SUBMITTED" || return 1
+      sf_tui_turn_submitted || return 1
       continue
     else
       sf_tui_heartbeat_arm
@@ -171,44 +172,18 @@ sf_tui_heartbeat_tick() {
 sf_tui_line_init() {
   # Working turns render a viewport; other states stage commits.
   local mode=''
-  sf_tui_terminal_restore
   sf_tui_transport_watch sf_tui_turn_ready
   [[ $SF_TUI_STATE == working ]] || mode=stage
-  if ! sf_tui_repaint_checked "$mode"; then
-    zle -R
-    return 0
-  fi
-  if (( SF_TUI_SAFE_ROWS )) && [[ $mode == stage ]]; then
-    sf_tui_terminal_stage || return 1
-    SF_TUI_ACTION=epoch
-    sf_tui_draw_pending || return 1
-    if ! zle accept-line; then
-      SF_TUI_ACTION=''
-      sf_tui_stop 'cannot commit chat rows'
-    fi
-  elif [[ $SF_TUI_STATE == queued ]]; then
-    SF_TUI_DRAFT=$BUFFER
-    SF_TUI_DRAFT_CURSOR=$CURSOR
-    SF_TUI_DRAFT_SAVED=1
-    SF_TUI_ACTION=submit
-    zle accept-line
-  else
-    zle -R
-    sf_tui_terminal_sync_end
-    sf_tui_heartbeat_arm
-  fi
+  while sf_tui_repaint_checked "$mode" && [[ $mode == stage ]] && (( SF_TUI_SAFE_ROWS )); do
+    sf_tui_commit || break
+  done
+  zle -R
+  sf_tui_terminal_sync_end
+  sf_tui_heartbeat_arm
 }
 
 sf_tui_line_finish() {
-  integer pending=$SF_TUI_PENDING_ROWS
-  if ! sf_tui_terminal_finish; then
-    sf_tui_stop 'cannot commit chat rows'
-    return 0
-  fi
-  if (( pending )); then
-    sf_tui_update_highlights pending || return 1
-    zle -R
-  elif [[ $SF_TUI_ACTION == (submit|quit) ]]; then
+  if [[ $SF_TUI_ACTION == (quit|failed) ]]; then
     PREDISPLAY=''
     BUFFER=''
     CURSOR=0
@@ -219,7 +194,7 @@ sf_tui_line_finish() {
 }
 
 sf_tui_pre_redraw() {
-  (( ! SF_TUI_PENDING_ROWS )) || return 0
+  (( ! ${SF_TUI_COMMITTING:-0} )) || return 0
   if (( SF_TUI_HISTORY_NO )) && [[ $SF_TUI_STATE != permission &&
       $BUFFER != $SF_TUI_HISTORY[$SF_TUI_HISTORY_NO] ]]; then
     sf_tui_history_reset
@@ -273,29 +248,11 @@ sf_tui_accept() {
       ;;
     quit) zle accept-line ;;
     submit)
-      SF_TUI_DRAFT=''
-      SF_TUI_DRAFT_CURSOR=0
-      SF_TUI_DRAFT_SAVED=0
       sf_tui_history_reset
       BUFFER=''
       CURSOR=0
-      SF_TUI_ACTION=submit
-      if ! sf_tui_repaint_checked; then
-        SF_TUI_ACTION=''
-        [[ $SF_TUI_STATE == stopped ]] || sf_tui_stop 'cannot stage chat rows'
-        return 0
-      fi
-      if sf_tui_terminal_stage prompt; then
-        sf_tui_draw_pending || return 1
-      elif (( SF_TUI_SAFE_ROWS )); then
-        SF_TUI_ACTION=''
-        sf_tui_stop 'cannot stage chat rows'
-        return 0
-      fi
-      if ! zle accept-line; then
-        SF_TUI_ACTION=''
-        sf_tui_stop 'cannot commit chat rows'
-      fi
+      sf_tui_repaint_checked || return 0
+      sf_tui_send_submitted
       ;;
     *) return 1 ;;
   esac
@@ -642,8 +599,11 @@ sf_tui_interrupt() {
 sf_tui_send() {
   if [[ $SF_TUI_STATE == idle && -z $BUFFER ]] && (( ${#SF_TUI_QUEUE} )); then
     sf_tui_dequeue
-    [[ $SF_TUI_STATE != queued ]] || SF_TUI_ACTION=submit
-    zle accept-line
+    if [[ $SF_TUI_STATE == queued ]]; then
+      sf_tui_send_submitted
+    else
+      zle accept-line
+    fi
     return
   fi
   if [[ $SF_TUI_STATE == (idle|stopped) ]]; then

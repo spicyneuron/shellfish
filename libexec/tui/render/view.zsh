@@ -236,7 +236,7 @@ sf_tui_update_highlights() {
     view)
       spans=( "${(@)SF_TUI_VIEWPORT_HIGHLIGHTS}" "${(@)SF_TUI_CHROME_HIGHLIGHTS}" )
       ;;
-    pending) spans=( "${(@)SF_TUI_PENDING_HIGHLIGHTS}" ) ;;
+    safe) spans=( "${(@)SF_TUI_SAFE_HIGHLIGHTS}" ) ;;
     *) return 1 ;;
   esac
   region_highlight=()
@@ -297,7 +297,7 @@ sf_tui_repaint() {
   local -a reply drawers=() items=()
   local -A labels
   integer remaining
-  if [[ $SF_TUI_STATE == idle && ${SF_TUI_ACTION-} != submit ]]; then
+  if [[ $SF_TUI_STATE == idle ]]; then
     prompt_style=prompt_waiting
   fi
   SF_TUI_CHROME_HIGHLIGHTS=()
