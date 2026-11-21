@@ -244,7 +244,6 @@ sf_run_permission() {
       fi
       # An answer that arrived with the verdict still wins.
       if [[ -z $permission_decision && -z $permission_error ]] && sf_run_permission_poll; then
-        [[ $review[action] != allow ]] || review[action]=approve
         [[ $review[action] != deny || -n $review[reason] ]] ||
           review[reason]='sandbox access denied by permission_request hook'
         sf_run_emit "$(jq -cn --arg id "$permission_id" --arg decision "$review[action]" \
@@ -316,15 +315,15 @@ sf_run_access_prepare() {
   fi
 }
 
-# Extend this call and optionally keep its approved access in the session.
+# Extend this call and keep its access when approved for the session.
 sf_run_access_grant() {
-  local session=$1 keep=$2 access=$SF_TOOL_PLAN[access] config
+  local session=$1 authorization=$2 access=$SF_TOOL_PLAN[access] config
   SF_TOOL_PLAN[policy]=$(jq -c --argjson access "$access" '
     .filesystem.allowRead = ((.filesystem.allowRead // []) + $access.read | unique) |
     .filesystem.allowWrite = ((.filesystem.allowWrite // []) + $access.write | unique) |
     .network.allowedDomains = ((.network.allowedDomains // []) + $access.domains | unique)
   ' <<<"$SF_TOOL_PLAN[policy]") || { sf_fail 'cannot resolve sandbox access'; return; }
-  [[ $keep == true ]] || return 0
+  [[ $authorization == session ]] || return 0
   config=$(jq -c --arg name "$SF_TOOL_PLAN[name]" --argjson policy "$SF_TOOL_PLAN[policy]" \
       --argjson model "$SF_RUN[model]" '
     .sandbox.tools[$name] = $policy |
@@ -334,13 +333,11 @@ sf_run_access_grant() {
   SF_RUN[profile]=$(jq -c .profile <<<"$config")
 }
 
-# Settle authorization before changing execution mode. reply is (authorization,
-# refusal outcome), with authorization allowed, allowed_session, or denied.
-# Badges describe that result, never control execution.
+# reply holds none or the settled access, followed by any refusal outcome.
 sf_run_authorize() {
-  local session=$1 turn_state=$2 authorization action keep outcome=''
+  local session=$1 turn_state=$2 authorization outcome=''
   case $SF_TOOL_PLAN[access_status] in
-    (none) reply=( allowed ); return 0 ;;
+    (none) reply=( none ); return 0 ;;
     (invalid)
       sf_run_tool_refused "$SF_TOOL_PLAN[permission_reason]" 126
       reply=( denied "$REPLY" )
@@ -348,31 +345,30 @@ sf_run_authorize() {
   esac
   sf_run_access_prepare || return 1
   if [[ $SF_TOOL_PLAN[access_status] == covered ]]; then
-    authorization=allowed_session
+    authorization=session
   else
     sf_run_component_draft "$SF_TOOL_PLAN[component]" ||
       { sf_fail 'cannot emit tool draft'; return; }
     sf_run_permission "$session" "$turn_state" || return 1
-    action=$reply[1]
-    if [[ $action == deny ]]; then
-      authorization=denied
-      sf_run_tool_refused "$reply[2]" 126
-      outcome=$(jq -c '.output.stdout |= "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: \(.)\n</sandbox_notice>"' <<<"$REPLY") ||
-        { sf_fail 'cannot decode tool result'; return; }
-    else
-      authorization=allowed
+    case $reply[1] in
+      (approve) authorization=approved ;;
+      (approve_session) authorization=session ;;
+      (deny)
+        authorization=denied
+        sf_run_tool_refused "$reply[2]" 126
+        outcome=$(jq -c '.output.stdout |= "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: \(.)\n</sandbox_notice>"' <<<"$REPLY") ||
+          { sf_fail 'cannot decode tool result'; return; } ;;
+    esac
+    if [[ $authorization != denied ]]; then
       if [[ $(jq -r '.unrestricted // false' <<<"$SF_TOOL_PLAN[access]") == true ]]; then
         SF_TOOL_PLAN[sandbox]=false
       else
-        keep=false
-        [[ $action != approve_session ]] || keep=true
-        sf_run_access_grant "$session" $keep || return 1
-        [[ $keep == false ]] || authorization=allowed_session
+        sf_run_access_grant "$session" "$authorization" || return 1
       fi
     fi
   fi
   SF_TOOL_PLAN[component]=$(jq -c --arg authorization "$authorization" '
-    .draft.sandbox_access = ({allowed:"approved",allowed_session:"session",denied:"denied"}[$authorization])
+    .draft.sandbox_access = $authorization
   ' <<<"$SF_TOOL_PLAN[component]") ||
     { sf_fail 'cannot settle sandbox access request'; return; }
   reply=( "$authorization" "$outcome" )
@@ -505,7 +501,7 @@ sf_run_turn() {
                 sf_run_tool_execute "$session" ||
                   { sf_run_status $? "$SF_ERROR"; break; }
                 outcome=$REPLY
-                if [[ $authorization == allowed_session ]]; then
+                if [[ $authorization == session ]]; then
                   outcome=$(jq -c '.output.stdout += "\n<sandbox_notice>This access is granted for the rest of this session. Later calls of this tool have it without asking. Do not request it again.</sandbox_notice>"' <<<"$outcome") ||
                     { failure='cannot decode tool result'; break; }
                 fi

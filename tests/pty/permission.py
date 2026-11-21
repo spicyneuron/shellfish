@@ -120,7 +120,7 @@ def test_permission_review_runs_with_prompt():
 cat >/dev/null
 sleep "${REVIEW_DELAY:-0}"
 print -r -u2 -- reviewed
-print -r -u3 -- '{"action":"allow","reason":"ok"}'
+print -r -u3 -- '{"action":"approve","reason":"ok"}'
 '''
         session = Session(
             explicit_session=True,

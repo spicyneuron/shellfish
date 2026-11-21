@@ -68,7 +68,7 @@ run_review valid
 (( hook_status == 0 )) || fail 'permission review did not resolve the request'
 jq -e . "$control" >/dev/null || { cat "$control" >&2; fail 'permission review returned invalid control'; }
 jq -e '
-  .action == "allow" and .reason == "Explicitly authorized." and
+  .action == "approve" and .reason == "Explicitly authorized." and
   .state_update[0].name == "permissions/6/call_7" and
   .state_update[0].value.reason == "Explicitly authorized." and
   (.state_update[0].value.content | fromjson) ==
@@ -223,13 +223,13 @@ jq -c 'if .type == "session" then .profile.config.sandbox.approver.max_input_kb=
   "$tmp/startup-budget.jsonl" >"$tmp/large-budget.jsonl"
 session="$tmp/large-budget.jsonl"
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null || fail 'review ignored its input budget'
+jq -e '.action == "approve"' "$control" >/dev/null || fail 'review ignored its input budget'
 
 session="$tmp/default-review.jsonl"
 jq -c 'if .type == "session" then del(.model.config) else . end' \
   "$parent_session" >"$session"
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null
+jq -e '.action == "approve"' "$control" >/dev/null
 jq -e 'has("config") | not' "$sent" >/dev/null ||
   fail 'review injected provider configuration'
 session=$parent_session
@@ -239,7 +239,7 @@ session="$tmp/empty-review.jsonl"
 jq -c 'if .type == "session" then .profile.config.sandbox.approver={} else . end' \
   "$parent_session" >"$session"
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null
+jq -e '.action == "approve"' "$control" >/dev/null
 jq -e '.request.model == "test-model"' "$sent" >/dev/null
 
 # A named review model replaces the complete model without touching the parent.
@@ -261,7 +261,7 @@ jq -c 'if .type == "session" then .profile.config.sandbox.approver.model="review
   "$parent_session" >"$session"
 before=$(shasum <"$session")
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null
+jq -e '.action == "approve"' "$control" >/dev/null
 jq -e '.endpoint == "https://review.invalid/api" and .config == {http_timeout:60} and
   .request.model == "review-model" and .request.max_output_tokens == 4096 and
   .request.response_schema.additionalProperties == false and
@@ -271,14 +271,14 @@ jq -e '.endpoint == "https://review.invalid/api" and .config == {http_timeout:60
 assert_canonical_session "$captured"
 assert_equal "$before" "$(shasum <"$session")" 'configured review changed the parent session'
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null || fail 'repeated model resolution failed'
+jq -e '.action == "approve"' "$control" >/dev/null || fail 'repeated model resolution failed'
 
 # Reviews use a fixed input budget and read model files on every request.
 sed -e 's/12000/4097/' -e 's/review-model/updated-model/' \
   "$SHELLFISH_DIR/models/review/fast.v1.jsonc" >"$tmp/small-model.jsonc"
 mv "$tmp/small-model.jsonc" "$SHELLFISH_DIR/models/review/fast.v1.jsonc"
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null || fail 'review used model-sized input budgeting'
+jq -e '.action == "approve"' "$control" >/dev/null || fail 'review used model-sized input budgeting'
 jq -e '.request.model == "updated-model"' "$sent" >/dev/null ||
   fail 'review did not reread its model file'
 
@@ -356,7 +356,7 @@ decision() {
 
 run_review "$(decision '[1,0,0]' '[0,1,0,0]' 0)"
 (( hook_status == 0 )) || fail 'decision review did not resolve'
-jq -e '.action == "allow" and
+jq -e '.action == "approve" and
   .state_update[0].value.reason ==
     "100% likely authorized." and
   (.state_update[0].value.content | fromjson | .model) == "d"
@@ -388,7 +388,7 @@ jq -e '.state_update[0].value.reason as $reason |
 jq -c 'if .type == "session" then .profile.config.sandbox.approver =
   {decision_model:"decider",allow_threshold:0.5} else . end' "$parent_session" >"$session"
 run_review "$(decision '[0.1,0.6,0.3]' '[0.1,0.2,0.5,0.2]' 0.1)"
-jq -e '.action == "allow"' "$control" >/dev/null ||
+jq -e '.action == "approve"' "$control" >/dev/null ||
   fail 'decision review ignored its allow threshold'
 jq -c 'if .type == "session" then .profile.config.sandbox.approver.decision_model="decider"
   else . end' "$parent_session" >"$session"

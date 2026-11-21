@@ -201,7 +201,7 @@ runs = []
 
 
 class Review:
-    def __init__(self, name, action="allow", delay=0, fail=False):
+    def __init__(self, name, action="approve", delay=0, fail=False):
         session = tmp / (name + ".jsonl")
         session.write_bytes(header)
         self.process = subprocess.Popen(
@@ -266,10 +266,10 @@ try:
         raise AssertionError("cancelled reviewer is still alive")
 
     # A verdict starts a short countdown, and without a client it applies at once.
-    for action, decision, exit_code in [("allow", "approve", 0), ("deny", "deny", 126)]:
+    for action, exit_code in [("approve", 0), ("deny", 126)]:
         review = Review("verdict-" + action, action=action)
         update = review.until("_tool_permission_update")
-        assert update["decision"] == decision and update["timeout"] == 10, update
+        assert update["decision"] == action and update["timeout"] == 10, update
         review.process.stdin.close()
         review.finish(exit_code)
 
@@ -278,7 +278,7 @@ try:
     override.answer("approve")
     override.finish(0)
 
-    for name, action, fail in [("defer", "", False), ("failure", "allow", True)]:
+    for name, action, fail in [("defer", "", False), ("failure", "approve", True)]:
         review = Review(name, action=action, fail=fail)
         verdict = review.until("_tool_permission_review")
         assert verdict["decision"] == "", verdict

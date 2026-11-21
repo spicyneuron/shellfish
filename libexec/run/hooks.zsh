@@ -76,14 +76,14 @@ sf_run_hook_complete() {
     include "lib/profile";
     .[0] as $outcome | .[1:] as $content |
     ({user_prompt_submit:["deny","handoff","session_update"],
-      permission_request:["allow","deny"],pre_tool_use:["deny"],
+      permission_request:["approve","deny"],pre_tool_use:["deny"],
       stop:["deny"]}[$lifecycle] // []) as $actions |
     if $control == {} or ($control | (.action | IN($actions[])) and
       if .action == "handoff" then keys == ["action","argv"] and
         (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
       elif .action == "session_update" then keys == ["action","profile"] and
         (.profile | type == "object")
-      elif (.action | IN("allow", "deny")) then keys == ["action"] or
+      elif (.action | IN("approve", "deny")) then keys == ["action"] or
         (keys == ["action","reason"] and (.reason | type == "string"))
       else keys == ["action"] end) then . else error("invalid control") end |
     ($component.draft + {type:"hook_result", id:$id,

@@ -180,26 +180,26 @@ jq -eRn '
   <"$stream" >/dev/null || fail 'tool lifecycle ordering or rendering was wrong'
 assert_canonical_session "$session"
 
-# Permission hooks receive supported bypass requests and may allow or deny.
+# Permission hooks receive supported bypass requests and may approve or deny.
 typeset permission="$tmp/permission" permission_input="$tmp/permission-input"
 sf_test_hook "$permission" '{"user_text":"${output.stderr}"}' <<'ZSH'
 #!/usr/bin/env zsh
 [[ $# == 2 && $1 == shell && $2 == call_1 ]] || exit 2
 input=$(cat)
 print -rn -- "$input" >"$PERMISSION_INPUT"
-print -rn -u3 -- '{"state_update":[{"name":"permission/state","value":true}],"action":"allow"}'
+print -rn -u3 -- '{"state_update":[{"name":"permission/state","value":true}],"action":"approve"}'
 print -rn -- 'review context'
 print -rn -u2 -- 'review display'
 ZSH
 export PERMISSION_INPUT=$permission_input
 SF_TEST_PROFILE=$(jq -c '.hooks=[] | .sandbox.enabled=true' <<<"$SF_TEST_PROFILE")
 sf_test_bind_hooks permission_request "$permission"
-session="$tmp/permission-allow.jsonl"
+session="$tmp/permission-approve.jsonl"
 sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- approved' \
   SF_TEST_PROVIDER_REQUEST="$tmp/bypass-request.json" \
-  sf_test_run permission "$session" >"$stream" || fail 'permission hook allow failed'
+  sf_test_run permission "$session" >"$stream" || fail 'permission hook approval failed'
 jq -e '.tools[] | select(.name == "shell").input_schema |
   .properties.request_sandbox_access.type == "object" and
   .properties.request_sandbox_access.properties.unrestricted.type == "boolean" and
@@ -223,7 +223,7 @@ jq -eRn '
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .sandbox_access == "approved" and
     .user_text == "**Shell** print -rn -- approved\napproved\nexit 0")
-' <"$stream" >/dev/null || fail 'permission allow produced the wrong records'
+' <"$stream" >/dev/null || fail 'permission approval produced the wrong records'
 
 # The core handles ineligible requests without consulting permission hooks.
 typeset permission_profile=$SF_TEST_PROFILE gate reason flag

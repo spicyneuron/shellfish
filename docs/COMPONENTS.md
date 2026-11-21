@@ -92,7 +92,7 @@ A hook manifest declares its lifecycle with `on`, such as `{"on":"stop"}`. An op
 | `session_start` | Add context once when creating a session | None | Empty | None |
 | `user_prompt_submit` | Add context or handle a prompt before submission | None | Exact prompt | `deny`, `handoff`, `session_update` |
 | `pre_tool_use` | Gate a tool call | `NAME ID` | Tool request JSON | `deny` |
-| `permission_request` | Review requested sandbox access | `NAME ID` | Tool request JSON | `allow`, `deny` |
+| `permission_request` | Review requested sandbox access | `NAME ID` | Tool request JSON | `approve`, `deny` |
 | `post_tool_use` | Add context after a durable tool result | `NAME ID` | Tool response JSON | None |
 | `stop` | Check whether a turn may finish | `REQUEST_COUNT` | Final assistant text | `deny` |
 
@@ -104,7 +104,7 @@ Hook attachments follow the same lifecycle placement as text context and persist
 
 Hook actions are JSON lines on fd 3, such as `{"action":"deny","reason":"Run the tests first"}`. The last action from a hook applies after exit 0. At submission, `deny` withholds the prompt; at `pre_tool_use`, it refuses the call; and at `stop`, it continues inference after settled model text.
 
-Permission review hooks may attach a `reason` to either `allow` or `deny`. Their decisions apply automatically after a grace period unless the user takes control or answers first. An `allow` approves specific access or unrestricted execution for one call, never for the session. `pre_tool_use` denials remain binding.
+Permission review hooks may attach a `reason` to either `approve` or `deny`. Their decisions apply automatically after a grace period unless the user takes control or answers first. An `approve` grants specific access or unrestricted execution for one call, never for the session. `pre_tool_use` denials remain binding.
 
 `handoff` supplies an `argv` array for a capable client to run after the turn exits cleanly. `session_update` supplies a complete session `profile` to replace atomically. Tool hooks cannot rewrite inputs or results. See the bundled hooks for input and action examples.
 

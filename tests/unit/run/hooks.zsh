@@ -32,7 +32,7 @@ case $input in
   fail) print -r -u3 -- '{"state_update":[{"name":"prompt/failed","value":true}],"action":"deny"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
   deny) print -r -u3 -- '{"action":"deny"}' ;;
   reason) print -r -u3 -- '{"action":"deny","reason":"prompt refused"}' ;;
-  invalid) print -r -u3 -- '{"action":"allow"}' ;;
+  invalid) print -r -u3 -- '{"action":"approve"}' ;;
   state) print -r -u3 -- '{"state_update":[{"name":"prompt/state","value":2}]}' ;;
   interrupt) print -r -u3 -- '{"state_update":[{"name":"prompt/started","value":true}]}'
     : >"$INTERRUPT_MARKER"; sleep 30 ;;

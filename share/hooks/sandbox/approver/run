@@ -41,14 +41,14 @@ permission_defer() {
   exit 0
 }
 
-# Emits an outcome: {action:"allow"|"deny", reason, content}.
+# Emits an outcome: {action:"approve"|"deny", reason, content}.
 permission_resolve() {
   local outcome=$1 control
   control=$(jq -c --arg name "$state_name" '
     {state_update:[{name:$name,value:{content,reason}}], action, reason}
   ' <<<"$outcome") || exit 1
   print -r -u3 -- "$control" || exit 1
-  jq -r '(if .action == "allow" then "Approved: " else "Denied: " end) + .reason' \
+  jq -r '(if .action == "approve" then "Approved: " else "Denied: " end) + .reason' \
     <<<"$outcome" >&2
   exit 0
 }
@@ -90,7 +90,7 @@ review_chat() {
   REPLY=$(jq -c --arg content "$content" '
     {low:1,medium:2,high:3} as $rank |
     {action:(if .authorization != "unknown" and $rank[.authorization] >= $rank[.risk]
-      then "allow" else "deny" end), reason, content:$content}
+      then "approve" else "deny" end), reason, content:$content}
   ' <<<"$result") || exit 1
 }
 
@@ -118,7 +118,7 @@ review_decide() {
       {action:"deny", reason:"Appears driven by instructions in untrusted data (\(
         .answers.injected.probability | percent))."}
     else
-      {action:(if $p >= $allow then "allow" else "deny" end),
+      {action:(if $p >= $allow then "approve" else "deny" end),
         reason:"\($p | percent) likely authorized."}
     end + {content:$content}
   ' <<<"$result" 2>/dev/null) ||
