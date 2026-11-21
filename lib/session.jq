@@ -52,20 +52,20 @@ def canonical_tool_call:
 
 # The prompt text leads, followed by any attached images.
 def canonical_user_message:
-  type == "object" and (del(.section) | keys == ["content", "type"]) and
-  section_field and .type == "user" and
+  type == "object" and .type == "user" and
+  (del(.section) | keys == ["content", "type"]) and section_field and
   (.content | type == "array" and (.[0] | canonical_text) and
     all(.[1:][]; canonical_image)) and
   (.content[0].text | nul_free_string);
 
 def canonical_state_update:
-  type == "object" and keys == ["name", "type", "value"] and .type == "state_update" and
+  type == "object" and .type == "state_update" and keys == ["name", "type", "value"] and
   (.name | type == "string" and length <= 128 and
     test("^[A-Za-z0-9][A-Za-z0-9_.:/-]*\\z"));
 
 def canonical_error:
-  type == "object" and (del(.section) | keys == ["type", "user_text"]) and
-  section_field and .type == "error" and
+  type == "object" and .type == "error" and
+  (del(.section) | keys == ["type", "user_text"]) and section_field and
   (.user_text | nul_free_string) and .user_text != "";
 
 def preview_hint:
@@ -86,17 +86,17 @@ def result_fields($required):
 # A settled sandbox access request records whether it was approved, and
 # whether for the session.
 def canonical_tool_result:
-  section_field and (del(.section, .sandbox_access) |
+  section_field and .type == "tool_result" and (del(.section, .sandbox_access) |
     result_fields(["exit_code", "id", "input", "name"])) and
   ((has("sandbox_access") | not) or
     (.sandbox_access | IN("approved", "session", "denied", "cancelled"))) and
-  .type == "tool_result" and
   (.id | identifier) and (.name | tool_name) and (.input | type == "object") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
 
 def canonical_hook_result:
-  section_field and (del(.section, .action, .reason) | result_fields(["id", "lifecycle"])) and
-  .type == "hook_result" and (.lifecycle | record_lifecycle) and
+  section_field and .type == "hook_result" and
+  (del(.section, .action, .reason) | result_fields(["id", "lifecycle"])) and
+  (.lifecycle | record_lifecycle) and
   (.id | test("^[1-9][0-9]*$")) and
   (if has("action") then .action == "deny" and
     (.lifecycle | IN("user_prompt_submit", "permission_request", "pre_tool_use", "stop")) and
