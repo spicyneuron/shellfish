@@ -1,6 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
+zmodload -F zsh/files b:zf_rm
 
 source "$SF_ROOT/lib/session.zsh"
 source "$SF_ROOT/lib/profile.zsh"
@@ -64,8 +65,7 @@ sf_run_section() {
 sf_run_assistant_emit() {
   local event=$1
   if [[ $event == '{"type":"_assistant_start"}' ]]; then
-    event=$(jq -cn --argjson section "$SF_RUN[agent_section]" \
-      '{type:"_assistant_start",section:$section}') || return 1
+    event="{\"type\":\"_assistant_start\",\"section\":$SF_RUN[agent_section]}"
   fi
   sf_run_emit "$event"
 }
@@ -543,7 +543,7 @@ sf_run_turn() {
     fi
   } always {
     trap - TERM
-    rm -rf -- "$turn_state" 2>/dev/null
+    zf_rm -rf -- "$turn_state" 2>/dev/null
     if (( begun && SF_RUN[signal_status] )); then
       message='Turn interrupted.'
       (( SF_RUN[signal_status] != 130 )) || message='Cancelled.'

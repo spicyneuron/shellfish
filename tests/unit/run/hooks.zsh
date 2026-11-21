@@ -142,8 +142,8 @@ sf_test_bind_hooks stop "$stop"
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
 assert_equal 2 "$(<$count)" 'stop did not continue provider'
-jq -e -s 'map(select(.type == "hook_result") | {model_text,action,reason}) ==
-  [{model_text:"<context script=\"stop\">\nchecking again\n</context>",action:"deny",reason:"not finished"}]' "$session" \
+jq -e -s 'map(select(.type == "hook_result") | {section,model_text,action,reason}) ==
+  [{section:2,model_text:"<context script=\"stop\">\nchecking again\n</context>",action:"deny",reason:"not finished"}]' "$session" \
   >/dev/null || fail 'stop feedback did not settle'
 rm -f "$count"
 new_session stop-image
@@ -233,7 +233,10 @@ jq -e '.[0] == {name:"go",aliases:["g"],arguments:"[TO]",description:"Go"}' \
 ZSH
 SF_TEST_PROFILE=$(jq -c --arg go "$tmp/commands/go" '.commands=[$go]' <<<"$SF_TEST_PROFILE")
 new_session command; sf_test_run '/g  away' "$session" >"$stream" || fail 'command failed'
-jq -eRn '[inputs | fromjson][-1] == {type:"_handoff",argv:["next"]}' <"$stream" >/dev/null &&
+jq -eRn '[inputs | fromjson] as $events |
+  $events[-1] == {type:"_handoff",argv:["next"]} and
+  [$events[] | select(.type == "_draft")] ==
+    [{type:"_draft",lifecycle:"user_prompt_submit",id:"1",user_text:"away"}]' <"$stream" >/dev/null &&
   jq -e -s 'map(.type) == ["session","hook_result"] and .[1].user_text == "away" and
     (.[1] | has("action") | not)' "$session" >/dev/null || fail 'command handoff or input was wrong'
 new_session command-deny; sf_test_run /go "$session" >"$stream" || fail 'bare command failed'

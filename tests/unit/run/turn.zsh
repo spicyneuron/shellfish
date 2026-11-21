@@ -17,6 +17,7 @@ jq -eRn -L "$ROOT" '
   $durable[0] == {type:"user",section:1,content:[{type:"text",text:"two\nwords"}]} and
   ($durable[1] | .type == "assistant" and .section == 2 and .stop == "end" and
     (.usage | token_usage)) and
+  ($events | any(. == {type:"_assistant_start",section:2})) and
   ($events | any(.type == "_assistant_message_delta"))
 ' <"$stream" >/dev/null || fail 'simple turn emitted the wrong objects'
 jq -c 'select(.type | startswith("_") | not)' "$stream" >"$tmp/emitted"

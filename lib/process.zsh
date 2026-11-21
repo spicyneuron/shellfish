@@ -2,6 +2,8 @@ emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/system
 zmodload zsh/zselect
+zmodload -F zsh/stat b:zstat
+zmodload -F zsh/files b:zf_rm
 
 (( $+functions[sf_fail] )) || source "$SF_ROOT/lib/cli.zsh"
 
@@ -148,8 +150,8 @@ sf_process_run() {
   local stdout_pipe="$stdout.pipe" stderr_pipe="$stderr.pipe" control_pipe="$capture/control.pipe"
   local group_file="$capture/process.group" status_file="$capture/process.status"
   local chunk buffer='' line
-  local -a command=( "$@" ) process_command readers
-  integer limit stdout_bytes stderr_bytes control_bytes=0 pending=0 control_fd=-1 guard_fd
+  local -a command=( "$@" ) process_command readers sizes
+  integer limit control_bytes=0 pending=0 control_fd=-1 guard_fd
   integer process_pid=0 process_status=1 reader reader_status=0 signal_status=0 complete=0 cancelled=0
 
   REPLY=''
@@ -231,12 +233,12 @@ sf_process_run() {
       sf_fail 'cannot capture process output'
       return
     }
-    stdout_bytes=$(wc -c <"$stdout") && stderr_bytes=$(wc -c <"$stderr") || {
+    zstat -A sizes +size -- "$stdout" "$stderr" || {
       sf_fail 'cannot inspect process capture'
       return
     }
     reply=( exit_code $process_status interrupted $signal_status cancelled $cancelled
-      stdout_bytes $stdout_bytes stderr_bytes $stderr_bytes control_bytes $control_bytes )
+      stdout_bytes $sizes[1] stderr_bytes $sizes[2] control_bytes $control_bytes )
     REPLY=''
     complete=1
   } always {
@@ -245,9 +247,9 @@ sf_process_run() {
     (( process_pid == 0 || complete )) || sf_process_stop "$process_pid" "$group_file"
     (( complete )) || {
       for reader in $readers; do kill -TERM $reader 2>/dev/null; wait $reader 2>/dev/null; done
-      rm -f -- "$stdout" "$stderr"
+      zf_rm -f -- "$stdout" "$stderr"
     }
-    rm -f -- "$stdout_pipe" "$stderr_pipe" "$control_pipe" "$group_file" "$status_file"
+    zf_rm -f -- "$stdout_pipe" "$stderr_pipe" "$control_pipe" "$group_file" "$status_file"
   }
   (( complete ))
 }

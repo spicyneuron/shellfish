@@ -40,6 +40,17 @@ assert_equal 79 "${#${REPLY%%$'\n'*}}"
 sf_tui_repaint || fail 'rendering the prompt failed'
 [[ $PREDISPLAY == *$'hello\n\n─'* ]] || fail "prompt boundary: $PREDISPLAY"
 
+# Control characters other than newline and tab cannot reach the terminal.
+sf_tui_reset
+sf_tui_terminal_reset
+message user $'\e[31mred\r\x7f\tx\nnext'
+view 79 20
+assert_equal $'─ user ──────────────────────────────────────────────────────────────────── 1 ─\n\n�[31mred��      x\nnext' "$REPLY"
+
+sf_tui_reset
+sf_tui_terminal_reset
+message user hello
+
 # Consecutive pieces of the same section omit the rule.
 message user again
 view 79 20

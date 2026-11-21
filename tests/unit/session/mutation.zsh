@@ -17,6 +17,12 @@ sf_scratch_root
 [[ $REPLY == "${tmp:a}/shellfish/scratch" ]]
 assert_mode 700 "$REPLY"
 
+# Scratch is recreated if it disappears between allocations.
+rmdir -- "$REPLY"
+sf_scratch probe || fail 'could not recreate the scratch directory'
+[[ -f $REPLY && $REPLY:h == "${tmp:a}/shellfish/scratch" ]]
+assert_mode 700 "$REPLY:h"
+
 # Without SHELLFISH_DIR, the nearest .shellfish above the working directory
 # wins, then ~/.shellfish.
 (

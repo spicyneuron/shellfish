@@ -1,7 +1,7 @@
 # Live core events and loaded durable records become one presentation action
 # vocabulary. Actions are arrays of strings; the first element is the type.
 # $mode is the starting record policy, $window the known context window, and
-# $drawn the readable blocks of the open live message.
+# stdin starts with the open live message's drawn blocks, then the batch.
 
 def compact_tokens:
   if . < 1000 then tostring
@@ -159,6 +159,7 @@ def event_actions($window; $drawn):
 
 def nul_safe: gsub("\u0000"; "�");
 
+(input | fromjson) as $drawn |
 [inputs | fromjson] |
 reduce .[] as $line (
   {mode: $mode, window: (if $window == "" then null else ($window | tonumber) end),

@@ -69,7 +69,7 @@ sf_run_component_content() {
 sf_run_component_execute() {
   local -a watch=()
   if [[ $1 == --poll ]]; then watch=( "$1" "$2" ); shift 2; fi
-  local capture=$1 limit=$4 max_control=$5 state=ok
+  local capture=$1 limit=$4 max_control=$5 state=ok stdout stderr
   local -A process
   sf_process_run "${watch[@]}" "$@" || return
   process=( "${reply[@]}" )
@@ -86,25 +86,24 @@ sf_run_component_execute() {
   elif (( process[control_bytes] > max_control )); then
     state=overflow
   else
-    sf_run_component_bound "$capture/stdout" "$capture/stdout.bounded" "$limit" &&
-      sf_run_component_bound "$capture/stderr" "$capture/stderr.bounded" "$limit" &&
-      REPLY=$(jq -cn --rawfile stdout "$capture/stdout.bounded" \
-        --rawfile stderr "$capture/stderr.bounded" --argjson exit_code "$process[exit_code]" '
+    sf_run_component_bound "$capture/stdout" $process[stdout_bytes] "$limit" &&
+      stdout=$REPLY &&
+      sf_run_component_bound "$capture/stderr" $process[stderr_bytes] "$limit" &&
+      stderr=$REPLY &&
+      REPLY=$(jq -cn --rawfile stdout "$stdout" \
+        --rawfile stderr "$stderr" --argjson exit_code "$process[exit_code]" '
         {output:{stdout:$stdout,stderr:$stderr,exit_code:$exit_code},ran:true}') ||
       { sf_fail 'cannot capture component output'; return; }
   fi
   reply=( $state $process[exit_code] )
 }
 
+# Sets REPLY to SOURCE, or to a marked copy of its tail when BYTES exceed LIMIT.
 sf_run_component_bound() {
-  local source=$1 destination=$2
-  integer limit=$3 bytes room
-  local marker=$'[output truncated]\n'
-  bytes=$(wc -c <"$source") || return
-  if (( bytes <= limit )); then
-    cat "$source" >"$destination"
-  else
-    room=$(( limit - ${#marker} ))
-    print -rn -- "$marker" >"$destination" && tail -c "$room" "$source" >>"$destination"
-  fi
+  local source=$1 marker=$'[output truncated]\n'
+  integer bytes=$2 limit=$3
+  REPLY=$source
+  (( bytes > limit )) || return 0
+  REPLY=$source.bounded
+  print -rn -- "$marker" >"$REPLY" && tail -c $(( limit - ${#marker} )) "$source" >>"$REPLY"
 }

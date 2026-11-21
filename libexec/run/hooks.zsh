@@ -1,65 +1,55 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
+zmodload -F zsh/files b:zf_rm
 
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_run_component_begin] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
-# The lifecycle's invocation plan. A prompt naming a command runs only that
-# command, with its arguments as input.
-typeset -gA SF_HOOK_PLAN=()
-
+# Model, command catalog and arguments, then directory, capture limit, draft
+# and component for each hook. An unmatched hook has no capture limit.
 sf_run_hook_project() {
   local lifecycle=$1 input=$2
   sf_jq_fields -rn --argjson model "$SF_RUN[model]" --argjson hooks "$SF_RUN[hooks]" \
-    --argjson commands "$SF_RUN[commands]" --arg lifecycle "$lifecycle" --arg input "$input" '
+    --argjson commands "$SF_RUN[commands]" --arg lifecycle "$lifecycle" --arg input "$input" \
+    --argjson max_capture "$SF_RUN[max_capture]" '
       include "lib/fields";
-      entry("model"; $model.request.model),
-      ([if $lifecycle == "user_prompt_submit" then first($commands[] |
-        .command[:-4] as $directory | .manifest.arguments as $arguments |
+      include "lib/profile";
+      def planned($input):
+        .command[:-4] as $directory | .manifest as $manifest |
+        if $manifest.match == null or ($input | test($manifest.match.pattern)) then
+          # The script name is the path below hooks/ or commands/, as profiles write it.
+          {template:$manifest.user_text, input:$input,
+           script:($directory |
+             if test("/(hooks|commands)/") then sub(".*/(hooks|commands)/"; "") else split("/") | last end),
+           draft:({type:"_draft",lifecycle:$lifecycle,
+             user_text:render_template($manifest.user_text; {input:$input})} +
+             ($manifest | with_entries(select(.key == "user_preview_lines")))),
+           max_capture:(if $manifest.max_capture_kb then $manifest.max_capture_kb * 1024
+             else $max_capture end)} |
+          [$directory, (.max_capture | tostring),
+           (.draft | if .user_text == "" then "" else tojson end), tojson]
+        else [$directory, "", "", ""] end | .[] | field;
+      ($model.request.model | field),
+      ([if $lifecycle == "user_prompt_submit" then first($commands[] | . as $component |
+        .manifest.arguments as $arguments |
         (.name, .manifest.aliases[]?) | ("/" + .) as $prefix |
-        if $input == $prefix then [$directory, ""]
+        if $input == $prefix then [$component, ""]
         elif $arguments != null and ($input | startswith($prefix + " ")) and
           ($input | contains("\n") | not) then
-          [$directory, $input[$prefix | length:] | sub("^[[:space:]]+"; "")]
+          [$component, ($input[$prefix | length:] | sub("^[[:space:]]+"; ""))]
         else empty end) else empty end] | first) as $command |
       if $command == null then
-        entry("hooks"; [$hooks[] | select(.manifest.on == $lifecycle) | .command[:-4]] |
-          join("\n"))
+        ("" | field), ("" | field),
+        ($hooks[] | select(.manifest.on == $lifecycle) | planned($input))
       else
-        entry("command"; $command[0]), entry("arguments"; $command[1]),
-        entry("catalog"; [$commands[] | {name} + (.manifest |
-          {aliases, arguments, description} | with_entries(select(.value != null)))] | tojson)
+        ([$commands[] | {name} + (.manifest |
+          {aliases, arguments, description} | with_entries(select(.value != null)))] | tojson | field),
+        ($command[1] | field),
+        ($command[0] | planned($command[1]))
       end,
       ("ok" | field)
-    ' || return 1
-  SF_HOOK_PLAN=( "${reply[@]}" )
-}
-
-sf_run_hook_manifest() {
-  local command=$1 lifecycle=$2 input=$3 id=$4 max_capture=$5 components=$6
-  sf_jq_fields -cn --argjson components "$components" --arg command "$command/run" \
-    --arg lifecycle "$lifecycle" --arg input "$input" --arg id "$id" \
-    --argjson max_capture "$max_capture" '
-    include "lib/fields";
-    include "lib/profile";
-    first($components[] | select(.command == $command) | .manifest) as $manifest |
-    if $manifest.match == null or ($input | test($manifest.match.pattern)) then
-      # The script name is the path below hooks/ or commands/, as profiles write it.
-      {template:$manifest.user_text, input:$input,
-       script:($command | rtrimstr("/run") |
-         if test("/(hooks|commands)/") then sub(".*/(hooks|commands)/"; "") else split("/") | last end),
-       draft:({type:"_draft",lifecycle:$lifecycle,id:$id,
-         user_text:render_template($manifest.user_text; {input:$input})} +
-         ($manifest | with_entries(select(.key == "user_preview_lines")))),
-       max_capture:(if $manifest.max_capture_kb then $manifest.max_capture_kb * 1024
-         else $max_capture end)} as $component |
-      entry("component"; $component | tojson),
-      entry("draft"; $component.draft | if .user_text == "" then "" else tojson end),
-      entry("max_capture"; $component.max_capture | tostring)
-    else entry("component"; "") end,
-    ("ok" | field)
-  ' || { sf_fail "invalid hook manifest: $command"; return; }
+    '
 }
 
 # The last action wins. It is validated when the hook settles.
@@ -79,7 +69,8 @@ sf_run_hook_complete() {
   local lifecycle=$1 outcome=$2 command=$3
   local -A settled
   print -rl -- "$outcome" "${content[@]}" | sf_jq_fields -cs --argjson component "$SF_COMPONENT[values]" \
-    --argjson control "$control" --arg lifecycle "$lifecycle" '
+    --argjson control "$control" --arg lifecycle "$lifecycle" --arg id "$SF_RUN[hook_id]" \
+    --argjson section "${SF_RUN[agent_section]:-0}" '
     include "lib/fields";
     include "lib/session";
     include "lib/profile";
@@ -95,7 +86,7 @@ sf_run_hook_complete() {
       elif (.action | IN("allow", "deny")) then keys == ["action"] or
         (keys == ["action","reason"] and (.reason | type == "string"))
       else keys == ["action"] end) then . else error("invalid control") end |
-    ($component.draft + {type:"hook_result",
+    ($component.draft + {type:"hook_result", id:$id,
       user_text:render_template($component.template; $component + $outcome),
       model_text:($outcome.output.stdout | if . == "" then . else
         "<context script=\"\($component.script | @html)\">\n" + . +
@@ -105,6 +96,7 @@ sf_run_hook_complete() {
       (if $content == [] then . else
         .model_content = ([.model_text? | select(. != null) | {type:"text",text:.}] + $content) |
         del(.model_text) end) |
+      (if $section > 0 then .section = $section else . end) |
       if (has("user_text") or has("model_text") or has("model_content") or has("action")) | not then entry("result"; "")
       elif canonical_hook_result then entry("result"; tojson)
       else error("invalid hook result") end,
@@ -116,7 +108,7 @@ sf_run_hook_complete() {
   settled=( "${reply[@]}" )
   action=$settled[action] reason=$settled[reason] payload=$settled[payload]
   if [[ -n $settled[result] ]]; then
-    sf_run_append "$SF_COMPONENT[session]" "$settled[result]" "${SF_RUN[agent_section]:#0}" || return
+    sf_run_append "$SF_COMPONENT[session]" "$settled[result]" || return
     (( SF_RUN[hook_id] += 1 ))
     [[ $settled[model_feedback] != true ]] || model_feedback=1
   fi
@@ -131,10 +123,10 @@ sf_run_hooks() {
   local session=$1 lifecycle=$2 input_text=$3 turn_state=$4
   shift 4
   local command input config_dir directory error='' control action='' reason='' payload=''
-  local kind=hooks
-  local -a hooks environment content
-  local -A SF_COMPONENT=() prepared
-  integer max_capture model_feedback=0 max_content=$SF_RUN[max_content] content_bytes=0
+  local catalog draft
+  local -a environment content plan
+  local -A SF_COMPONENT=()
+  integer i max_capture model_feedback=0 max_content=$SF_RUN[max_content] content_bytes=0
 
   reply=( action '' reason '' payload '' )
   [[ " $SF_RUN[lifecycles] " == *" $lifecycle "* ]] || return 0
@@ -142,11 +134,11 @@ sf_run_hooks() {
     sf_fail "cannot inspect $lifecycle hooks"
     return
   }
-  hooks=( ${(f)SF_HOOK_PLAN[hooks]} )
-  if [[ -n $SF_HOOK_PLAN[command] ]]; then
-    kind=commands hooks=( "$SF_HOOK_PLAN[command]" ) input_text=$SF_HOOK_PLAN[arguments]
-  fi
-  (( ${#hooks} )) || return 0
+  plan=( "${reply[@]}" )
+  (( ${#plan} > 3 )) || { reply=( action '' reason '' payload '' ); return 0; }
+  catalog=$plan[2]
+  # A prompt naming a command runs only that command, with its arguments as input.
+  [[ -z $catalog ]] || input_text=$plan[3]
   sf_environment_load || return
   config_dir=$REPLY
   sf_scratch hook-input || { sf_fail "cannot prepare $lifecycle hook input"; return; }
@@ -156,14 +148,14 @@ sf_run_hooks() {
     "${SF_ENVIRONMENT_VALUES[@]}"
     "SHELLFISH_SESSION=${session:A}"
     "SHELLFISH_CONFIG=$SF_RUN[config]"
-    "SHELLFISH_MODEL=$SF_HOOK_PLAN[model]"
+    "SHELLFISH_MODEL=$plan[1]"
     "SHELLFISH_EXECUTABLE=$SF_ENTRY"
     "SHELLFISH_MODE=${SHELLFISH_MODE-}"
     "SHELLFISH_VERBOSE=${SHELLFISH_VERBOSE:-0}"
     "SHELLFISH_DIR=$config_dir"
     "SHELLFISH_SHARE_DIR=$SF_SHARE"
   )
-  [[ $kind != commands ]] || environment+=( "SHELLFISH_COMMANDS=$SF_HOOK_PLAN[catalog]" )
+  [[ -z $catalog ]] || environment+=( "SHELLFISH_COMMANDS=$catalog" )
   if [[ $lifecycle != session_start ]]; then
     environment+=( "SHELLFISH_TURN_ID=$SF_RUN[turn_id]" "SHELLFISH_TURN_STATE=$turn_state" )
   else
@@ -172,23 +164,23 @@ sf_run_hooks() {
   if ! print -rn -- "$input_text" >"$input"; then
     error="cannot prepare $lifecycle hook input"
   else
-    for command in "${hooks[@]}"; do
+    for (( i = 4; i <= ${#plan}; i += 4 )); do
+      command=$plan[i]
       [[ -d $command && -x $command/run ]] || {
         error="hook command is not executable: $command"
         break
       }
-      sf_run_hook_manifest "$command" "$lifecycle" "$input_text" \
-        "$SF_RUN[hook_id]" "$SF_RUN[max_capture]" "$SF_RUN[$kind]" || { error=$SF_ERROR; break; }
-      prepared=( "${reply[@]}" )
-      [[ -n $prepared[component] ]] || continue
-      max_capture=$prepared[max_capture]
+      [[ -n $plan[i+1] ]] || continue
+      max_capture=$plan[i+1]
+      draft=$plan[i+2]
       content=() content_bytes=0
       sf_scratch -d hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
       # A command's prompt is never submitted.
-      [[ $kind == commands ]] && control='{"action":"deny"}' || control='{}'
-      sf_run_component_begin "$session" "$prepared[component]"
-      if [[ -n $prepared[draft] ]] && ! sf_run_emit "$prepared[draft]"; then
+      [[ -n $catalog ]] && control='{"action":"deny"}' || control='{}'
+      sf_run_component_begin "$session" "$plan[i+3]"
+      # The preceding hook only advanced the ID if it wrote a result.
+      if [[ -n $draft ]] && ! sf_run_emit "{\"id\":\"$SF_RUN[hook_id]\",${draft#\{}"; then
         error='cannot emit hook draft'
       elif ! sf_run_component_execute "${watch[@]}" "$directory" "${SF_RUN[cwd]:A}" "$input" "$max_capture" \
           "$max_content" sf_run_hook_line /usr/bin/env "${environment[@]}" "SHELLFISH_MAX_CAPTURE_KB=$(( max_capture / 1024 ))" \
@@ -213,11 +205,11 @@ sf_run_hooks() {
             fi ;;
         esac
       fi
-      rm -rf -- "$directory"
+      zf_rm -rf -- "$directory"
       [[ -z $error && -z $action ]] || break
     done
   fi
-  rm -f -- "$input"
+  zf_rm -f -- "$input"
   if [[ -z $error && $lifecycle == stop && $action == deny ]] &&
       (( ! model_feedback )); then
     error='stop hook denied without model feedback'

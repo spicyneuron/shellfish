@@ -4,6 +4,7 @@ source "${0:A:h:h:h:h}/_helpers.zsh"
 sf_test_source libexec/tui/render/text.zsh libexec/tui/render/wrap.zsh
 
 rows() { REPLY="${(j:|:)SF_TUI_WRAP_ROWS}" }
+spans() { REPLY="${(j:|:)SF_TUI_WRAP_SPANS}" }
 
 # Break spaces do not appear on either wrapped row.
 sf_tui_wrap 5 'hello world' ''
@@ -44,6 +45,16 @@ rows; assert_equal $'│ 界|│ 界' "$REPLY"
 
 sf_tui_wrap 80 $'one\n' ''
 rows; assert_equal one "$REPLY"
+
+# Spans follow their characters onto wrapped, prefixed rows.
+sf_tui_wrap 6 'one two three' '│ ' 4 7 code
+rows; assert_equal '│ one|│ two|│ thre|│ e' "$REPLY"
+spans; assert_equal '|2 5 code||' "$REPLY"
+
+# Plain and wide lines wrap alike, and spans cross the newline between them.
+sf_tui_wrap 5 $'ab cd ef\n界x yz' '' 0 7 a 9 11 b
+rows; assert_equal 'ab cd|ef|界x|yz' "$REPLY"
+spans; assert_equal '0 5 a|0 1 a|0 2 b|' "$REPLY"
 
 # A limited wrap keeps one extra row to detect hidden output.
 sf_tui_wrap -L 2 80 $'one\ntwo\nthree' ''
