@@ -81,6 +81,31 @@ assert_equal "cannot present session: $malformed" "$SF_TUI_ERROR"
 [[ $(<"$tmp/loading") == *$'\r\e[2K' ]] || fail 'failed resume left loading activity'
 assert_equal '' "$(jobs -p)"
 
+# Paging uses durable section IDs and expands all records in the target.
+SF_TUI_SESSION="$tmp/pager.jsonl"
+{
+  head -n 1 "$replay"
+  print -rl -- \
+    '{"type":"user","section":10,"content":[{"type":"text","text":"Earlier prompt."}]}' \
+    '{"type":"assistant","section":12,"content":[{"type":"reasoning","text":"Reasoning.\nMore reasoning."}]}' \
+    '{"type":"tool_result","section":12,"id":"call","exit_code":0,"user_preview_lines":1,"user_text":"Tool\nPreview\nFull tool output."}' \
+    '{"type":"assistant","section":12,"content":[{"type":"text","text":"Answer."}]}' \
+    '{"type":"hook_result","id":"notice","user_text":"Unnumbered notice."}'
+} >"$SF_TUI_SESSION"
+functions[sf_tui_external_saved]=$functions[sf_tui_external]
+sf_tui_external() { cat -- "${@[-1]}"; }
+SF_TUI_PREVIEW=1 SF_TUI_PREVIEW_REASONING=1
+sf_tui_verbose 12 >"$tmp/paged" || fail 'cannot page section 12'
+typeset paged=$(<"$tmp/paged")
+[[ $paged == *' 12 ─'*'More reasoning.'*'Full tool output.'*'Answer.'* &&
+   $paged != *'Earlier prompt.'* && $paged != *'Unnumbered notice.'* ]] ||
+  fail 'pager output was not limited to the expanded section' "$paged"
+assert_equal 1 "$SF_TUI_PREVIEW"
+assert_equal Hello "${(j:,:)SF_TUI_HISTORY}"
+functions[sf_tui_external]=$functions[sf_tui_external_saved]
+unfunction sf_tui_external_saved
+SF_TUI_PREVIEW=full SF_TUI_PREVIEW_REASONING=full
+
 # Model context settles under its lifecycle without exposing model text.
 SF_TUI_SESSION="$tmp/session.jsonl"
 SF_TUI_STATE=working

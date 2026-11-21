@@ -151,7 +151,6 @@ The bundled commands are selected by the profile:
 | Input | Action |
 | --- | --- |
 | `/help`, `/h` | Show the profile's commands and editor keys |
-| `/verbose`, `/v` | View the current session's expanded output in `$PAGER`, else `less -R`, then return to the same chat |
 | `/new` | Start a session with the active profile |
 | `/resume` | Choose another session for this directory |
 | `/fork [N]` | Branch before a user section or after an agent section |

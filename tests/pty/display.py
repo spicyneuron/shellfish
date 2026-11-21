@@ -85,7 +85,7 @@ def test_external_draft_and_pager():
             assert (root / "original").read_text() == "draft"
             # Finish the turn while the editor owns the tty.
             (session.project_dir / "release-provider").touch()
-            _, records = session.wait_session_records(3)
+            transcript, records = session.wait_session_records(3)
             assert [r["type"] for r in records] == ["session", "user", "assistant"]
             terminal.pump(0)
             assert terminal.everything() == before, terminal.dump()
@@ -116,7 +116,24 @@ def test_external_draft_and_pager():
             paged = root / "paged"
             terminal.wait_for("complete pager output",
                               lambda: paged.exists() and words[-1] in paged.read_text())
-            assert all(word in paged.read_text() for word in words)
+            full = paged.read_text()
+            assert all(word in full for word in words)
+            assert "─ user " in full and "─ agent " in full
+            paged.unlink()
+            session.send(f"/v {records[1]['section']}\r".encode())
+            terminal.wait_for("selected pager output",
+                              lambda: paged.exists() and words[-1] in paged.read_text())
+            selection = paged.read_text()
+            assert "─ user " in selection and "─ agent " not in selection
+            paged.unlink()
+            session.send(b"/verbose 999999999\r")
+            terminal.wait_for("missing section", lambda:
+                              "Cannot view section 999999999." in terminal.everything())
+            assert not paged.exists()
+            session.send(b"/queue\r")
+            terminal.wait_for("queue help", lambda: "/queue drop N" in terminal.everything()
+                              and "/queue clear" in terminal.everything())
+            assert transcript.read_text().count("\n") == 3
             session.send(b"still here")
             terminal.wait_for("same chat", lambda: "❯ still here" in terminal.frame())
             for word in words:

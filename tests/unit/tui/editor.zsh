@@ -124,6 +124,15 @@ assert_equal '' "$BUFFER"
 assert_equal 1 "${#SF_TUI_QUEUE}"
 assert_equal $'first queued\ncontinued' "$SF_TUI_QUEUE[1]"
 
+BUFFER='/queue'
+CURSOR=${#BUFFER}
+sf_tui_accept
+assert_equal '' "$BUFFER"
+assert_equal 1 "${#SF_TUI_QUEUE}"
+assert_equal 1 "${#SF_TUI_HISTORY}"
+[[ $ZLE_CALL == '-M '*'/queue drop N'*'/queue clear'*'Ctrl-X'* ]] ||
+  fail 'bare queue command did not show queue help'
+
 BUFFER='second queued'
 CURSOR=${#BUFFER}
 sf_tui_accept

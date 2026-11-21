@@ -258,16 +258,18 @@ TRAPWINCH() {
 
 sf_tui_accept() {
   local intent submitted=$BUFFER
+  local -a reply
   sf_tui_submit "$submitted" || return 1
   intent=$REPLY
   case $intent in
     ignore) return 0 ;;
-    repaint)
+    repaint|notice)
       sf_tui_history_reset
       BUFFER=''
       CURSOR=0
       sf_tui_repaint_checked
       zle -R
+      [[ $intent != notice ]] || zle -M "${(F)reply}"
       ;;
     quit) zle accept-line ;;
     submit)
@@ -349,15 +351,16 @@ sf_tui_edit_draft() {
 }
 
 sf_tui_verbose() {
-  local file pager=${PAGER:-less -R}
-  [[ -n $SF_TUI_SESSION ]] || return 0
+  local section=$1 file pager=${PAGER:-less -R}
+  [[ -n $SF_TUI_SESSION ]] || return 1
   file=$(mktemp "${TMPDIR:-/tmp}/shellfish-verbose.XXXXXX") || return 1
   {
     # Rendering the snapshot in a subshell leaves the live projection intact.
     (
       SF_TUI_PREVIEW=full SF_TUI_PREVIEW_REASONING=full
-      sf_tui_load "$SF_TUI_SESSION" || exit 1
+      sf_tui_load "$SF_TUI_SESSION" "$section" || exit 1
       sf_tui_rows_prepare $(( COLUMNS > 1 ? COLUMNS - 1 : 80 )) || exit 1
+      [[ -z $section ]] || (( ${#SF_TUI_ROW_TEXT} + ${#SF_TUI_LIVE_ROW_TEXT} )) || exit 1
       print -rl -- "${SF_TUI_ROW_TEXT[@]}" "${SF_TUI_LIVE_ROW_TEXT[@]}"
     ) >"$file" || return 1
     sf_tui_external ${(@Q)${(z)pager}} "$file"

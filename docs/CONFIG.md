@@ -62,7 +62,7 @@ Keep credentials in `.env` or the environment, not in profile `config`. See [Com
 
 ## Chat
 
-Run `/help` for the active profile's commands and editor keys. Client-owned `/refresh`, `/quit`, `/queue`, and `/verbose` commands do not run a turn. `/refresh` rerenders the current session, and `/quit` exits chat. `/verbose` opens the session's expanded output in `$PAGER`, else `less -R`, and returns to the same chat on exit.
+Run `/help` for the active profile's commands and editor keys. Client-owned `/refresh`, `/quit`, `/queue`, and `/verbose` commands do not run a turn. `/refresh` rerenders the current session, and `/quit` exits chat. `/verbose` (or `/v`) opens the session's expanded output in `$PAGER`, else `less -R`, and returns to the same chat on exit. Use `/verbose N` to view just section N.
 
 | Key | Action |
 | --- | --- |
@@ -73,7 +73,7 @@ Run `/help` for the active profile's commands and editor keys. Client-owned `/re
 | Ctrl-Return, Cmd-Return | Send now, when supported by the terminal |
 | Ctrl-V | Paste a clipboard image as an `[Image: PATH]` marker |
 
-Sending now waits for cancellation to settle before starting the new turn. The remaining queue is preserved and resumes automatically afterward. Use `/queue drop N` or `/queue clear` to remove pending prompts.
+Sending now waits for cancellation to settle before starting the new turn. The remaining queue is preserved and resumes automatically afterward. Use `/queue drop N` or `/queue clear` to remove pending prompts. Run `/queue` on its own for queue help.
 
 Clipboard images use `wl-paste` or `xclip` on Linux and shrink to at most 2000 pixels on the long edge when ImageMagick or `sips` is present. Sending a prompt attaches each marker's PNG, JPEG, GIF, or WebP file.
 
