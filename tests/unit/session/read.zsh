@@ -251,11 +251,12 @@ typeset numbered='[
   {"type":"tool_result","section":13,"id":"c1","name":"shell","input":{},"exit_code":0},
   {"type":"assistant","section":13,"stop":"end","content":[]}
 ]'
-print -r -- "$numbered" | accepts | jq -e '.sections == [12,13]' >/dev/null
+print -r -- "$numbered" | accepts | jq -e '.agent_section == 13' >/dev/null
 print -r -- "$numbered" | messages | jq -e 'all(.[]; has("section") | not)' >/dev/null
 for invalid_section in '.[0].section=0' '.[0].section=1.5' '.[1].section=12' \
     '.[2].section=14' '.[3].section=14' \
-    '. + [{type:"user",section:12,content:[{type:"text",text:"again"}]}]'; do
+    '. + [{type:"user",section:12,content:[{type:"text",text:"again"}]}]' \
+    '. + [{type:"user",section:12.0,content:[{type:"text",text:"again"}]}]'; do
   if jq "$invalid_section" <<<"$numbered" | accepts >/dev/null 2>&1; then
     fail "the reader accepted an invalid section: $invalid_section"
   fi

@@ -168,22 +168,26 @@ def claim_section($record):
     if $record.section == .agent_section then . else error("wrong agent section") end
   elif ($record.type | IN("assistant", "error")) and .agent_section != null then
     if $record.section == .agent_section then . else error("wrong assistant section") end
-  elif (.sections | index($record.section)) != null then error("repeated section")
-  else .sections += [$record.section] |
-    if ($record.type | IN("assistant", "error")) then .agent_section = $record.section else . end
+  else
+    # The same section can be written as 12 or 12.0.
+    ($record.section | floor | tostring) as $id |
+    if .sections[$id] then error("repeated section")
+    else .sections[$id] = true |
+      if ($record.type | IN("assistant", "error")) then .agent_section = $record.section else . end
+    end
   end;
 
 def session_state:
   reduce .[] as $record
-    ({next:"user", calls:[], context:[], hooks:[], messages:[], response:null,
-      requests:0, call_total:0, sections:[], agent_section:null};
+    ({next:"user", calls:[], context:[], hooks:{}, messages:[], response:null,
+      requests:0, call_total:0, sections:{}, agent_section:null};
       if ($record | canonical_state_update) then .
       elif ($record | canonical_hook_result) then
         claim_section($record) |
-        if (.hooks | index($record.id)) != null then
+        if .hooks[$record.id] then
           error("repeated hook id: " + $record.id)
         else
-          .hooks += [$record.id] |
+          .hooks[$record.id] = true |
           (if $record.lifecycle == "stop" and $record.action? == "deny" then
              .next = "assistant"
            else . end) |
