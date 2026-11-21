@@ -233,7 +233,10 @@ jq -e '.[0] == {name:"go",aliases:["g"],arguments:"[TO]",description:"Go"}' \
 ZSH
 SF_TEST_PROFILE=$(jq -c --arg go "$tmp/commands/go" '.commands=[$go]' <<<"$SF_TEST_PROFILE")
 new_session command; sf_test_run '/g  away' "$session" >"$stream" || fail 'command failed'
-jq -eRn '[inputs | fromjson][-1] == {type:"_handoff",argv:["next"]}' <"$stream" >/dev/null &&
+jq -eRn '[inputs | fromjson] as $events |
+  $events[-1] == {type:"_handoff",argv:["next"]} and
+  [$events[] | select(.type == "_draft")] ==
+    [{type:"_draft",lifecycle:"user_prompt_submit",id:"1",user_text:"away"}]' <"$stream" >/dev/null &&
   jq -e -s 'map(.type) == ["session","hook_result"] and .[1].user_text == "away" and
     (.[1] | has("action") | not)' "$session" >/dev/null || fail 'command handoff or input was wrong'
 new_session command-deny; sf_test_run /go "$session" >"$stream" || fail 'bare command failed'
