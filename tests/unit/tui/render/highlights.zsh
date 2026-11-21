@@ -77,6 +77,8 @@ span_texts() {
   for (( index = 1; index <= ${#SF_TUI_HIGHLIGHT_SPANS}; index += 3 )); do
     start=$(( SF_TUI_HIGHLIGHT_SPANS[index] + 1 ))
     end=${SF_TUI_HIGHLIGHT_SPANS[index + 1]}
+    [[ ${2-} == '' || ${SF_TUI_HIGHLIGHT_SPANS[index + 2]} == "$2" ]] ||
+      continue
     texts+=( "${source[start,end]}" )
   done
   REPLY="${(j:,:)texts}"
@@ -135,7 +137,38 @@ typeset diff=$'@@ -1 +1 @@\n-old\n+new\n--- a/file\n+++ b/file\n---- rule'
 SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_diff_highlight "$diff"
 span_texts "$diff"
-assert_equal '@@ -1 +1 @@,-old,+new,--- a/file,+++ b/file,---- rule' "$REPLY"
+assert_equal '@@ -1 +1 @@,-,old,+,new,--- a/file,+++ b/file,---- rule' "$REPLY"
 assert_equal "$SF_TUI_STYLE[clamp]" "$SF_TUI_HIGHLIGHT_SPANS[3]"
-assert_equal bold "$SF_TUI_HIGHLIGHT_SPANS[12]"
-assert_equal "$SF_TUI_STYLE[syntax.removed]" "$SF_TUI_HIGHLIGHT_SPANS[18]"
+assert_equal bold "$SF_TUI_HIGHLIGHT_SPANS[18]"
+assert_equal "$SF_TUI_STYLE[syntax.removed]" "$SF_TUI_HIGHLIGHT_SPANS[24]"
+
+SF_TUI_STYLE[syntax.removed]='fg=red,bg=darkred'
+typeset removed_word="$SF_TUI_STYLE[syntax.removed],bold"
+typeset added_word="$SF_TUI_STYLE[syntax.added],bold"
+typeset indent=$'heading\n'
+diff=$'@@ -2,4 +2,4 @@\n-é one stays two\n-same dust\n+é red stays blue\n+same gold\n context\n--- first\n\\ No newline at end of file\n+++ last'
+SF_TUI_HIGHLIGHT_SPANS=()
+sf_tui_diff_highlight "$diff" ${#indent}
+span_texts "$indent$diff" "$removed_word"
+assert_equal 'one,two,dust,--,first' "$REPLY"
+span_texts "$indent$diff" "$added_word"
+assert_equal 'red,blue,gold,++,last' "$REPLY"
+
+# Even totals do not imply balanced replacement blocks across context.
+typeset fallback large=$'@@ -1,9 +1,9 @@\n-old\n+new'
+repeat 8; do large+=$'\n context'; done
+for fallback in \
+  $'@@ -1 +1,2 @@\n-old\n+new\n+added' \
+  $'@@ -1,3 +1,3 @@\n-removed\n context\n-old\n+new\n+added' \
+  "$large" \
+  $'@@ -1 +1 @@\n-a b c d e f g h i j k l m\n+new' \
+  $'@@ -1 +1 @@\n-'${(l:257::a:):-}$'\n+new'; do
+  SF_TUI_HIGHLIGHT_SPANS=()
+  sf_tui_diff_highlight "$fallback"
+  span_texts "$fallback" "$removed_word"
+  assert_equal '' "$REPLY"
+  span_texts "$fallback" "$added_word"
+  assert_equal '' "$REPLY"
+  span_texts "$fallback" "$SF_TUI_STYLE[syntax.added]"
+  [[ $REPLY == '+new'* ]] || fail 'fallback lost line highlighting'
+done

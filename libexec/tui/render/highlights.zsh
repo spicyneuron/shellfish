@@ -461,14 +461,129 @@ sf_tui_markdown_highlight() {
   [[ -z $fence ]] || REPLY="$fence"$'\t'"$language"$'\t'"$comment"
 }
 
+# reply maps hunk-relative line numbers to their partners, only for a balanced hunk.
+sf_tui_diff_pairs() {
+  integer old=$1 new=$1 index=0 added=0
+  shift
+  local line
+  local -a pairs=() removed=()
+  reply=()
+  for line; do
+    (( ++index ))
+    case $line in
+      (' '*)
+        (( added == ${#removed} )) || return 0
+        removed=() added=0
+        old=$(( old - 1 )) new=$(( new - 1 ))
+        ;;
+      (-*)
+        (( added == 0 )) || return 0
+        removed+=( $index )
+        old=$(( old - 1 ))
+        ;;
+      (+*)
+        (( ++added <= ${#removed} )) || return 0
+        pairs[index]=${removed[added]}
+        pairs[removed[added]]=$index
+        new=$(( new - 1 ))
+        ;;
+      ('\ '*) continue ;;
+      (*) return 0 ;;
+    esac
+    (( old >= 0 && new >= 0 )) || return 0
+    if (( old == 0 && new == 0 )); then
+      reply=( "${(@)pairs}" )
+      return 0
+    fi
+  done
+}
+
+sf_tui_diff_tokens() {
+  local text=${1:1} MATCH MBEGIN MEND
+  tokens=()
+  while [[ $text =~ '^([[:alnum:]_]+|[[:blank:]]+|.)' ]]; do
+    tokens+=( "$MATCH" )
+    (( ${#tokens} <= 24 )) || return 1
+    text=${text[MEND+1,-1]}
+  done
+}
+
+# Keep the longest common token sequence, and emphasize the rest.
+sf_tui_diff_words() {
+  local before=$1 after=$2 kind=$4
+  local style=${SF_TUI_STYLE[syntax.$kind]-} last_style next_style
+  integer start=$3 end=$(( start + 1 )) i j cell stride
+  local -a tokens=() left right score kept
+  (( ${#before} <= 256 && ${#after} <= 256 )) || return 1
+  [[ -n $style ]] || return 0
+  sf_tui_diff_tokens "$before" || return 1
+  left=( "${tokens[@]}" )
+  sf_tui_diff_tokens "$after" || return 1
+  right=( "${tokens[@]}" )
+  stride=$(( ${#right} + 1 ))
+  for (( i = ${#left}; i >= 1; i-- )); do
+    for (( j = ${#right}; j >= 1; j-- )); do
+      cell=$(( (i - 1) * stride + j ))
+      if [[ ${left[i]} == ${right[j]} ]]; then
+        score[cell]=$(( 1 + ${score[cell+stride+1]:-0} ))
+      else
+        score[cell]=$(( ${score[cell+stride]:-0} > ${score[cell+1]:-0} ?
+          ${score[cell+stride]:-0} : ${score[cell+1]:-0} ))
+      fi
+    done
+  done
+  i=1 j=1
+  while (( i <= ${#left} && j <= ${#right} )); do
+    cell=$(( (i - 1) * stride + j ))
+    if [[ ${left[i]} == ${right[j]} ]]; then
+      if [[ $kind == removed ]]; then kept[i]=1; else kept[j]=1; fi
+      (( ++i, ++j ))
+    elif (( ${score[cell+stride]:-0} >= ${score[cell+1]:-0} )); then
+      (( ++i ))
+    else
+      (( ++j ))
+    fi
+  done
+
+  [[ $kind == added ]] || tokens=( "${left[@]}" )
+  last_style=$style
+  for (( i = 1; i <= ${#tokens}; i++ )); do
+    next_style=$style
+    [[ -n ${kept[i]-} ]] || next_style+=,bold
+    if [[ $next_style != $last_style ]]; then
+      SF_TUI_HIGHLIGHT_SPANS+=( $start $end "$last_style" )
+      start=$end last_style=$next_style
+    fi
+    (( end += ${#tokens[i]} ))
+  done
+  SF_TUI_HIGHLIGHT_SPANS+=( $start $end "$last_style" )
+}
+
 sf_tui_diff_highlight() {
-  local source=$1 line kind
-  local -a lines=( "${(@ps:\n:)source}" )
-  integer start=${2:-0}
-  [[ -n $lines[-1] ]] || lines[-1]=()
-  for line in "${lines[@]}"; do
+  local source=$1 line kind MATCH MBEGIN MEND
+  local -a lines=( "${(@ps:\n:)source}" ) match mbegin mend reply
+  local header='^@@ -[0-9]+(,([0-9]{1,2}))? [+][0-9]+(,([0-9]{1,2}))? @@'
+  integer start=${2:-0} index hunk=0 mate count
+  for (( index = 1; index <= ${#lines}; index++ )); do
+    line=${lines[index]}
     kind=''
-    if [[ $line == '@@ '* ]]; then kind=hunk
+    mate=${reply[index-hunk]:-0}
+    if [[ $line == '@@ '* ]]; then
+      kind=hunk hunk=$index reply=()
+      if [[ $line =~ $header ]]; then
+        count=$(( 10#${match[2]:-1} ))
+        if (( count > 0 && count <= 8 && count == 10#${match[4]:-1} )); then
+          sf_tui_diff_pairs $count "${(@)lines[index+1,index+2*count+2]}"
+        fi
+      fi
+    elif (( mate )); then
+      if [[ $line == '-'* ]]; then
+        kind=removed
+        sf_tui_diff_words "$line" "${lines[hunk+mate]}" $start $kind && kind=''
+      else
+        kind=added
+        sf_tui_diff_words "${lines[hunk+mate]}" "$line" $start $kind && kind=''
+      fi
     elif [[ $line == ('+++'|'---')(| *) ]]; then kind=file
     elif [[ $line == '+'* ]]; then kind=added
     elif [[ $line == '-'* ]]; then kind=removed

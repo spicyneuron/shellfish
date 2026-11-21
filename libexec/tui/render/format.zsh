@@ -353,8 +353,10 @@ sf_tui_format_execution() {
       style=${projected[span + 2]}
       start=${projected[span]}
       end=${projected[span + 1]}
-      # A background runs through the padding to the right margin.
-      [[ $style != *bg=* ]] || end=${#text}
+      # The last background span on a diff row covers its padding.
+      if [[ $style == *bg=* ]] && (( span + 2 == ${#projected} )); then
+        end=${#text}
+      fi
       (( start >= cursor )) || start=$cursor
       (( end <= ${#text} )) || end=${#text}
       (( start >= end )) && continue

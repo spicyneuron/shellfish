@@ -211,6 +211,24 @@ at=${SF_TUI_VIEWPORT_HIGHLIGHTS[(Ie)$removed]}
 assert_equal '-' "${SF_TUI_VIEWPORT_TEXT[SF_TUI_VIEWPORT_HIGHLIGHTS[at - 2] + 1]}"
 assert_equal rail "$SF_TUI_VIEWPORT_HIGHLIGHTS[at - 6]"
 
+# A paired edit keeps its line background across word spans and wrapped rows.
+sf_tui_reset
+sf_tui_action execution_end diff tool $'edit_file path\n@@ -1 +1 @@\n-keep old then more end\n+keep new then more end'
+view 20
+typeset style emphasis word
+for word in old new; do
+  [[ $word == old ]] && style=$removed || style='fg=green,bg=darkgreen'
+  emphasis=$style,bold
+  at=${SF_TUI_VIEWPORT_HIGHLIGHTS[(Ie)$emphasis]}
+  (( at )) || fail 'changed word was not emphasized'
+  integer word_start=$(( SF_TUI_VIEWPORT_HIGHLIGHTS[at - 2] + 1 ))
+  integer word_end=${SF_TUI_VIEWPORT_HIGHLIGHTS[at - 1]}
+  assert_equal "$word" "${SF_TUI_VIEWPORT_TEXT[word_start,word_end]}"
+  assert_equal "$style" "$SF_TUI_VIEWPORT_HIGHLIGHTS[at + 3]"
+done
+typeset removal='-keep old then' addition='+keep new then' continuation='more end'
+assert_tail $'⛭ edit_file path\n│ @@ -1 +1 @@\n│ '"${(r:18:)removal}"$'\n│ '"${(r:18:)continuation}"$'\n│ '"${(r:18:)addition}"$'\n╰ '"${(r:18:)continuation}"
+
 # Output that merely resembles a diff stays plain.
 sf_tui_reset
 sf_tui_action execution_update plain tool 'shell · run'
