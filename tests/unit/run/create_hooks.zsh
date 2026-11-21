@@ -20,7 +20,7 @@ jq -eRn --arg session "$session" --arg hook "${hook:A}" '
   $events[1].profile.hooks == [$hook] and
   ($events[2] | .lifecycle == "session_start" and
     .user_text == "**Project instructions** (AGENTS.md)\nFollow this project rule.\n" and
-    (.model_text | contains("<context script=\"project/instructions\">")))
+    (.model_content[0].text | contains("<context script=\"project/instructions\">")))
 ' <"$stream" >/dev/null || fail 'hook settlement was wrong'
 assert_canonical_session "$session"
 create() {
@@ -102,27 +102,27 @@ for scenario in protocol capture capture_override encoded silent; do
         $e[0].user_text == "Running\n|" and
         $results[0].user_text == "Running\nliteral ${input}|stderr" and
         (if $kind == "tool" then $results[0].exit_code == 4 else true end) and
-        $results[0].model_text == model("literal ${input}") and
+        $results[0].model_content[0].text == model("literal ${input}") and
         all($e[] | select(.type != "state_update"); .user_preview_lines == "full")
       elif $scenario == "capture" then
         ($results[0].user_text | length == 2049 and contains("stdout-tail") and
           contains("stderr-tail") and (contains("head") | not)) and
-        ($results[0].model_text | length == (model("") | length) + 1024) and
+        ($results[0].model_content[0].text | length == (model("") | length) + 1024) and
         ([$results[0].user_text | scan("\\[output truncated\\]")] | length) == 2
       elif $scenario == "capture_override" then
         ($results[0].user_text | contains("head") and contains("stdout-tail") and
           contains("stderr-tail") and (contains("[output truncated]") | not)) and
-        ($results[0].model_text | length > 1024)
+        ($results[0].model_content[0].text | length > 1024)
       elif $scenario == "encoded" then
         [$e[].type] == ["_draft",$result_type] and
         $e[0].user_text == "Quoted \"value\" \\ \u001e\t\n" and
         $results[0].user_text == "Quoted \"value\" \\ \u001e\tstderr\n" and
-        $results[0].model_text == model("encoded") and
+        $results[0].model_content[0].text == model("encoded") and
         all($e[]; .user_preview_lines == 0)
       else
         if $kind == "hook" then $e == []
         else [$e[].type] == ["tool_result"] and
-          ($results[0] | has("user_text") or has("model_text") | not) end
+          ($results[0] | has("user_text") or has("model_content") | not) end
       end
     ' <"$stream" >/dev/null || fail "$kind $scenario presentation was wrong"
     assert_canonical_session "$session"

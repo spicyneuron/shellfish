@@ -21,8 +21,7 @@ sf_compact_split() {
          [.content[] | if .type == "tool_call" then (.input | tojson)
            else .text // empty end]
        elif .type == "tool_result" or .type == "hook_result" then
-         if has("model_content") then [.model_content[] | .text // empty]
-         else [.model_text // ""] end
+         [.model_content[]? | .text // empty]
        else [] end) | map(utf8bytelength) | add // 0;
     [to_entries[] | select(.value.type == "user") | .key] as $users |
     ($users | map(turn_start(.))) as $turns |

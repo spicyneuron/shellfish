@@ -4,7 +4,7 @@ source "${0:A:h:h:h}/_helpers.zsh"
 sf_test_tmp default-environment
 
 # Model context emitted by the Git checkout prompt hook.
-settled() { jq -rs 'map(select(.type == "hook_result")) | last.model_text // ""' "$1"; }
+settled() { jq -rs 'map(select(.type == "hook_result")) | last.model_content[0].text // ""' "$1"; }
 
 # Capture project context through the default startup list.
 typeset environment_bin="$tmp/environment-bin"
@@ -62,16 +62,16 @@ jq -e -s '
   ($results | map(.type)) ==
     ["hook_result","state_update","hook_result","hook_result","hook_result"] and
   ($results[0].user_text | startswith("**Project environment**\n")) and
-  ($results[0].model_text | startswith("<context script=\"project/environment\">\n")) and
-  ($results[0].model_text | contains("PWD: ") and contains("\n.") and
+  ($results[0].model_content[0].text | startswith("<context script=\"project/environment\">\n")) and
+  ($results[0].model_content[0].text | contains("PWD: ") and contains("\n.") and
     contains("Available commands:") and (contains("Available agent skills.") | not) and
     (contains("Git ") | not)) and
   $results[1].name == "git/identity" and $results[1].value == "branch:main" and
   ($results[2].user_text | startswith("**Git environment**\nGit branch: main")) and
-  ($results[2].model_text | startswith("<context script=\"git/environment\">\n") and
+  ($results[2].model_content[0].text | startswith("<context script=\"git/environment\">\n") and
     contains("abc123 Test commit") and contains("status-file") and
     (contains("Recent files:") | not)) and
-  ($results[4].model_text | startswith("<context script=\"skills/list\">\nAvailable agent skills.") and
+  ($results[4].model_content[0].text | startswith("<context script=\"skills/list\">\nAvailable agent skills.") and
     contains("- skill-creator: "))
 ' "$tmp/startup.jsonl" >/dev/null || fail 'default startup context or state ordering changed'
 jq -c 'select(.type == "session" or .type == "state_update")' "$tmp/startup.jsonl" >"$git_session"
@@ -81,7 +81,7 @@ print -r -- 'commit:0123456789abcdef' >"$git_state"
 startup
 jq -e -s 'any(.[]; .type == "state_update" and .value == "commit:0123456789abcdef") and
   any(.[]; (.user_text // "" | contains("(detached HEAD)"))) and
-  any(.[]; (.model_text // "" | contains("Filesystem context: (skipped, slow file system)") and
+  any(.[]; (.model_content[0].text // "" | contains("Filesystem context: (skipped, slow file system)") and
     contains("Available commands:")))' \
   "$tmp/startup.jsonl" >/dev/null || fail 'detached startup context was lost'
 print -r -- 'none' >"$git_state"
@@ -98,7 +98,7 @@ startup default --sandbox '{"tools":{
 }}'
 jq -e -s 'any(.[]; .type == "hook_result" and
   (.user_text // "" | startswith("**Initial sandbox grants**")) and
-  (.model_text | startswith("<context script=\"sandbox/grants\">\n") and
+  (.model_content[0].text | startswith("<context script=\"sandbox/grants\">\n") and
     contains("- read_file read: [\"@system\"]") and
     contains("- shell read: [\"~/reference\"]") and
     contains("- shell write: [\"build\"]") and
@@ -107,7 +107,7 @@ jq -e -s 'any(.[]; .type == "hook_result" and
   fail 'startup did not report initial sandbox grants by tool'
 startup default --sandbox '{"enabled":false,"tools":{"shell":{"filesystem":{"allowWrite":["build"]}}}}'
 jq -e -s 'any(.[]; .type == "hook_result" and
-  (.model_text // "" | contains("<context script=\"sandbox/grants\">\nSandboxing is disabled for this session.") and
+  (.model_content[0].text // "" | contains("<context script=\"sandbox/grants\">\nSandboxing is disabled for this session.") and
     (contains("build") | not)))' "$tmp/startup.jsonl" >/dev/null ||
   fail 'startup advertised inactive sandbox grants'
 
@@ -125,7 +125,7 @@ chmod +x "$environment_bin/uv" "$environment_bin/gh"
 startup
 [[ -e $SF_TEST_CONFIG/uv-probed ]] || fail 'slow version probe did not run'
 jq -e -s 'any(.[]; .type == "hook_result" and
-  (.model_text // "" | contains("Available commands:") and
+  (.model_content[0].text // "" | contains("Available commands:") and
     (contains("Python: uv") | not) and contains("GitHub: gh (1.2.3)")))' \
   "$tmp/startup.jsonl" >/dev/null || fail 'a slow version probe blocked later context'
 
@@ -210,7 +210,7 @@ for prompt in ordinary $'/help\nordinary' '/new please'; do
 done
 submit '/shell printf '\''${output.stderr}'\''; exit 7'
 jq -e -s 'map(.type) == ["session","hook_result"] and
-  (.[1].model_text | contains("The user ran this shell command:\n$ printf") and contains("${output.stderr}") and contains("(exit 7)")) and
+  (.[1].model_content[0].text | contains("The user ran this shell command:\n$ printf") and contains("${output.stderr}") and contains("(exit 7)")) and
   (.[1].user_text | startswith("**Shell** printf"))' "$command_session" >/dev/null
 
 # Copy and fork address core IDs. Command notices remain in a retained prefix;
@@ -225,7 +225,7 @@ chmod +x "$tmp/clip-bin/pbcopy"
   print -r -- '{"type":"user","section":1,"content":[{"type":"text","text":"one"}]}'
   print -r -- '{"type":"assistant","section":2,"content":[{"type":"text","text":"reply one"}],"stop":"end"}'
   print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1","user_text":"help","action":"deny"}'
-  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"2","model_text":"context"}'
+  print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"2","model_content":[{"type":"text","text":"context"}]}'
   print -r -- '{"type":"user","section":10,"content":[{"type":"text","text":"two"}]}'
   print -r -- '{"type":"assistant","section":12,"content":[{"type":"text","text":"reply two"}],"stop":"end"}'
   print -r -- '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"3","user_text":"Copied.","action":"deny"}'
@@ -346,12 +346,12 @@ print -r -- $'---\nname: other\ndescription: Other skill\n---\nOther instruction
 sf_test_profile filtered '{"hooks":["skills/list"],
   "config":{"skills":["skill-creator","missing"]}}'
 startup filtered
-jq -e -s 'any(.[]; .type == "hook_result" and (.model_text |
+jq -e -s 'any(.[]; .type == "hook_result" and (.model_content[0].text |
   contains("- skill-creator:") and (contains("- other:") | not)))' \
   "$tmp/startup.jsonl" >/dev/null
 sf_test_profile filtered '{"hooks":["skills/list"],"config":{"skills":[]}}'
 startup filtered
-jq -e -s 'all(.[]; (.model_text // "" | contains("Available agent skills.") | not))' \
+jq -e -s 'all(.[]; (.model_content[0].text // "" | contains("Available agent skills.") | not))' \
   "$tmp/startup.jsonl" >/dev/null
 sf_test_profile filtered '{"hooks":["skills/list"],"config":{"skills":null}}'
 if startup filtered 2>"$tmp/skills.err"; then

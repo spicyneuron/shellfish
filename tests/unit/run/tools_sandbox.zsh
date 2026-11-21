@@ -26,7 +26,7 @@ ZDOTDIR=$no_fence PATH="$no_fence:/usr/bin:/bin" SF_TEST_PROVIDER_TOOL_CALL=1 \
   fail 'missing sandbox runner failed the turn'
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 126 and (.user_text | contains("sandboxing requires fence")) and
-  (.model_text | contains("sandboxing requires fence"))
+  (.model_content[0].text | contains("sandboxing requires fence"))
 ' <"$stream" >/dev/null || fail 'missing sandbox runner was not skipped'
 
 # Bundled helpers are readable outside the project, without exposing other resources.
@@ -46,7 +46,7 @@ SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='
   print -rn -- "$REPLY"
 ' sf_test_run library "$session" >"$stream" || fail 'bundled library turn failed'
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 0 and .model_text == "ready\nexit 0"
+  .exit_code == 0 and .model_content[0].text == "ready\nexit 0"
 ' <"$stream" >/dev/null || fail 'bundled library access was missing or too broad'
 jq --arg library "$SF_SHARE/lib" '.filesystem.denyRead += [$library]' \
   "$tmp/tools/shell/fence.jsonc" >"$tmp/policy.json"
@@ -57,7 +57,7 @@ SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='
   if cat "$SHELLFISH_SHARE_DIR/lib/capped.zsh" >/dev/null 2>&1; then exit 1; fi
   print -rn -- blocked
 ' sf_test_run library "$session" >"$stream" || fail 'denied library turn failed'
-assert_equal $'blocked\nexit 0' "$(jq -r 'select(.type == "tool_result") | .model_text' "$stream")" \
+assert_equal $'blocked\nexit 0' "$(jq -r 'select(.type == "tool_result") | .model_content[0].text' "$stream")" \
   'baseline library access overrode a policy deny'
 
 # The clean environment preserves Fence's proxy and inherited domain denies.
@@ -72,7 +72,7 @@ sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND="curl --silent --show-error --max-time 3 --output /dev/null --write-out '%{http_code}' http://blocked.invalid" \
   sf_test_run sandbox "$session" >"$stream" || fail 'sandbox network turn failed'
 jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 0 and .model_text == "403\nexit 0"
+  .exit_code == 0 and .model_content[0].text == "403\nexit 0"
 ' <"$stream" >/dev/null || fail 'sandbox proxy was unavailable or a domain deny was lost'
 assert_canonical_session "$session"
 
@@ -122,12 +122,12 @@ jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
   .exit_code == 3 and
   (.user_text | contains("**Shell** print -rn -- output; exit 3\noutput\nexit 3\n<sandbox_notice>")) and
-  (.model_text | contains("output\nexit 3\n<sandbox_notice>"))
+  (.model_content[0].text | contains("output\nexit 3\n<sandbox_notice>"))
 ' <"$stream" >/dev/null || fail 'sandbox denial did not annotate the model text'
 jq -e --slurpfile output "$sandbox_output" '
   . as $result |
   $output[0].exit_code == $result.exit_code and
-  $output[0].stdout == $result.model_text and
+  $output[0].stdout == $result.model_content[0].text and
   ($output[0].stdout | contains("<sandbox_notice>"))
 ' < <(jq -c 'select(.type == "tool_result")' "$stream") >/dev/null ||
   fail 'post_tool_use did not receive the rendered sandbox output'
@@ -186,7 +186,7 @@ SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- output'
   sf_test_run sandbox "$session" >"$stream" || fail 'tolerated denial turn failed'
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")][0] |
-  .exit_code == 0 and .model_text == "output\nexit 0"
+  .exit_code == 0 and .model_content[0].text == "output\nexit 0"
 ' <"$stream" >/dev/null || fail 'a succeeding tool was annotated'
 jq -e --arg library "$SF_SHARE/lib" '
   has("extends") and .filesystem == {allowRead:[$library]} and (has("network") | not)
@@ -260,7 +260,7 @@ jq -eRn --arg dir "$granted" '
     {read:[],write:[$dir],domains:["grant.example.com"]}) and
   ([$events[] | select(.type == "_draft") | .sandbox_access] == ["requested","approved"]) and
   ($events | map(select(.type == "tool_result"))[0] |
-    .exit_code == 0 and .model_text == "granted\nexit 0" and .sandbox_access == "approved") and
+    .exit_code == 0 and .model_content[0].text == "granted\nexit 0" and .sandbox_access == "approved") and
   ($events | any(.type == "_session_update") | not)
 ' <"$stream" >/dev/null || fail 'grant approval produced the wrong records'
 # Approved access belongs in the policy, not in overriding host-path mounts.
@@ -287,7 +287,7 @@ jq -eRn '
   ($events | any(.type == "_session_update")) and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .sandbox_access == "session" and
-    (.model_text | startswith("kept\nexit 0\n<sandbox_notice>This access is granted")))
+    (.model_content[0].text | startswith("kept\nexit 0\n<sandbox_notice>This access is granted")))
 ' <"$stream" >/dev/null || fail 'session grant produced the wrong records'
 head -1 "$session" | jq -e --arg dir "$granted" '.profile.sandbox.tools.shell ==
   {replace:true,filesystem:{denyWrite:["**/protected"],allowRead:[],allowWrite:[$dir]},
@@ -315,10 +315,10 @@ jq -eRn '[inputs | fromjson] as $events |
   ($events | all(.type != "_tool_permission_request" and .type != "_session_update")) and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 0 and .sandbox_access == "session" and
-    (.model_text | contains("This access is granted for the rest of this session")))
+    (.model_content[0].text | contains("This access is granted for the rest of this session")))
 ' <"$stream" >/dev/null || fail 'kept access was requested again'
 jq -e '.messages | any(.type == "tool_result" and
-  (.content | contains("This access is granted for the rest of this session")))' \
+  (.content[0].text | contains("This access is granted for the rest of this session")))' \
   "$tmp/kept-request.json" >/dev/null || fail 'the model did not receive the session access notice'
 
 # Review hooks receive the resolved access still needed and the operation alone.
@@ -416,7 +416,7 @@ for grant_input in '{"request_sandbox_access":true}' \
   jq -eRn '[inputs | fromjson] as $events |
     ($events | any(.type == "_tool_permission_request") | not) and
     ($events | map(select(.type == "tool_result"))[0] |
-      .exit_code == 126 and (.model_text | startswith("request_sandbox_access")) and
+      .exit_code == 126 and (.model_content[0].text | startswith("request_sandbox_access")) and
       (has("sandbox_access") | not))
   ' <"$stream" >/dev/null || fail "invalid grant was not refused: $grant_input"
 done
@@ -435,7 +435,7 @@ for grant_input in '{}' 'null' 'false' '""' \
     ($events | all(.type != "_tool_permission_request")) and
     ($events | map(select(.type == "tool_result"))[0] |
       .exit_code == 0 and (has("sandbox_access") | not) and
-      .model_text == "ordinary\nexit 0")
+      .model_content[0].text == "ordinary\nexit 0")
   ' <"$stream" >/dev/null || fail "empty access requested permission: $grant_input"
 done
 
@@ -445,7 +445,7 @@ session="$tmp/sandbox-env.jsonl"
 sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$env_command \
   sf_test_run sandbox "$session" >"$stream" || fail 'sandboxed environment turn failed'
-jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_content[0].text ==
   ("declared-file unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
   fail 'sandboxed tool saw values beyond its declared names'
 for manifest in '.environment=[]' 'del(.environment)'; do
@@ -453,7 +453,7 @@ for manifest in '.environment=[]' 'del(.environment)'; do
   sf_test_session "$session"
   SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$env_command \
     sf_test_run sandbox "$session" >"$stream" || fail 'empty sandbox environment turn failed'
-  jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+  jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_content[0].text ==
     ("unset unset unset " + $share + "\nexit 0")' <"$stream" >/dev/null ||
     fail 'a sandboxed tool without declarations received .env credentials'
 done

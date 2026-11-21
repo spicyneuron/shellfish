@@ -114,7 +114,7 @@ pump '{"type":"_draft","lifecycle":"session_start","id":"2","user_text":"Loading
 sf_tui_transcript 79 20
 [[ $SF_TUI_VIEWPORT_TEXT == *'Loading git environment'* ]] ||
   fail 'hook activity did not reach the viewport'
-pump '{"type":"hook_result","lifecycle":"session_start","id":"2","model_text":"Git branch: secret"}'
+pump '{"type":"hook_result","lifecycle":"session_start","id":"2","model_content":[{"type":"text","text":"Git branch: secret"}]}'
 sf_tui_transcript 79 20
 [[ $SF_TUI_VIEWPORT_TEXT != *'↪ session_start'* &&
     $SF_TUI_VIEWPORT_TEXT != *'Loading git environment'* &&
@@ -171,7 +171,7 @@ functions[sf_tui_transport_reply]=$functions[sf_tui_transport_reply_saved]
 unfunction sf_tui_transport_reply_saved
 
 # Later activity closes an expired request.
-pump '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"pwd"},"exit_code":126,"model_text":"sandbox access approval timed out","user_text":"Shell pwd\nsandbox access approval timed out"}'
+pump '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"pwd"},"exit_code":126,"model_content":[{"type":"text","text":"sandbox access approval timed out"}],"user_text":"Shell pwd\nsandbox access approval timed out"}'
 assert_equal working "$SF_TUI_STATE"
 assert_equal '' "$SF_TUI_PERMISSION_ID"
 assert_equal 0 "$SF_TUI_PERMISSION_DEADLINE"

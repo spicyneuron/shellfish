@@ -57,12 +57,13 @@ for mode in action malformed; do
   assert_canonical_session "$session"
   jq -e -s '
     ([.[] | select(.type == "tool_result")] | length == 2 and
-      all(.[]; .exit_code == 1 and .model_text == "tool returned invalid control data" and
-        (has("model_content") | not))) and
+      all(.[]; .exit_code == 1 and
+        .model_content == [{type:"text",text:"tool returned invalid control data"}])) and
     all(.[]; .type != "error") and .[-1].type == "assistant" and .[-1].stop == "end"
   ' "$session" >/dev/null || fail "invalid $mode control did not settle both calls and continue"
   jq -e '[.messages[] | select(.type == "tool_result")] |
-    length == 2 and all(.[]; .exit_code == 1 and .content == "tool returned invalid control data")' \
+    length == 2 and all(.[]; .exit_code == 1 and
+      .content == [{type:"text",text:"tool returned invalid control data"}])' \
     "$tmp/control-request.json" >/dev/null || fail "provider did not receive $mode failures"
   [[ $mode != action ]] || jq -e -s '
     [.[] | select(.type == "state_update")] | length == 2 and
@@ -98,7 +99,7 @@ for mode in huge twice; do
     SF_TEST_PROVIDER_TOOL_COMMAND=$mode \
     sf_test_run protocol "$session" >"$stream" || fail "oversized $mode content failed the turn"
   jq -eRn '[inputs | fromjson | select(.type == "tool_result")][0] |
-    .exit_code == 1 and .model_text == "tool result exceeds content limit"' \
+    .exit_code == 1 and .model_content[0].text == "tool result exceeds content limit"' \
     <"$stream" >/dev/null || fail "oversized $mode content did not fail the call"
 done
 
@@ -115,7 +116,7 @@ sf_test_wait test -e "$flood_marker" || fail 'flooding tool did not reach its wa
 kill -USR1 "$flood_pid" 2>/dev/null
 wait "$flood_pid" || flood_status=$?
 (( flood_status == 130 )) || fail "cancelled overflow returned status $flood_status"
-jq -e -s '[.[] | select(.type == "tool_result") | .model_text] == ["tool call interrupted"] and
+jq -e -s '[.[] | select(.type == "tool_result") | .model_content[0].text] == ["tool call interrupted"] and
   .[-1] == {type:"error",section:2,user_text:"Cancelled."} and
   ([.[] | select(.type == "assistant")] | length) == 1' "$session" >/dev/null ||
   fail 'cancelled overflow did not settle as a cancellation'
@@ -129,7 +130,7 @@ SF_TEST_PROVIDER_REQUEST="$tmp/image-request.json" SF_TEST_PROVIDER_TOOL_CALL=1 
   sf_test_run protocol "$session" >"$stream" || fail 'image content turn failed'
 assert_canonical_session "$session"
 jq -e -s '[.[] | select(.type == "tool_result")][0] |
-  (has("model_text") | not) and (.model_content | length == 2) and
+  (.model_content | length == 2) and
   .model_content[0] == {type:"text",text:"caption\n"} and
   (.model_content[1] | .type == "image" and (.url | startswith("data:image/png;base64,")) and
     (.url | length) > 131072)' "$session" >/dev/null ||
@@ -145,8 +146,8 @@ SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=remote \
   sf_test_run protocol "$session" >"$stream" || fail 'a remote image failed the turn'
 assert_canonical_session "$session"
 jq -e -s '([.[] | select(.type == "tool_result")][0] |
-  .exit_code == 1 and .model_text == "tool returned invalid control data" and
-  (has("model_content") | not)) and .[-1].type == "assistant"' \
+  .exit_code == 1 and .model_content == [{type:"text",text:"tool returned invalid control data"}]) and
+  .[-1].type == "assistant"' \
   "$session" >/dev/null || fail 'a remote image did not fail the call'
 
 print -r -- ok

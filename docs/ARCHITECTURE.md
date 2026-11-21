@@ -37,6 +37,8 @@ Header paths use `@` for the bundled root, `~/` for HOME, or `/` for fixed absol
 | `state_update` | Model-invisible named state update; the latest exact name wins and `null` clears it |
 | `error` | Durable user-facing failure or cancellation, omitted from provider requests |
 
+Tool and hook results store model-visible output in `model_content`, a list of text and image parts. They omit the field when there is no model output.
+
 Provider deltas, hook activity, permission requests, and presentation state are transient. Clients may display them but never write them to the transcript.
 
 The core assigns stable numeric section IDs to dialogue. A prompt starts a user section, and the responses and tools answering it share an agent section. Hooks can annotate a section but do not create one. Clients display these identities rather than counting visible entries. See [Conversation sections](CONFIG.md#conversation-sections) for command targets and how IDs survive history changes.

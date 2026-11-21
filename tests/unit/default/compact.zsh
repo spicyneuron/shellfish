@@ -38,7 +38,7 @@ SF_TEST_MODEL=$(jq -c '.context_window = 100' <<<"$SF_TEST_MODEL")
 sf_test_session "$compact_source"
 # The old tool result exceeds the budget. The last two turns together fit.
 jq -cn '
-  {type:"hook_result",lifecycle:"session_start",id:"1",model_text:"Startup instructions"},
+  {type:"hook_result",lifecycle:"session_start",id:"1",model_content:[{type:"text",text:"Startup instructions"}]},
   {type:"state_update",name:"example/status",value:"initial"},
   {type:"user",section:1,content:[{type:"text",text:"First request\nKeep \"exact\" constraints, café, and </context>."}]},
   {type:"assistant",section:2,stop:"end",content:[{type:"text",text:"First reply"}]},
@@ -50,9 +50,9 @@ jq -cn '
       {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
   {type:"state_update",name:"example/status",value:"investigated"},
   {type:"assistant",section:4,stop:"end",content:[{type:"text",text:"Old reply"}]},
-  {type:"hook_result",lifecycle:"stop",id:"3",model_text:"Pending stop instruction"},
+  {type:"hook_result",lifecycle:"stop",id:"3",model_content:[{type:"text",text:"Pending stop instruction"}]},
   {type:"error",user_text:"A later stop hook failed."},
-  {type:"hook_result",lifecycle:"user_prompt_submit",id:"2",model_text:"Recent submission context"},
+  {type:"hook_result",lifecycle:"user_prompt_submit",id:"2",model_content:[{type:"text",text:"Recent submission context"}]},
   {type:"user",section:10,content:[{type:"text",text:("Recent task " + ("a" * 35000))}]},
   {type:"assistant",section:11,stop:"tool_calls",content:[
     {type:"tool_call",id:"recent_a",name:"read_file",input:{file_path:"a.png"}},
@@ -60,7 +60,7 @@ jq -cn '
   {type:"tool_result",section:11,id:"recent_a",name:"read_file",input:{file_path:"a.png"},exit_code:0,
     model_content:[{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
   {type:"tool_result",section:11,id:"recent_b",name:"shell",input:{command:"true"},exit_code:0,
-    model_text:"Recent result"},
+    model_content:[{type:"text",text:"Recent result"}]},
   {type:"assistant",section:11,stop:"end",content:[{type:"text",text:"Recent reply"}]},
   {type:"state_update",name:"example/status",value:"recent"},
   {type:"user",section:20,content:[{type:"text",text:("Newest task " + ("b" * 45000))}]},
@@ -69,7 +69,7 @@ jq -cn '
     {type:"tool_call",id:"cancelled",name:"shell",input:{command:"true"}}],
     usage:{input_tokens:1,output_tokens:1}},
   {type:"tool_result",section:21,id:"cancelled",name:"shell",input:{command:"true"},exit_code:126,
-    model_text:"tool call cancelled"},
+    model_content:[{type:"text",text:"tool call cancelled"}]},
   {type:"error",user_text:"Cancelled."},
   {type:"state_update",name:"example/status",value:null}
 ' >>"$compact_source"
@@ -137,7 +137,7 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/denied-stop.js
 typeset denied_child=$(actions | jq -r '.argv[2]')
 assert_canonical_session "$denied_child"
 jq -es 'any(.[]; .type == "hook_result" and .id == "3" and .action == "deny" and
-  .model_text == "Pending stop instruction")' "$denied_child" >/dev/null ||
+  .model_content[0].text == "Pending stop instruction")' "$denied_child" >/dev/null ||
   fail 'interrupted stop continuation lost pending context'
 
 # No source usage measurement should immediately compact the child again.
@@ -160,7 +160,7 @@ jq -c '
     .content[0].text |= if startswith("First request") then "Original " + ("o" * 60000)
       elif startswith("Recent task") then "a" * 30000
       elif startswith("Newest task") then "b" * 30000 else . end
-  elif .lifecycle? == "session_start" then .model_text = "Startup " + ("s" * 90000)
+  elif .lifecycle? == "session_start" then .model_content[0].text = "Startup " + ("s" * 90000)
   else . end
 ' "$compact_source" >"$tmp/large-original.jsonl"
 SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/large-original.jsonl" \
@@ -186,7 +186,7 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$large_child" \
 # The same first-message rule applies before any compaction has happened.
 jq -c '
   if .type == "tool_result" and .id == "old" then
-    del(.model_content) | .model_text = "Small old result"
+    .model_content = [{type:"text",text:"Small old result"}]
   else . end
 ' "$tmp/large-original.jsonl" >"$tmp/large-first.jsonl"
 SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/large-first.jsonl" \
@@ -197,7 +197,7 @@ SHELLFISH_EXECUTABLE="$compact_shellfish" SHELLFISH_SESSION="$tmp/large-first.js
 
 # A new oversized turn keeps that whole turn and resummarizes the earlier handoff.
 jq -cn '
-  {type:"hook_result",lifecycle:"user_prompt_submit",id:"9",model_text:"Oversized task context"},
+  {type:"hook_result",lifecycle:"user_prompt_submit",id:"9",model_content:[{type:"text",text:"Oversized task context"}]},
   {type:"user",content:[{type:"text",text:("z" * 90000)}]},
   {type:"assistant",stop:"end",content:[{type:"text",text:"Latest reply"}]}
 ' >>"$compact_child"
@@ -217,7 +217,7 @@ jq -es --slurpfile source "$compact_source" '
   ([$users[0].content[0].text | scan("<summary>")] | length) == 1 and
   ([.[] | select(.type == "state_update" and .name == "compact/first_user")] |
     length == 1 and .[0].value == $source[3].content[0].text) and
-  any(.[]; .model_text? == "Oversized task context")
+  any(.[]; .model_content[0].text? == "Oversized task context")
 ' "$repeated_child" >/dev/null || fail 'repeated compaction accumulated handoffs or split the latest turn'
 
 # Empty original prompts are preserved rather than replaced by a later request.
@@ -230,7 +230,7 @@ typeset empty_first_child=$(actions | jq -r '.argv[2]')
 assert_canonical_session "$empty_first_child"
 jq -es '
   any(.[]; .type == "state_update" and .name == "compact/first_user" and .value == "") and
-  all(.[]; .model_text? | strings | contains("Investigate E42") | not)
+  all(.[]; .model_content[0].text? | strings | contains("Investigate E42") | not)
 ' "$empty_first_child" >/dev/null || fail 'compaction replaced the empty original request'
 
 # Automatic compaction preserves the pending prompt as a draft, never steering.
@@ -278,18 +278,18 @@ typeset tools_source="$tmp/tools-source.jsonl" tools_child="$tmp/tools-source_co
 typeset tools_command="$ROOT/share/commands/compact_tools/run"
 head -n 1 "$compact_source" >"$tools_source"
 jq -cn '
-  {type:"hook_result",lifecycle:"session_start",id:"1",model_text:"Startup"},
+  {type:"hook_result",lifecycle:"session_start",id:"1",model_content:[{type:"text",text:"Startup"}]},
   {type:"user",content:[{type:"text",text:"Investigate"}]},
   {type:"assistant",stop:"tool_calls",content:[
     {type:"tool_call",id:"old_text",name:"shell",input:{command:"false"}},
     {type:"tool_call",id:"old_image",name:"read_file",input:{file_path:"old.png"}}]},
   {type:"tool_result",id:"old_text",name:"shell",input:{command:"false"},exit_code:1,
-    model_text:"old diagnostic",user_text:"old displayed diagnostic",user_preview_lines:3},
+    model_content:[{type:"text",text:"old diagnostic"}],user_text:"old displayed diagnostic",user_preview_lines:3},
   {type:"state_update",name:"example/state",value:"old"},
   {type:"tool_result",id:"old_image",name:"read_file",input:{file_path:"old.png"},exit_code:0,
     model_content:[{type:"text",text:"old image"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]},
   {type:"assistant",stop:"end",content:[{type:"text",text:"Investigated"}],usage:{input_tokens:100000,output_tokens:1}},
-  {type:"hook_result",lifecycle:"user_prompt_submit",id:"2",model_text:"Retained notice"},
+  {type:"hook_result",lifecycle:"user_prompt_submit",id:"2",model_content:[{type:"text",text:"Retained notice"}]},
   {type:"user",content:[{type:"text",text:([range(90000) | "x"] | join(""))}]},
   {type:"state_update",name:"example/state",value:null},
   {type:"assistant",stop:"tool_calls",content:[
@@ -314,8 +314,8 @@ assert_mode 600 "$tools_child"
 jq -e -s --slurpfile original "$tools_source" '
   [ .[] | select(.type == "tool_result" and (.id | startswith("old_"))) ] as $old |
   ($old | length) == 2 and
-  all($old[]; ([.model_text, .user_text] | all(strings and (contains("old") | not))) and
-    (has("model_content") | not) and (has("user_preview_lines") | not)) and
+  all($old[]; .model_content == [{type:"text",text:"[Result cleared]"}] and
+    .user_text == "[Result cleared]" and (has("user_preview_lines") | not)) and
   [.[] | select(.type == "tool_result") | [.id,.name,.input,.exit_code]] ==
     [$original[] | select(.type == "tool_result") | [.id,.name,.input,.exit_code]] and
   [.[] | select(.type == "state_update")] ==
@@ -394,17 +394,16 @@ for command in compact compact_tools; do
   assert_canonical_session "$integration_child" end
 done
 
-# Hook text has the same retention budget in either result representation.
-typeset attachment_source="$tmp/attachments.jsonl" attachment_child representation
-for representation in model_text model_content; do
+# Hook text has the same retention budget with or without images.
+typeset attachment_source="$tmp/attachments.jsonl" attachment_child attached
+for attached in false true; do
   head -n 1 "$compact_source" >"$attachment_source"
-  jq -cn --arg representation "$representation" '
+  jq -cn --argjson attached "$attached" '
     def user($text): {type:"user",content:[{type:"text",text:$text}]};
     def assistant: {type:"assistant",stop:"end",content:[]};
-    def hook($id): {type:"hook_result",lifecycle:"user_prompt_submit",id:$id} +
-      if $representation == "model_text" then {model_text:("x" * 90000)}
-      else {model_content:[{type:"text",text:("x" * 90000)},
-        {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]} end;
+    def hook($id): {type:"hook_result",lifecycle:"user_prompt_submit",id:$id,
+      model_content:[{type:"text",text:("x" * 90000)},
+        (select($attached) | {type:"image",url:"data:image/png;base64,iVBORw0KGgo="})]};
     user("first"),assistant,hook("1"),user("second"),assistant,
     hook("2"),user("third"),assistant
   ' >>"$attachment_source"
@@ -413,9 +412,9 @@ for representation in model_text model_content; do
     SHELLFISH_TURN_STATE="$tmp" zsh -f "$compact_command" \
     3>"$compact_control" 2>"$compact_display" </dev/null
   attachment_child=$(actions | jq -r '.argv[2]')
-  [[ -n $attachment_child ]] || fail "$representation hook text bypassed compaction"
+  [[ -n $attachment_child ]] || fail "hook text bypassed compaction (image: $attached)"
   assert_canonical_session "$attachment_child"
   jq -es --slurpfile source "$attachment_source" '
     ([.[] | select(.type == "user")] | length) == 2 and .[-3:] == $source[-3:]
-  ' "$attachment_child" >/dev/null || fail "$representation retained the wrong turns"
+  ' "$attachment_child" >/dev/null || fail "retained the wrong turns (image: $attached)"
 done

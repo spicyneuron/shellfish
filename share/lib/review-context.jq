@@ -5,7 +5,6 @@
       if $record.type == "tool_result" then
         ([512, 8192 / pow(2; .age)] | max | floor) as $cap |
         .out += [$record |
-          if has("model_text") then .model_text |= clip($cap) else . end |
           if has("model_content") then
             .model_content |= map(if .type == "text" then .text |= clip($cap) else . end)
           else . end] |
@@ -16,7 +15,7 @@
   .[0] as $header |
   [.[1:][] |
     select(.type != "state_update") |
-    select(.type != "hook_result" or has("model_text") or has("model_content") or has("action")) |
+    select(.type != "hook_result" or has("model_content") or has("action")) |
     (if .type == "error" then . else del(.user_text, .user_preview_lines) end) |
     if .type == "assistant" then
       del(.usage) | .content |= map(select(.type != "reasoning"))

@@ -7,19 +7,19 @@ sf_test_tmp session-read
 accepts() { jq -L "$ROOT" -ce 'include "lib/session"; session_state'; }
 run() {
   jq -L "$ROOT" -ce 'include "lib/session"; session_state |
-    {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context]}'
+    {next, calls:[.calls[] | {id, name, input}], context:[.context[] | render_context | .[0].text]}'
 }
 messages() { jq -L "$ROOT" -ce 'include "lib/session"; session_messages'; }
 
 typeset records="$tmp/records.jsonl"
 cat >"$records" <<'JSONL'
-{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"env","model_text":"<context script=\"env\">\nready &amp; set\n</context>"}
+{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"env","model_content":[{"type":"text","text":"<context script=\"env\">\nready &amp; set\n</context>"}]}
 {"type":"user","content":[{"type":"text","text":"run it"}]}
 {"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"think","opaque":{"signature":"abc"}},{"type":"text","text":"Inspecting that."},{"type":"tool_call","id":"call_1","name":"shell","input":{"command":"ls"}},{"type":"tool_call","id":"call_2","name":"shell","input":{"command":"pwd"}}],"usage":{"input_tokens":100,"output_tokens":20}}
-{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","model_text":"<context script=\"policy\">\nPOLICY\n</context>"}
+{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","model_content":[{"type":"text","text":"<context script=\"policy\">\nPOLICY\n</context>"}]}
 {"type":"state_update","name":"git/identity","value":"first"}
-{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"ls"},"exit_code":0,"user_text":"shell\nout","model_text":"out"}
-{"type":"tool_result","id":"call_2","name":"shell","input":{"command":"pwd"},"exit_code":0,"model_text":"/tmp"}
+{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"ls"},"exit_code":0,"user_text":"shell\nout","model_content":[{"type":"text","text":"out"}]}
+{"type":"tool_result","id":"call_2","name":"shell","input":{"command":"pwd"},"exit_code":0,"model_content":[{"type":"text","text":"/tmp"}]}
 {"type":"assistant","stop":"end","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":120,"output_tokens":4}}
 JSONL
 
@@ -70,8 +70,8 @@ jq -sc . "$records" | messages | jq -e '
                    {type:"text",text:"Inspecting that."}] and
   .[2] == {type:"tool_call",id:"call_1",name:"shell",input:{command:"ls"}} and
   .[3] == {type:"tool_result",call_id:"call_1",name:"shell",exit_code:0,
-           content:"<hook name=\"pre_tool_use\">\n<context script=\"policy\">\nPOLICY\n</context>\n</hook>\n\nout"} and
-  .[5].content == "/tmp" and
+           content:[{type:"text",text:"<hook name=\"pre_tool_use\">\n<context script=\"policy\">\nPOLICY\n</context>\n</hook>\n\nout"}]} and
+  .[5].content == [{type:"text",text:"/tmp"}] and
   .[6] == {type:"assistant",stop:"end",content:[{type:"text",text:"done"}]}
 ' >/dev/null || fail 'provider messages do not match the transcript'
 
@@ -81,20 +81,20 @@ print -r -- '[
   {"type":"assistant","stop":"tool_calls","content":[
     {"type":"tool_call","id":"c1","name":"shell","input":{}},
     {"type":"tool_call","id":"c2","name":"shell","input":{}}]},
-  {"type":"hook_result","lifecycle":"pre_tool_use","id":"1","model_text":"PRE"},
-  {"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_text":"one"},
-  {"type":"hook_result","lifecycle":"post_tool_use","id":"2","model_text":"POST"},
-  {"type":"tool_result","id":"c2","name":"shell","input":{},"exit_code":0,"model_text":"two"}
+  {"type":"hook_result","lifecycle":"pre_tool_use","id":"1","model_content":[{"type":"text","text":"PRE"}]},
+  {"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":[{"type":"text","text":"one"}]},
+  {"type":"hook_result","lifecycle":"post_tool_use","id":"2","model_content":[{"type":"text","text":"POST"}]},
+  {"type":"tool_result","id":"c2","name":"shell","input":{},"exit_code":0,"model_content":[{"type":"text","text":"two"}]}
 ]' | messages | jq -e '
-  .[3].content ==
+  .[3].content[0].text ==
     "<hook name=\"pre_tool_use\">\nPRE\n</hook>\n\n<hook name=\"post_tool_use\">\nPOST\n</hook>\n\none" and
-  .[5].content == "two"
+  .[5].content == [{type:"text",text:"two"}]
 ' >/dev/null || fail 'post-tool context did not annotate its own result'
 
 # Results from one lifecycle share one hook block, each text inserted verbatim.
 print -r -- '[
-  {"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"env\">\nfirst\n</context>"},
-  {"type":"hook_result","lifecycle":"session_start","id":"2","model_text":"<context script=\"instructions\">\nsecond\n</context>\n"},
+  {"type":"hook_result","lifecycle":"session_start","id":"1","model_content":[{"type":"text","text":"<context script=\"env\">\nfirst\n</context>"}]},
+  {"type":"hook_result","lifecycle":"session_start","id":"2","model_content":[{"type":"text","text":"<context script=\"instructions\">\nsecond\n</context>\n"}]},
   {"type":"user","content":[{"type":"text","text":"go"}]}
 ]' | messages | jq -e '
   .[0].content[0].text ==
@@ -106,7 +106,7 @@ print -r -- '[
 
 # Attached images follow the prompt and its context.
 print -r -- '[
-  {"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"ctx"},
+  {"type":"hook_result","lifecycle":"session_start","id":"1","model_content":[{"type":"text","text":"ctx"}]},
   {"type":"user","content":[{"type":"text","text":"see"},
     {"type":"image","url":"data:image/png;base64,AAAA"}]}
 ]' | messages | jq -e '
@@ -141,7 +141,7 @@ print -r -- '[
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"<context script=\"observe\">\nNOTE\n</context>"}
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_content":[{"type":"text","text":"<context script=\"observe\">\nNOTE\n</context>"}]}
 ]' | messages | jq -e '
   [.[].type] == ["user","assistant","user"] and
   .[2].content[0].text ==
@@ -151,13 +151,13 @@ print -r -- '[
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"NOTE"}
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_content":[{"type":"text","text":"NOTE"}]}
 ]' | run | jq -e '.next == "user"' >/dev/null ||
   fail 'stop text without denial continued the turn'
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"KEEP GOING","action":"deny"}
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_content":[{"type":"text","text":"KEEP GOING"}],"action":"deny"}
 ]' | run | jq -e '.next == "assistant"' >/dev/null ||
   fail 'stop denial did not leave a pending request'
 
@@ -165,7 +165,7 @@ print -r -- '[
 print -r -- '[
   {"type":"user","content":[{"type":"text","text":"go"}]},
   {"type":"assistant","stop":"end","content":[]},
-  {"type":"hook_result","lifecycle":"stop","id":"1","model_text":"<context script=\"observe\">\nKEEP GOING\n</context>","action":"deny"},
+  {"type":"hook_result","lifecycle":"stop","id":"1","model_content":[{"type":"text","text":"<context script=\"observe\">\nKEEP GOING\n</context>"}],"action":"deny"},
   {"type":"assistant","stop":"end","content":[]}
 ]' | messages | jq -e '
   [.[].type] == ["user","assistant","user","assistant"] and
@@ -216,7 +216,7 @@ typeset -a invalid=(
      {"type":"hook_result","lifecycle":"session_start","id":"1"},
      {"type":"hook_result","lifecycle":"stop","id":"1"}]'
   'an empty error' '[{"type":"error","user_text":""}]'
-  'an error carrying model text' '[{"type":"error","user_text":"failed","model_text":"failed"}]'
+  'an error carrying model text' '[{"type":"error","user_text":"failed","model_content":[{"type":"text","text":"failed"}]}]'
   'reasoning with an extra field' '[{"type":"user","content":[{"type":"text","text":"a"}]},
      {"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"why","extra":true}]}]'
   'a prompt led by an image' '[{"type":"user","content":[
@@ -269,19 +269,22 @@ settling() {
       {"type":"tool_call","id":"c1","name":"shell","input":{}}]},'"$1"']'
 }
 
-settling '{"type":"tool_result","id":"c1","name":"shell","input":{},"user_text":"shown","model_text":"out","exit_code":0}' |
+settling '{"type":"tool_result","id":"c1","name":"shell","input":{},"user_text":"shown","model_content":[{"type":"text","text":"out"}],"exit_code":0}' |
   accepts >/dev/null || fail 'the reader rejected a fully described tool result'
+settling '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0}' |
+  messages | jq -e '.[-1].content == []' >/dev/null ||
+  fail 'a tool result without model output did not produce an empty parts list'
 
 # Model content reaches the request as parts, led by context from the call.
 print -r -- '[{"type":"user","content":[{"type":"text","text":"a"}]},
   {"type":"assistant","stop":"tool_calls","content":[
     {"type":"tool_call","id":"c1","name":"shell","input":{}}]},
-  {"type":"hook_result","lifecycle":"pre_tool_use","id":"1","model_text":"note"},
+  {"type":"hook_result","lifecycle":"pre_tool_use","id":"1","model_content":[{"type":"text","text":"note"}]},
   {"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,
    "model_content":[{"type":"text","text":"shot"},
      {"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}]' | messages | jq -e '
-  .[-1].content == [{type:"text",text:"<hook name=\"pre_tool_use\">\nnote\n</hook>"},
-    {type:"text",text:"shot"},{type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]
+  .[-1].content == [{type:"text",text:"<hook name=\"pre_tool_use\">\nnote\n</hook>\n\nshot"},
+    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}]
 ' >/dev/null || fail 'model content did not become request parts'
 
 # Hook attachments survive replay at submission, after tools, and on stop denial.
@@ -296,7 +299,7 @@ for lifecycle in user_prompt_submit post_tool_use stop; do
       [{type:"assistant",stop:"end",content:[]}, $hook + {action:"deny"}]
     else $user + [{type:"assistant",stop:"tool_calls",content:[
       {type:"tool_call",id:"c1",name:"shell",input:{}}]},
-      {type:"tool_result",id:"c1",name:"shell",input:{},exit_code:0,model_text:"out"},$hook]
+      {type:"tool_result",id:"c1",name:"shell",input:{},exit_code:0,model_content:[{type:"text",text:"out"}]},$hook]
     end
   ' | messages | jq -e --arg lifecycle "$lifecycle" '
     (if $lifecycle == "user_prompt_submit" then .[0] else .[-1] end) |
@@ -313,21 +316,18 @@ print -r -- '[{"type":"hook_result","lifecycle":"user_prompt_submit","id":"1",
     {type:"image",url:"data:image/png;base64,iVBORw0KGgo="},
     {type:"text",text:"\n</hook>\n\nwhat is shown?"}]
 ' >/dev/null || fail 'hook attachment context did not merge its text parts'
-for content in '[]' '[{"type":"image","url":"https://example.com/a.png"}]'; do
+for content in '"text"' '[]' '[{"type":"image","url":"https://example.com/a.png"}]'; do
   jq -cn --argjson content "$content" '[{type:"hook_result",lifecycle:"session_start",
     id:"1",model_content:$content}]' | accepts >/dev/null 2>&1 &&
     fail 'invalid hook model content accepted'
 done
-print -r -- '[{"type":"hook_result","lifecycle":"session_start","id":"1",
-  "model_text":"text","model_content":[{"type":"text","text":"text"}]}]' |
-  accepts >/dev/null 2>&1 && fail 'hook accepted both model text and content'
 
 typeset -a malformed_results=(
   'an out-of-range exit code' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":256}'
   'raw capture fields' '{"type":"tool_result","id":"c1","name":"shell","input":{},"stdout":"out","stderr":"","exit_code":0}'
   'a result without input' '{"type":"tool_result","id":"c1","name":"shell","content":"out","exit_code":0}'
   'a hook lifecycle on a tool result' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"lifecycle":"stop"}'
-  'model text beside model content' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_text":"out","model_content":[{"type":"text","text":"out"}]}'
+  'string model content' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":"out"}'
   'empty model content' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":[]}'
   'a remote image' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":[{"type":"image","url":"https://example.com/a.png"}]}'
   'an unsupported image format' '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":[{"type":"image","url":"data:image/svg+xml;base64,PHN2Zz4="}]}'
@@ -339,7 +339,7 @@ for (( index = 1; index <= ${#malformed_results}; index += 2 )); do
 done
 
 typeset -a shapes=(
-  '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"shown","model_text":"data","user_preview_lines":"full"}'
+  '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"shown","model_content":[{"type":"text","text":"data"}],"user_preview_lines":"full"}'
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"2","user_text":"shown","user_preview_lines":0}'
   '{"type":"state_update","name":"a","value":null}'
   '{"type":"state_update","name":"A0_.:/-","value":[false,1,"text"]}'

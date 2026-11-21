@@ -11,9 +11,10 @@ if ! jq -c -s --argjson split "$split" '
   . as $records |
   [to_entries[] |
     if .key >= $split.start and .key < $split.cut and .value.type == "tool_result" then
-      .value |= (del(.model_content, .user_preview_lines) |
-        .model_text = "[Result cleared]" |
-        .user_text = .model_text)
+      "[Result cleared]" as $cleared |
+      .value |= (del(.user_preview_lines) |
+        .model_content = [{type:"text",text:$cleared}] |
+        .user_text = $cleared)
     else . end | .value] |
   select(. != $records) | .[]
 ' "$SHELLFISH_SESSION" >"$transcript"; then

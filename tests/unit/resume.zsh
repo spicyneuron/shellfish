@@ -28,7 +28,7 @@ make_header >"$s_empty"
 
 # Hook context preview.
 make_header >"$s_context"
-print -r -- '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"test · loaded","model_text":"data"}' >>"$s_context"
+print -r -- '{"type":"hook_result","lifecycle":"session_start","id":"1","user_text":"test · loaded","model_content":[{"type":"text","text":"data"}]}' >>"$s_context"
 
 # User and torn previews.
 make_header >"$s_user"
@@ -43,7 +43,7 @@ print -r -- '{"type":"assistant","stop":"end","content":[{"type":"text","text":"
 
 # Tool result preview.
 make_header >"$s_tool_res"
-print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":2,"user_text":"shell\nerr\nexit 2","model_text":"err\nexit 2"}' >>"$s_tool_res"
+print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":2,"user_text":"shell\nerr\nexit 2","model_content":[{"type":"text","text":"err\nexit 2"}]}' >>"$s_tool_res"
 
 # Interrupted turn preview.
 make_header >"$s_failed"
@@ -65,9 +65,9 @@ print -r -- '{"type":"state_update","name":"preview/last","value":2}' >>"$s_stat
 
 # Model-only results fall back to their lifecycle or tool name.
 make_header >"$s_hook_model"
-print -r -- '{"type":"hook_result","lifecycle":"stop","id":"1","model_text":"data"}' >>"$s_hook_model"
+print -r -- '{"type":"hook_result","lifecycle":"stop","id":"1","model_content":[{"type":"text","text":"data"}]}' >>"$s_hook_model"
 make_header >"$s_tool_model"
-print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_text":"ok"}' >>"$s_tool_model"
+print -r -- '{"type":"tool_result","id":"c1","name":"shell","input":{},"exit_code":0,"model_content":[{"type":"text","text":"ok"}]}' >>"$s_tool_model"
 
 # Summarize resume candidates.
 sf_resume_load "$s_empty" "$s_context" "$s_user" "$s_torn" "$s_assistant" "$s_tool_res" \

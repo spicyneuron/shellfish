@@ -129,4 +129,6 @@ Shellfish invokes the provider once per request with JSON on stdin. The provider
 
 An optional `context_window` executable discovers capacity without generating a response. Failed discovery leaves capacity unknown rather than failing inference.
 
+In a conversation request, tool result `content` is an ordered list of text and image parts, empty if there is no context or output.
+
 Use the [bundled providers](../share/providers/) as starting points and the [request definitions](../lib/provider.jq) for the normalized input and output shapes.

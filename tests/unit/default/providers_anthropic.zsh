@@ -106,9 +106,9 @@ cat >"$batch_request" <<'JSON'
     {"type":"user","content":[{"type":"text","text":"run both"}]},
     {"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"working"}]},
     {"type":"tool_call","id":"call_1","name":"shell","input":{"command":"pwd"}},
-    {"type":"tool_result","call_id":"call_1","name":"shell","content":"/tmp","exit_code":0},
+    {"type":"tool_result","call_id":"call_1","name":"shell","content":[{"type":"text","text":"/tmp"}],"exit_code":0},
     {"type":"tool_call","id":"call_2","name":"shell","input":{"command":"ls"}},
-    {"type":"tool_result","call_id":"call_2","name":"shell","content":"bad","exit_code":1}
+    {"type":"tool_result","call_id":"call_2","name":"shell","content":[{"type":"text","text":"bad"}],"exit_code":1}
   ],
   "tools": [],
   "request":{"model":"claude-test"},

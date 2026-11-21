@@ -54,7 +54,7 @@ def test_sandbox_updates_without_reload():
                 "lifecycle": "user_prompt_submit",
                 "user_text": f"**Sandbox** shell write grant added\n{grant_path}",
                 "user_preview_lines": "full",
-                "model_text": f'<context script="sandbox">\n{granted}\n</context>',
+                "model_content": [{"type": "text", "text": f'<context script="sandbox">\n{granted}\n</context>'}],
             }
             mark = len(session.output)
             session.send(b"/sandbox shell +domain github.com\r")
@@ -103,7 +103,7 @@ def test_permission_decision_restores_draft():
         results = [record for record in records if record.get("type") == "tool_result"]
         assert len(results) == 1
         assert results[0]["exit_code"] == 126
-        assert results[0]["model_text"].endswith("Reason: sandbox access denied by user\n</sandbox_notice>")
+        assert results[0]["model_content"][0]["text"].endswith("Reason: sandbox access denied by user\n</sandbox_notice>")
         assert results[0]["sandbox_access"] == "denied"
         users = [record for record in records if record.get("type") == "user"]
         assert len(users) == 1

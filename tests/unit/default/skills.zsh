@@ -111,16 +111,16 @@ jq -e -s '
   (.[0].user_text | startswith("**Loaded $shared**\n# shared instructions")) and
   (.[0].user_text | contains("# shared instructions")) and
   (.[0].user_text | contains("<skill") | not) and
-  (.[0].model_text | contains("<skill name=\"shared\" directory=\"")) and
-  (.[0].model_text | contains("# shared instructions")) and
-  (.[0].model_text | contains("description: project description") | not) and
+  (.[0].model_content[0].text | contains("<skill name=\"shared\" directory=\"")) and
+  (.[0].model_content[0].text | contains("# shared instructions")) and
+  (.[0].model_content[0].text | contains("description: project description") | not) and
   (.[0].user_text | contains("Loaded $config-only\n# config-only instructions")) and
   (.[0].user_text | contains("Loaded $hidden\n# hidden instructions")) and
-  (.[0].model_text | startswith("<context script=\"skills/mention\">\n<skill name=") and
+  (.[0].model_content[0].text | startswith("<context script=\"skills/mention\">\n<skill name=") and
     endswith("</skill>\n</context>")) and
-  (.[0].model_text | [scan("<skill name=")] | length == 3) and
-  (.[0].model_text | [scan("# shared instructions")] | length == 1) and
-  (.[0].model_text | contains("# config-only instructions") and contains("# hidden instructions"))
+  (.[0].model_content[0].text | [scan("<skill name=")] | length == 3) and
+  (.[0].model_content[0].text | [scan("# shared instructions")] | length == 1) and
+  (.[0].model_content[0].text | contains("# config-only instructions") and contains("# hidden instructions"))
 ' "$control" >/dev/null
 for prompt in 'No skill here' '$missing'; do
   HOME="$home" SHELLFISH_DIR="$config" sf_test_run "$prompt" "$session" >"$control"
@@ -148,7 +148,7 @@ done
 HOME="$home" SHELLFISH_DIR="$config" sf_test_run \
   '$shared $personal $hidden $config-only $missing' "$session" >"$control"
 jq -e -s '
-  [ .[] | select(.type == "hook_result") | .model_text ] | length == 1 and
+  [ .[] | select(.type == "hook_result") | .model_content[0].text ] | length == 1 and
   (.[0] | contains("# shared instructions") and contains("# personal instructions") and
     contains("# hidden instructions") and (contains("# config-only instructions") | not))
 ' "$control" >/dev/null

@@ -27,10 +27,8 @@ jq -ce "$SF_PROVIDER_JQ"'
     [.content[] | select(.type == "text") | .text] | join("");
   # Images omit detail, which some compatible gateways reject.
   def input_content:
-    if type == "string" then .
-    else [.[] | if .type == "image" then {type:"input_image",image_url:.url}
-      else {type:"input_text",text:.text} end]
-    end;
+    [.[] | if .type == "image" then {type:"input_image",image_url:.url}
+      else {type:"input_text",text:.text} end];
   def items:
     if .type == "user" then
       [{type:"message",role:"user",content:(.content | input_content)}]
@@ -48,7 +46,8 @@ jq -ce "$SF_PROVIDER_JQ"'
     elif .type == "tool_call" then
       [{type:"function_call",call_id:.id,name:.name,arguments:(.input | tojson)}]
     elif .type == "tool_result" then
-      [{type:"function_call_output",call_id:.call_id,output:(.content | input_content)}]
+      [{type:"function_call_output",call_id:.call_id,output:(.content |
+        if any(.[]; .type == "image") then input_content else map(.text) | join("") end)}]
     else
       error("unsupported canonical type")
     end;

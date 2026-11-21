@@ -44,8 +44,8 @@ for input in image image-only; do
   new_session "$input"; sf_test_run "$input" "$session" >"$stream" || fail 'hook image failed'
   assert_canonical_session "$session"
   jq -es '.[1].model_content[-1] ==
-    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="} and
-    (.[1] | has("model_text") | not)' "$session" >/dev/null || fail 'hook image was not durable'
+    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}' "$session" >/dev/null ||
+    fail 'hook image was not durable'
   jq -L "$ROOT" -es 'include "lib/session";
     .[1:] | session_messages | .[0].content |
     any(.[]; .type == "image" and .url == "data:image/png;base64,iVBORw0KGgo=")
@@ -75,7 +75,7 @@ jq -e -s 'map(.type) == ["session","hook_result"] and
 new_session handoff; sf_test_run handoff "$session" >"$stream" || fail 'handoff failed'
 jq -eRn '[inputs | fromjson] as $e | $e[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
   any($e[]; .type == "state_update" and .name == "prompt/handoff" and .value == true) and
-  $e[-2].model_text == "<context script=\"prompt\">\nhandoff context\n</context>" and ([ $e[] | select(.type == "user") ] | length) == 0' \
+  $e[-2].model_content[0].text == "<context script=\"prompt\">\nhandoff context\n</context>" and ([ $e[] | select(.type == "user") ] | length) == 0' \
   <"$stream" >/dev/null || fail 'last action or handoff durability failed'
 new_session update; sf_test_run update "$session" >"$stream" || fail 'session update failed'
 jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox.tools.shell.filesystem.allowWrite == ["/tmp/reference"]' "$session" >/dev/null &&
@@ -84,7 +84,7 @@ new_session bad-update; sf_test_run bad-update "$session" >"$stream" 2>"$tmp/upd
 jq -eRn '[inputs | fromjson] | all(.type != "_session_update")' <"$stream" >/dev/null ||
   fail 'invalid update notified the client'
 assert_equal 'invalid session update' "$(<"$tmp/update.err")"
-jq -e -s '.[-2].model_text == "<context script=\"prompt\">\nupdate context\n</context>" and
+jq -e -s '.[-2].model_content[0].text == "<context script=\"prompt\">\nupdate context\n</context>" and
   .[-1] == {type:"error",user_text:"invalid session update"}' "$session" >/dev/null ||
   fail 'invalid update lost settled result'
 new_session fail; sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.err" && fail 'nonzero hook succeeded'
@@ -142,8 +142,8 @@ sf_test_bind_hooks stop "$stop"
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
 assert_equal 2 "$(<$count)" 'stop did not continue provider'
-jq -e -s 'map(select(.type == "hook_result") | {section,model_text,action,reason}) ==
-  [{section:2,model_text:"<context script=\"stop\">\nchecking again\n</context>",action:"deny",reason:"not finished"}]' "$session" \
+jq -e -s 'map(select(.type == "hook_result") | {section,model_content,action,reason}) ==
+  [{section:2,model_content:[{type:"text",text:"<context script=\"stop\">\nchecking again\n</context>"}],action:"deny",reason:"not finished"}]' "$session" \
   >/dev/null || fail 'stop feedback did not settle'
 rm -f "$count"
 new_session stop-image
@@ -153,14 +153,14 @@ assert_canonical_session "$session"
 new_session limit
 SHELLFISH_MAX_REQUESTS_PER_TURN=1 sf_test_run stop "$session" >"$stream" 2>"$tmp/limit.err" &&
   fail 'request limit succeeded'
-jq -e -s '.[-2].model_text == "<context script=\"stop\">\nchecking again\n</context>" and
+jq -e -s '.[-2].model_content[0].text == "<context script=\"stop\">\nchecking again\n</context>" and
   .[-1] == {type:"error",section:2,user_text:"provider request limit reached: 1"}' "$session" >/dev/null ||
   fail 'request limit lost feedback'
 : >"$STOP_SILENT"
 rm -f "$count"
 new_session no-feedback; sf_test_run stop "$session" >"$stream" 2>"$tmp/feedback.err" && fail 'missing feedback succeeded'
 assert_equal 1 "$(<$count)" 'stop without feedback requested again'
-jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_text") | not) and
+jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_content") | not) and
   .[-1] == {type:"error",section:2,user_text:"stop hook denied without model feedback"}' "$session" \
   >/dev/null || fail 'missing stop feedback was accepted'
 # Ordered hooks see original input and preceding results. An action stops the list.
