@@ -12,6 +12,7 @@ typeset -g SF_TUI_STATE=idle SF_TUI_FOOTER=''
 typeset -g SF_TUI_PERMISSION_TOOL='' SF_TUI_PERMISSION_TEXT=''
 typeset -ga SF_TUI_QUEUE=() SF_TUI_HISTORY=()
 typeset -gi SF_TUI_HISTORY_NO=0
+zle() { return 0; }
 
 assert_equal '⠃,⠁,⠁,⠁,⠃,⠆,⡄,⡀,⡀,⡀,⡄,⠆' "${(j:,:)SF_TUI_ACTIVITY_FRAMES}"
 
@@ -167,23 +168,17 @@ width 8
 sf_tui_action message_start agent 1
 stream 0 text $'one\ntail\n'
 sf_tui_transcript 8 20
-sf_tui_terminal_stage
-sf_tui_terminal_finish
+sf_tui_terminal_commit
 typeset drained=$PREDISPLAY$'\n'
-sf_tui_terminal_restore
 stream 0 text $'two\nlast'
 sf_tui_transcript 8 20
-sf_tui_terminal_stage
-sf_tui_terminal_finish
+sf_tui_terminal_commit
 drained+=$PREDISPLAY$'\n'
-sf_tui_terminal_restore
 sf_tui_action message_end
 sf_tui_transcript 8 20
-sf_tui_terminal_stage
-sf_tui_terminal_finish
+sf_tui_terminal_commit
 drained+=$PREDISPLAY
 assert_equal $'─ agent \n\none\ntail\ntwo\nlast' "$drained"
-sf_tui_terminal_restore
 sf_tui_transcript 8 20
 assert_equal '' "$SF_TUI_VIEWPORT_TEXT"
 
@@ -194,9 +189,7 @@ width 20
 sf_tui_action message_start agent 1
 stream 0 text $'```json\n{}\n```\n'
 sf_tui_transcript 20 20
-sf_tui_terminal_stage
-sf_tui_terminal_finish
-sf_tui_terminal_restore
+sf_tui_terminal_commit
 stream 0 text $'\n'
 sf_tui_transcript 20 20
 assert_equal 0 "$SF_TUI_SAFE_ROWS"
@@ -211,9 +204,7 @@ width 8
 sf_tui_action message_start agent 1
 stream 0 text $'alpha beta\ngamma delta'
 sf_tui_transcript 8 20
-sf_tui_terminal_stage
-sf_tui_terminal_finish
-sf_tui_terminal_restore
+sf_tui_terminal_commit
 SF_TUI_STYLE[activity]='fg=#2a2a2a'
 sf_tui_transcript 5 20
 assert_equal '⠃' "$SF_TUI_VIEWPORT_TEXT"
@@ -292,8 +283,7 @@ view 79 20
 [[ $REPLY == $'─ agent '*$' 1 ─\n\n✎ Reasoning · ~4 tokens\n┆ first' ]] ||
   fail "settled clamped reasoning: $REPLY"
 sf_tui_transcript 79 20
-sf_tui_terminal_stage
-sf_tui_terminal_finish
+sf_tui_terminal_commit
 [[ $PREDISPLAY != *second* ]] || fail 'a clamp committed the rows it hid'
 sf_tui_terminal_reset
 

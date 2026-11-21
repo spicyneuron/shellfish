@@ -263,10 +263,8 @@ SF_TUI_STATE=working
 sf_tui_action message_start agent
 sf_tui_action message_delta 0 text $'committed\nnext\n' ''
 sf_tui_transcript 20 20
-sf_tui_terminal_stage
-sf_tui_terminal_finish
+sf_tui_terminal_commit
 typeset committed=$PREDISPLAY
-sf_tui_terminal_restore
 SF_TUI_QUEUE=( queued )
 sf_tui_transport_reset
 exec {SF_TUI_TRANSPORT_OUTPUT_FD}< <(print -r -- broken)
