@@ -1,5 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
+zmodload -F zsh/files b:zf_rm
 
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
@@ -213,11 +214,11 @@ sf_run_hooks() {
             fi ;;
         esac
       fi
-      rm -rf -- "$directory"
+      zf_rm -rf -- "$directory"
       [[ -z $error && -z $action ]] || break
     done
   fi
-  rm -f -- "$input"
+  zf_rm -f -- "$input"
   if [[ -z $error && $lifecycle == stop && $action == deny ]] &&
       (( ! model_feedback )); then
     error='stop hook denied without model feedback'

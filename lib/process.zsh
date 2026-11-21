@@ -3,6 +3,7 @@ setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/system
 zmodload zsh/zselect
 zmodload -F zsh/stat b:zstat
+zmodload -F zsh/files b:zf_rm
 
 (( $+functions[sf_fail] )) || source "$SF_ROOT/lib/cli.zsh"
 
@@ -246,9 +247,9 @@ sf_process_run() {
     (( process_pid == 0 || complete )) || sf_process_stop "$process_pid" "$group_file"
     (( complete )) || {
       for reader in $readers; do kill -TERM $reader 2>/dev/null; wait $reader 2>/dev/null; done
-      rm -f -- "$stdout" "$stderr"
+      zf_rm -f -- "$stdout" "$stderr"
     }
-    rm -f -- "$stdout_pipe" "$stderr_pipe" "$control_pipe" "$group_file" "$status_file"
+    zf_rm -f -- "$stdout_pipe" "$stderr_pipe" "$control_pipe" "$group_file" "$status_file"
   }
   (( complete ))
 }

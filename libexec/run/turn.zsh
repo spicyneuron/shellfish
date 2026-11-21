@@ -1,6 +1,7 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
 zmodload zsh/datetime
+zmodload -F zsh/files b:zf_rm
 
 source "$SF_ROOT/lib/session.zsh"
 source "$SF_ROOT/lib/profile.zsh"
@@ -543,7 +544,7 @@ sf_run_turn() {
     fi
   } always {
     trap - TERM
-    rm -rf -- "$turn_state" 2>/dev/null
+    zf_rm -rf -- "$turn_state" 2>/dev/null
     if (( begun && SF_RUN[signal_status] )); then
       message='Turn interrupted.'
       (( SF_RUN[signal_status] != 130 )) || message='Cancelled.'
