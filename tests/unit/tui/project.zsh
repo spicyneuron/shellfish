@@ -40,6 +40,13 @@ project live \
 assert_equal 'message_delta | 0 | text |  look. |
 message_delta | 1 | reasoning | weighing |
 message_end' "$REPLY"
+# A long response carries across batches without passing its text along.
+typeset long=${(l:140000::x:)}
+project live '{"type":"_assistant_start"}' \
+  "{\"type\":\"_assistant_message_delta\",\"text\":\"$long\"}"
+project live "{\"type\":\"assistant\",\"stop\":\"end\",\"content\":[{\"type\":\"text\",\"text\":\"$long tail\"}]}"
+assert_equal 'message_delta | 0 | text |  tail |
+message_end' "$REPLY"
 # Deltas join the way a cancelled response saves them, so it draws nothing more.
 project live '{"type":"_assistant_start"}' \
   '{"type":"_assistant_message_delta","text":"a"}' \
