@@ -13,19 +13,46 @@
 
   // Tools available to the model.
   "tools": [
-    "read_file", "edit_file", "write_file", "shell", "search_web", "fetch_url", "skill",
+    "read_file",
+    "edit_file",
+    "write_file",
+    "shell",
+    "search_web",
+    "fetch_url",
+    "skill"
     // Delegate tasks to subagents.
     // "subagent",
   ],
 
   // Commands typed as /NAME, which run instead of submitting the prompt.
-  "commands": ["help", "new", "resume", "fork", "rewind", "compact", "compact_tools", "copy", "user_shell", "sandbox"],
+  "commands": [
+    "help",
+    "new",
+    "resume",
+    "fork",
+    "rewind",
+    "compact",
+    "compact_tools",
+    "copy",
+    "user_shell",
+    "sandbox"
+  ],
 
   // Hooks run in this order within the lifecycle their manifest names.
   "hooks": [
-    "project/environment", "git/environment", "project/instructions", "skills/list", "sandbox/grants",
-    "autocompact", "git/identity", "skills/mention",
-    // Have a model review sandbox access requests.
+    // Session start context.
+    "project/environment",
+    "git/environment",
+    "skills/list",
+    "sandbox/grants",
+    "project/instructions",
+
+    // User prompt extensions.
+    "skills/mention",
+
+    // Automatic functionality.
+    "autocompact",
+    "git/identity"
     // "sandbox/approver",
   ],
 
