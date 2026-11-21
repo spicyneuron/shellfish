@@ -128,7 +128,7 @@ validate_case() {
       else .stop == "end" and .content == [{type:"text",text:"ok"}] end) and
     all(.[] | select(.type == "tool_result");
       .name == "perf" and .id == "perf_call" and .input == {} and
-      .exit_code == 0 and .model_text == "tool result")
+      .exit_code == 0 and .model_content[0].text == "tool result")
   ' "$session" >/dev/null
 }
 

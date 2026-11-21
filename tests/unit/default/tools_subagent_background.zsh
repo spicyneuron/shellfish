@@ -21,7 +21,7 @@ jq -e -s --arg id "$background_id" '
   ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) |
     .value]) == [true] and
   ([.[] | select(.type == "tool_result" and .name == "subagent")] | last |
-    .model_text | fromjson) == {agent_id:$id,working:true,settled:false}
+    .model_content[0].text | fromjson) == {agent_id:$id,working:true,settled:false}
 ' "$background_parent" >/dev/null || fail 'background start result is wrong'
   jq -e -s 'any(.[]; .type == "assistant") | not' "$background_child" >/dev/null ||
     fail 'background start waited for child answer'
@@ -61,7 +61,7 @@ jq -e -s --arg id "$background_id" '
     fail 'settled background inspection failed'
   jq -e -s '
     [.[] | select(.type == "tool_result" and .name == "subagent")] | last |
-      .model_text | fromjson |
+      .model_content[0].text | fromjson |
       .working == false and .settled == true and .answer == "child answer"
   ' "$background_parent" >/dev/null || fail 'settled background inspection is wrong'
   rm -f -- "$SF_AGENT_RELEASE"
@@ -71,7 +71,7 @@ jq -e -s --arg id "$background_id" '
     ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) |
       .value]) == [true] and
     ([.[] | select(.type == "tool_result" and .name == "subagent")] | last |
-      .model_text | fromjson) == {agent_id:$id,working:true,settled:false}
+      .model_content[0].text | fromjson) == {agent_id:$id,working:true,settled:false}
   ' "$background_parent" >/dev/null || fail 'background continuation result is wrong'
   if print -r -- "{\"operation\":\"continue\",\"agent_id\":\"$background_id\",\"task\":\"overlap\"}" |
       SHELLFISH_SESSION="$background_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
@@ -90,7 +90,7 @@ jq -e -s --arg id "$background_id" '
     fail 'background continuation inspection failed'
   jq -e -s '
     [.[] | select(.type == "tool_result" and .name == "subagent")] | last |
-      .model_text | fromjson | .settled == true
+      .model_content[0].text | fromjson | .settled == true
   ' "$background_parent" >/dev/null || fail 'background continuation did not settle'
 fi
 

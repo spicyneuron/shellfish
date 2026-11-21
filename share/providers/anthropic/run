@@ -38,13 +38,11 @@ jq -ce "$SF_PROVIDER_JQ"'
   # holds more than 20 images. Every request resends the whole transcript, so
   # every image in the session counts.
   def api_content:
-    if type == "string" then .
-    else [.[] |
+    [.[] |
       if .type == "image" then
         {type:"image",source:{type:"base64",media_type:.url[5:(.url | index(";"))],
           data:.url[(.url | index(",")) + 1:]}}
-      else select(.text != "") | {type:"text",text:.text} end]
-    end;
+      else select(.text != "") | {type:"text",text:.text} end];
   def regular_message:
     if .type == "user" then {role:"user",content:(.content | api_content)}
     elif .type == "assistant" then
@@ -82,7 +80,8 @@ jq -ce "$SF_PROVIDER_JQ"'
       .pending += [{
         type:"tool_result",
         tool_use_id:$message.call_id,
-        content:($message.content | api_content),
+        content:($message.content |
+          if any(.[]; .type == "image") then api_content else map(.text) | join("") end),
         is_error:(($message.exit_code // 0) != 0)
       }]
     # A call rejoins the assistant message that requested it. Results stay

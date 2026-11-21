@@ -24,13 +24,11 @@ jq -ce "$SF_PROVIDER_JQ"'
   # Tool messages hold only text and must directly follow their calls, so
   # result images are lifted into one user message after the batch.
   def result_text:
-    if type == "string" then .
-    else [.[] | select(.type == "text") | .text] | join("\n\n") |
-      if . == "" then "[images follow in the next user message]" else . end
-    end;
+    (any(.[]; .type == "image")) as $images |
+    [.[] | select(.type == "text") | .text] | join("\n\n") |
+    if . == "" and $images then "[images follow in the next user message]" else . end;
   def image_parts:
-    if type == "string" then []
-    else [.[] | select(.type == "image") | {type:"image_url",image_url:{url}}] end;
+    [.[] | select(.type == "image") | {type:"image_url",image_url:{url}}];
   def flush_images:
     if .images == [] then . else .out += [{role:"user",content:.images}] | .images = [] end;
   def message:

@@ -26,7 +26,7 @@ jq -e -n --slurpfile parent "$session" --slurpfile child "$child" '
 ' >/dev/null || fail 'child did not inherit the parent model'
 jq -e -s --arg id "$id" '
   ([.[] | select(.type == "tool_result" and .name == "subagent")] | last) as $result |
-  ($result.model_text | fromjson) ==
+  ($result.model_content[0].text | fromjson) ==
     {agent_id:$id,exit_code:0,answer:"child answer"} and
   ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) | .value]) == [true]
 ' "$session" >/dev/null || fail 'parent result or association is wrong'
@@ -77,7 +77,7 @@ jq -e -s --arg id "$id" '
   ([.[] | select(.type == "state_update" and .name == ("subagents/" + $id)) |
     .value]) == [true] and
   ([.[] | select(.type == "tool_result" and .name == "subagent") |
-    .model_text | fromjson | select(.agent_id == $id and .answer == "child answer")] |
+    .model_content[0].text | fromjson | select(.agent_id == $id and .answer == "child answer")] |
     length) == 3
 ' "$session" >/dev/null || fail 'continuation results were not durable'
 if print -r -- '{"operation":"continue","agent_id":"00000000000000000000000000000000","task":"bad"}' |
@@ -195,7 +195,7 @@ sf_test_run 'continue child' "$copied_parent" >"$stream" ||
 assert_canonical_session "$copied_parent"
 jq -e -s --arg id "$id" '
   ([.[] | select(.type == "tool_result" and .name == "subagent") |
-    .model_text | fromjson | select(.agent_id == $id and .answer == "child answer")] |
+    .model_content[0].text | fromjson | select(.agent_id == $id and .answer == "child answer")] |
     length) == 4
 ' "$copied_parent" >/dev/null || fail 'copied parent lost its subagent association'
 

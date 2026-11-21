@@ -54,7 +54,7 @@ def preview: .user_preview_lines // "default" | tostring;
 def clip: if length > 300 then .[0:300] + "…" else . end;
 
 # Context and notice select presentation styling.
-def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
+def hook_class: if has("model_content") then "context" else "notice" end;
 # The core marks sandbox requests so that no template can hide them. The
 # client draws the badge; an empty template still shows the tool name.
 def result_text:

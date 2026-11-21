@@ -44,9 +44,9 @@ if jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; the
   jq -e '
     .messages[-4:] == [
       {type:"tool_call",id:"call_1",name:"ordered",input:{value:"first"}},
-      {type:"tool_result",call_id:"call_1",name:"ordered",content:"first",exit_code:0},
+      {type:"tool_result",call_id:"call_1",name:"ordered",content:[{type:"text",text:"first"}],exit_code:0},
       {type:"tool_call",id:"call_2",name:"ordered",input:{value:"second"}},
-      {type:"tool_result",call_id:"call_2",name:"ordered",content:"second",exit_code:0}
+      {type:"tool_result",call_id:"call_2",name:"ordered",content:[{type:"text",text:"second"}],exit_code:0}
     ]
   ' <<<"$request" >/dev/null || exit 9
   [[ $(<$TOOL_ORDER) == $'first\nsecond' ]] || exit 8
@@ -94,7 +94,7 @@ jq -eRn '
     ] and
   ($events | map(select(.type == "tool_result") | .input)) ==
     [{value:"first"},{value:"second"}] and
-  ($events | map(select(.type == "tool_result") | [.user_text,.model_text])) ==
+  ($events | map(select(.type == "tool_result") | [.user_text,.model_content[0].text])) ==
     [["Ordered first","first"],["Ordered second","second"]]
 ' <"$stream" >/dev/null || fail 'tool calls did not settle in order'
 assert_canonical_session "$session"
@@ -121,8 +121,8 @@ SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=1 sf_test_run limited "$session" >"$stream"
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")] as $results |
   ($results | length) == 2 and
-  $results[0].exit_code == 127 and ($results[0].model_text | contains("not allowed")) and
-  $results[1].exit_code == 126 and ($results[1].model_text | contains("limit"))
+  $results[0].exit_code == 127 and ($results[0].model_content[0].text | contains("not allowed")) and
+  $results[1].exit_code == 126 and ($results[1].model_content[0].text | contains("limit"))
 ' <"$stream" >/dev/null || fail 'ordinary tool denials did not settle calls'
 assert_canonical_session "$session"
 

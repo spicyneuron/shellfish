@@ -28,7 +28,7 @@ SF_TEST_PROVIDER_TOOL_CALL=1 \
   SF_TEST_PROVIDER_TOOL_COMMAND='print -rn -- "$TMPDIR|$TMPPREFIX"' \
   sf_test_run temp "$temp_session" >"$temp_stream" || fail 'tool temp environment turn failed'
 jq -eRn --arg expected "${TMPDIR:A}|${TMPDIR:A}/zsh" '
-  [inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+  [inputs | fromjson | select(.type == "tool_result")][0].model_content[0].text ==
     ($expected + "\nexit 0")
 ' <"$temp_stream" >/dev/null || fail 'tool did not receive the host temp environment'
 
@@ -49,7 +49,7 @@ sf_test_bind_hooks post_tool_use "$env_hook"
 sf_test_session "$env_session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$env_command \
   sf_test_run env "$env_session" >"$env_stream" || fail 'tool environment turn failed'
-jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_content[0].text ==
   ("declared-file unset exported " + $share + "\nexit 0")' <"$env_stream" >/dev/null ||
   fail 'unsandboxed tool did not receive .env with declared-name filtering'
 assert_equal "undeclared-file $SF_SHARE" "$(<$env_seen)" \
@@ -59,7 +59,7 @@ for manifest in '.environment=[]' 'del(.environment)'; do
   sf_test_session "$env_session"
   SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COMMAND=$env_command \
     sf_test_run env "$env_session" >"$env_stream" || fail 'empty tool environment turn failed'
-  jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_text ==
+  jq -eRn --arg share "$SF_SHARE" '[inputs | fromjson | select(.type == "tool_result")][0].model_content[0].text ==
     ("unset unset exported " + $share + "\nexit 0")' <"$env_stream" >/dev/null ||
     fail 'an unsandboxed tool without declarations received .env credentials'
   assert_equal "undeclared-file $SF_SHARE" "$(<$env_seen)" \
@@ -165,8 +165,8 @@ jq -eRn '
       ["hook_result","post_tool_use"]
     ] and
   ($events | map(select(.type == "hook_result"))[0] |
-    .model_text == "<context script=\"pre\">\npre context\n</context>" and .user_text == "pre display") and
-  ($events | map(select(.type == "tool_result"))[0].model_text | contains("pre denied")) and
+    .model_content[0].text == "<context script=\"pre\">\npre context\n</context>" and .user_text == "pre display") and
+  ($events | map(select(.type == "tool_result"))[0].model_content[0].text | contains("pre denied")) and
   ([$events[] | select((.type == "_draft" and .name == "shell") or
       (.type == "hook_result" and .lifecycle == "post_tool_use")) |
     if .type == "hook_result" then "post" else "running" end] ==
@@ -175,7 +175,7 @@ jq -eRn '
     "**Shell** " + $command + "\n") and
   ($events | map(select(.type == "tool_result"))[1] |
     .user_text == "**Shell** " + $command + "\noutput\nexit 0" and
-    .model_text == "output\nexit 0")
+    .model_content[0].text == "output\nexit 0")
 ' --arg command "print -r -- ran >>${(q)tool_marker}; print -rn -- output" \
   <"$stream" >/dev/null || fail 'tool lifecycle ordering or rendering was wrong'
 assert_canonical_session "$session"
@@ -216,7 +216,7 @@ jq -eRn '
     ["state_update","hook_result","tool_result"] and
   ($events | map(select(.type == "hook_result"))[0] |
     .lifecycle == "permission_request" and
-    .model_text == "<context script=\"permission\">\nreview context\n</context>" and .user_text == "review display") and
+    .model_content[0].text == "<context script=\"permission\">\nreview context\n</context>" and .user_text == "review display") and
   ([$events[] | select(.type | IN("hook_result","_draft")) | [.type, .sandbox_access]] ==
     [["_draft","requested"],["hook_result",null],["_draft","approved"]]) and
   ($events | map(select(.type == "_draft"))[1].user_text == "**Shell** print -rn -- approved\n") and
@@ -255,28 +255,28 @@ for gate in sandbox-disabled unsupported no-reason reason-only blank-unrequested
   case $gate in
     sandbox-disabled)
       (( gate_status == 0 )) || fail 'disabled sandbox bypass failed the turn'
-      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_content[0].text]) ==
         [[0,"unreviewed\nexit 0"]]' "$session" >/dev/null ||
         fail 'disabled sandbox did not execute normally' ;;
     unsupported)
       (( gate_status == 0 )) || fail 'unsupported bypass failed the turn'
-      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_content[0].text]) ==
         [[126,"sandbox bypass is not allowed"]]' "$session" >/dev/null ||
         fail 'unsupported bypass lost the core refusal' ;;
     no-reason)
       (( gate_status == 0 )) || fail 'bypass without a reason failed the turn'
-      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_content[0].text]) ==
         [[126,"request_sandbox_access requires a reason"]]' "$session" >/dev/null ||
         fail 'missing bypass reason was not refused' ;;
     reason-only)
       (( gate_status == 0 )) || fail 'bypass reason without a request failed the turn'
-      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_content[0].text]) ==
         [[0,"unreviewed\nexit 0"]]' \
         "$session" >/dev/null || fail 'bypass reason without a request was not refused' \
           "$(jq -c 'select(.type == "tool_result")' "$session")" ;;
     blank-unrequested)
       (( gate_status == 0 )) || fail 'unrequested bypass with a blank reason failed the turn'
-      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_text]) ==
+      jq -e -s 'map(select(.type == "tool_result") | [.exit_code,.model_content[0].text]) ==
         [[0,"unreviewed\nexit 0"]]' "$session" >/dev/null ||
         fail 'unrequested bypass with a blank reason did not execute normally' ;;
   esac
@@ -304,8 +304,8 @@ jq -eRn --arg command "print -r -- ran >${(q)tool_marker}" '
     {type:"hook_result",section:2,lifecycle:"permission_request",id:"1",action:"deny",reason:"review denied"}) and
   ($events | map(select(.type == "tool_result"))[0] |
     .exit_code == 126 and .sandbox_access == "denied" and
-    .model_text == "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: review denied\n</sandbox_notice>" and
-    .user_text == "**Shell** " + $command + "\n" + .model_text)
+    .model_content[0].text == "<sandbox_notice>\nSandbox access denied. The tool was not run.\nReason: review denied\n</sandbox_notice>" and
+    .user_text == "**Shell** " + $command + "\n" + .model_content[0].text)
 ' <"$stream" >/dev/null || fail 'permission denial did not settle the call'
 
 # The client may answer before the review hooks finish.
@@ -363,7 +363,7 @@ sf_test_session "$session"
 SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_BYPASS=true \
   sf_test_run permission "$session" >"$stream" || fail 'closed client failed the turn'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
-  .exit_code == 126 and (.model_text | endswith("Reason: no client to approve sandbox access\n</sandbox_notice>")) and
+  .exit_code == 126 and (.model_content[0].text | endswith("Reason: no client to approve sandbox access\n</sandbox_notice>")) and
   .sandbox_access == "denied"' \
   "$session" >/dev/null || fail 'closed client did not deny the request'
 
@@ -382,7 +382,7 @@ exec {client}>&-
 jq -e -s 'map(select(.type == "_tool_permission_request"))[0].timeout == 1' \
   "$stream" >/dev/null || fail 'permission request omitted the configured timeout'
 jq -e -s 'map(select(.type == "tool_result"))[0] |
-  .exit_code == 126 and (.model_text | endswith("Reason: sandbox access approval timed out\n</sandbox_notice>")) and
+  .exit_code == 126 and (.model_content[0].text | endswith("Reason: sandbox access approval timed out\n</sandbox_notice>")) and
   .sandbox_access == "denied"' \
   "$session" >/dev/null || fail 'stale answer or timeout did not deny the request'
 
@@ -404,7 +404,7 @@ SF_TEST_PROVIDER_TOOL_CALL=1 SF_TEST_PROVIDER_TOOL_COUNT=2 \
 (( pre_status == 1 )) || fail 'failing pre hook did not fail the turn'
 jq -eRn '
   [inputs | fromjson | select(.type | IN("tool_result","error"))] as $events |
-  ($events | map(select(.type == "tool_result") | [.id,.exit_code,.model_text])) == [
+  ($events | map(select(.type == "tool_result") | [.id,.exit_code,.model_content[0].text])) == [
     ["call_1",126,"tool call cancelled"],
     ["call_2",126,"tool call cancelled"]] and
   ($events[-1] | .type == "error" and (.user_text | contains("pre_tool_use")))

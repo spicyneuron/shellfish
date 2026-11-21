@@ -88,19 +88,16 @@ sf_run_hook_complete() {
       else keys == ["action"] end) then . else error("invalid control") end |
     ($component.draft + {type:"hook_result", id:$id,
       user_text:render_template($component.template; $component + $outcome),
-      model_text:($outcome.output.stdout | if . == "" then . else
-        "<context script=\"\($component.script | @html)\">\n" + . +
-        (if endswith("\n") then "" else "\n" end) + "</context>" end)} +
+      model_content:([$outcome.output.stdout | select(. != "") |
+        ("<context script=\"\($component.script | @html)\">\n" + . +
+          (if endswith("\n") then "" else "\n" end) + "</context>") | text_part] + $content)} +
       (if $control.action == "deny" then $control else {} end) |
-      with_entries(select(.value != "")) |
-      (if $content == [] then . else
-        .model_content = ([.model_text? | select(. != null) | {type:"text",text:.}] + $content) |
-        del(.model_text) end) |
+      with_entries(select(.value != "" and .value != [])) |
       (if $section > 0 then .section = $section else . end) |
-      if (has("user_text") or has("model_text") or has("model_content") or has("action")) | not then entry("result"; "")
+      if (has("user_text") or has("model_content") or has("action")) | not then entry("result"; "")
       elif canonical_hook_result then entry("result"; tojson)
       else error("invalid hook result") end,
-      entry("model_feedback"; (has("model_text") or has("model_content")) | tostring)),
+      entry("model_feedback"; has("model_content") | tostring)),
     entry("action"; $control.action // ""), entry("reason"; $control.reason // ""),
     entry("payload"; $control | .argv // .profile | if . == null then "" else tojson end),
     ("ok" | field)

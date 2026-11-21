@@ -202,7 +202,7 @@ zsh -f "$entry" request <"$tmp/invalid-transition.jsonl" >/dev/null 2>&1 &&
 # Hook context cannot place NUL in a projected user message.
 {
   sed '$d' "$session"
-  print -r -- '{"type":"hook_result","lifecycle":"stop","id":"1","model_text":"bad\u0000text"}'
+  print -r -- '{"type":"hook_result","lifecycle":"stop","id":"1","model_content":[{"type":"text","text":"bad\u0000text"}]}'
   tail -n 1 "$session"
 } >"$tmp/nul-context.jsonl"
 zsh -f "$entry" request <"$tmp/nul-context.jsonl" >/dev/null 2>&1 &&
