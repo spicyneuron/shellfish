@@ -69,7 +69,8 @@ sf_run_hook_complete() {
   local lifecycle=$1 outcome=$2 command=$3
   local -A settled
   print -rl -- "$outcome" "${content[@]}" | sf_jq_fields -cs --argjson component "$SF_COMPONENT[values]" \
-    --argjson control "$control" --arg lifecycle "$lifecycle" --arg id "$SF_RUN[hook_id]" '
+    --argjson control "$control" --arg lifecycle "$lifecycle" --arg id "$SF_RUN[hook_id]" \
+    --argjson section "${SF_RUN[agent_section]:-0}" '
     include "lib/fields";
     include "lib/session";
     include "lib/profile";
@@ -95,6 +96,7 @@ sf_run_hook_complete() {
       (if $content == [] then . else
         .model_content = ([.model_text? | select(. != null) | {type:"text",text:.}] + $content) |
         del(.model_text) end) |
+      (if $section > 0 then .section = $section else . end) |
       if (has("user_text") or has("model_text") or has("model_content") or has("action")) | not then entry("result"; "")
       elif canonical_hook_result then entry("result"; tojson)
       else error("invalid hook result") end,
@@ -106,7 +108,7 @@ sf_run_hook_complete() {
   settled=( "${reply[@]}" )
   action=$settled[action] reason=$settled[reason] payload=$settled[payload]
   if [[ -n $settled[result] ]]; then
-    sf_run_append "$SF_COMPONENT[session]" "$settled[result]" "${SF_RUN[agent_section]:#0}" || return
+    sf_run_append "$SF_COMPONENT[session]" "$settled[result]" || return
     (( SF_RUN[hook_id] += 1 ))
     [[ $settled[model_feedback] != true ]] || model_feedback=1
   fi

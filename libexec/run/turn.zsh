@@ -65,8 +65,7 @@ sf_run_section() {
 sf_run_assistant_emit() {
   local event=$1
   if [[ $event == '{"type":"_assistant_start"}' ]]; then
-    event=$(jq -cn --argjson section "$SF_RUN[agent_section]" \
-      '{type:"_assistant_start",section:$section}') || return 1
+    event="{\"type\":\"_assistant_start\",\"section\":$SF_RUN[agent_section]}"
   fi
   sf_run_emit "$event"
 }

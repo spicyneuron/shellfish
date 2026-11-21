@@ -142,8 +142,8 @@ sf_test_bind_hooks stop "$stop"
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
 assert_equal 2 "$(<$count)" 'stop did not continue provider'
-jq -e -s 'map(select(.type == "hook_result") | {model_text,action,reason}) ==
-  [{model_text:"<context script=\"stop\">\nchecking again\n</context>",action:"deny",reason:"not finished"}]' "$session" \
+jq -e -s 'map(select(.type == "hook_result") | {section,model_text,action,reason}) ==
+  [{section:2,model_text:"<context script=\"stop\">\nchecking again\n</context>",action:"deny",reason:"not finished"}]' "$session" \
   >/dev/null || fail 'stop feedback did not settle'
 rm -f "$count"
 new_session stop-image
