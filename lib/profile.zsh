@@ -175,7 +175,7 @@ sf_profile_components() {
           else select(hook_manifest and has("on")) //
             error("hook manifest must be valid and declare \"on\": " + $directory) end
         ) as $manifest |
-        {name:($directory | split("/") | last), command:($directory + "/run"),
+        {name:($manifest.name // ($directory | split("/") | last)), command:($directory + "/run"),
          manifest:$manifest}]) |
     ([.commands[] | .name, .manifest.aliases[]?] |
       group_by(.) | map(select(length > 1))[0][0]) as $name |

@@ -8,7 +8,7 @@ integer command_status
 command=$(cat) || exit 1
 if [[ -z $command ]]; then
   source "$SHELLFISH_SHARE_DIR/lib/command-usage.zsh" || exit 1
-  sf_command_usage user_shell
+  sf_command_usage shell
   exit $?
 fi
 

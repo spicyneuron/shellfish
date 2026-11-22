@@ -1,1 +1,1 @@
-{"description":"Load a skill, including a user-only one, as context for the next prompt","arguments":"NAME","user_text":"${output.stderr}"}
+{"name":"skill","description":"Load a skill, including a user-only one, as context for the next prompt","arguments":"NAME","user_text":"${output.stderr}"}

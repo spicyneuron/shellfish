@@ -8,7 +8,7 @@ name=$(cat) || exit 1
 name=${name%%[[:space:]]#}
 if [[ -z $name || $name == *[[:space:]]* ]]; then
   source "$SHELLFISH_SHARE_DIR/lib/command-usage.zsh" || exit 1
-  sf_command_usage user_skill
+  sf_command_usage skill
   exit $?
 fi
 

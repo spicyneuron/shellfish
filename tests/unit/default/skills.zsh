@@ -99,7 +99,7 @@ listed=$(cd "$project" && HOME="$home" SHELLFISH_DIR="$config" SHELLFISH_SHARE_D
   SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$ROOT/share/hooks/skills/list/run" 2>/dev/null)
 [[ $listed == *'- shared:'* && $listed != *hidden* ]] || fail "skill list exposed a user-only skill: $listed"
 
-# /user_skill stages an allowed skill for the next prompt, even if it is user-only.
+# /skill stages an allowed skill for the next prompt, even if it is user-only.
 sf_test_frozen_profile
 SF_TEST_PROFILE=$(jq -c --arg command "$ROOT/share/commands/user_skill" '.commands=[$command]' \
   <<<"$SF_TEST_PROFILE")
@@ -109,23 +109,23 @@ skill_command() {
   (cd "$project" && sf_test_session "$session")
   HOME="$home" SHELLFISH_DIR="$config" sf_test_run "$1" "$session" >"$control"
 }
-skill_command $'/user_skill\thidden \n'
+skill_command $'/skill\thidden \n'
 jq -e -s '
   map(.type) == ["session","hook_result"] and .[1].action == "deny" and
   .[1].user_text == "**Loaded skill** hidden" and
   (.[1].model_content[0].text | startswith("<context script=\"user_skill\">\n<skill name=\"hidden\"") and
     contains("# hidden instructions") and (contains("description:") | not))
-' "$session" >/dev/null || fail '/user_skill did not stage a user-only skill'
+' "$session" >/dev/null || fail '/skill did not stage a user-only skill'
 skill_error() {
   skill_command "$1"
   jq -e -s --arg message "$2" 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
     (.[1].user_text | rtrimstr("\n")) == $message and
     (.[1] | has("model_content") | not)' "$session" >/dev/null ||
-    fail "/user_skill did not withhold the prompt and show: $2"
+    fail "/skill did not withhold the prompt and show: $2"
 }
-skill_error /user_skill 'usage: /user_skill NAME'
-skill_error $'/user_skill hidden\treview\nthis diff' 'usage: /user_skill NAME'
-skill_error '/user_skill missing' 'skill is not available: missing'
+skill_error /skill 'usage: /skill NAME'
+skill_error $'/skill hidden\treview\nthis diff' 'usage: /skill NAME'
+skill_error '/skill missing' 'skill is not available: missing'
 
 # Compaction hands off the next prompt as a draft. Sending it in the compacted
 # session should deliver the staged skill once without rerunning the command.
@@ -148,9 +148,9 @@ ZSH
     {type:"user",section:3,content:[{type:"text",text:("Recent task " + ("x" * 82000))}]},
     {type:"assistant",section:4,stop:"end",content:[],usage:{input_tokens:80,output_tokens:2}}
   ' >>"$session"
-  sf_test_run '/user_skill hidden' "$session" >"$control"
+  sf_test_run '/skill hidden' "$session" >"$control"
   jq -e -s 'map(.type) == ["hook_result"] and .[0].action == "deny"' "$control" >/dev/null ||
-    fail '/user_skill ran submission hooks or inference'
+    fail '/skill ran submission hooks or inference'
 
   prompt='Review this diff'
   sf_test_run "$prompt" "$session" >"$control"
@@ -185,7 +185,7 @@ for name in config-only hidden skill-creator missing; do
 done
 
 SF_TEST_PROFILE=$(jq -c '.config.skills=[]' <<<"$SF_TEST_PROFILE")
-skill_error '/user_skill hidden' 'skill is not available: hidden'
+skill_error '/skill hidden' 'skill is not available: hidden'
 session="$tmp/no-skills.jsonl"
 (cd "$project" && sf_test_session "$session")
 export SHELLFISH_SESSION="$session"

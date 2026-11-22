@@ -195,7 +195,8 @@ submit() {
 submit /h
 jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
   (.[1].user_text | contains("/verbose, /v") and contains("/copy [N]") and
-    contains("/user_skill NAME") and test("/compact\\s"))' "$command_session" >/dev/null ||
+    contains("/skill NAME") and contains("/shell COMMAND") and
+    (contains("/user_") | not) and test("/compact\\s"))' "$command_session" >/dev/null ||
   fail 'help did not list profile commands'
 submit /sandbox
 jq -e -s 'map(.type) == ["session","hook_result"] and
@@ -210,7 +211,7 @@ done
 submit /shell
 jq -e -s '
   map(.type) == ["session","hook_result"] and
-  (.[1].user_text | rtrimstr("\n")) == "usage: /user_shell COMMAND" and
+  (.[1].user_text | rtrimstr("\n")) == "usage: /shell COMMAND" and
   (.[1] | has("model_content") | not)
 ' "$command_session" >/dev/null || fail '/shell did not show only usage'
 submit '/shell echo hello'
@@ -223,7 +224,7 @@ submit $'/copy\t1'
 jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
   (.[1].user_text | startswith("usage:") | not)' "$command_session" >/dev/null ||
   fail 'a tab did not separate command arguments'
-for prompt in ordinary /helpme; do
+for prompt in ordinary /helpme /user_skill /user_shell; do
   submit "$prompt"
   jq -e -s --arg prompt "$prompt" 'map(.type) == ["session","user","assistant"] and
     .[1].content[0].text == $prompt' "$command_session" >/dev/null ||

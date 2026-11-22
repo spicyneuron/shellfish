@@ -158,8 +158,8 @@ The bundled commands are selected by the profile:
 | `/compact [INSTRUCTIONS]` | Summarize older conversation into a child session, optionally steering the summary |
 | `/compact_tools` | Clear older tool results into a child session without summarizing |
 | `/copy [N]` | Copy the latest or selected conversation section |
-| `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
-| `/user_skill NAME` | Load a skill as context for the next prompt |
+| `/shell COMMAND` | Run a user-authored command and stage its output as context |
+| `/skill NAME` | Load a skill as context for the next prompt |
 | `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox policy |
 
 See [Chat controls](CONFIG.md#chat) for client-owned commands, editor keys, and queued prompts, and [Conversation sections](CONFIG.md#conversation-sections) for stable command targets. Bundled submission hooks compact automatically near a known context-window limit and report Git identity changes.
@@ -176,9 +176,9 @@ Skills come from these sources in precedence order:
 
 With `~/.shellfish`, the last source is `~/.agents/skills/`. A project's `.shellfish` uses that project's `.agents/skills/` instead. There is no bundled skill fallback.
 
-Set `"config": {"skills": ["skill-creator", "code-review"]}` to allow only those literal names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Missing names are ignored. The filter controls advertising, the `skill` tool, and `/user_skill`, not filesystem permissions.
+Set `"config": {"skills": ["skill-creator", "code-review"]}` to allow only those literal names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Missing names are ignored. The filter controls advertising, the `skill` tool, and `/skill`, not filesystem permissions.
 
-A skill with `disable-model-invocation: true` is user-only. It is never advertised to the model or loaded by the `skill` tool, and loads only through `/user_skill`.
+A skill with `disable-model-invocation: true` is user-only. It is never advertised to the model or loaded by the `skill` tool, and loads only through `/skill`.
 
 ## Optional bundled components
 

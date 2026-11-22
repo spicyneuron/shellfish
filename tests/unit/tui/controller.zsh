@@ -25,8 +25,8 @@ print -r -- '#!/bin/sh' >"$tmp/commands/example/run"
 chmod +x "$tmp/commands/example/run"
 print -r -- '{"description":"Example command","aliases":["e","example-alias"]}' \
   >"$tmp/commands/example/manifest.json"
-sf_tui_commands "$tmp/commands/example" @commands/help
-assert_equal '/example,/example-alias,/help,/queue,/quit,/refresh,/verbose' \
+sf_tui_commands "$tmp/commands/example" @commands/help @commands/user_shell @commands/user_skill
+assert_equal '/example,/example-alias,/help,/queue,/quit,/refresh,/shell,/skill,/verbose' \
   "${(j:,:)SF_TUI_COMMANDS}"
 SF_TUI_COMPLETIONS=( /example /example-alias )
 sf_tui_commands
