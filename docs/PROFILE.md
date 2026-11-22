@@ -195,7 +195,7 @@ Both modes use the parent's profile and model unless a fresh start selects alter
 }}
 ```
 
-Without the choice lists, every subagent uses the parent's profile and model. Subagents cannot launch their own subagents. `max_active` is a positive integer, default `4`, limiting running subagents per parent. A subagent holds its slot only while its turn runs. Supplied settings freeze with the session.
+Without the choice lists, every subagent uses the parent's profile and model. Subagents cannot launch their own subagents. Commands are user actions, so subagents get none, and a task that looks like `/NAME` is an ordinary prompt. `max_active` is a positive integer, default `4`, limiting running subagents per parent. A subagent holds its slot only while its turn runs. Supplied settings freeze with the session.
 
 Background work returns control after launch. Inspection distinguishes running work from a stopped subagent without a final outcome. Continuing a stopped subagent recovers unfinished work. A subagent killed during its stop hooks can appear settled, and those hooks do not run again.
 

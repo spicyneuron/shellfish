@@ -306,7 +306,7 @@ for phase in pending denied finished failed; do
 done
 print -r -- "$id" >"$SF_AGENT_ID_FILE"
 
-# Without a profile, a fresh child uses the parent's, minus this tool.
+# Without a profile, a fresh child uses the parent's, minus this tool and commands.
 typeset own_result own_id
 own_result=$(print -r -- '{"operation":"start","task":"child task"}' |
   SHELLFISH_SESSION="$session" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
@@ -320,6 +320,30 @@ jq -e -n --slurpfile parent "$session" --slurpfile child "$tmp/.subagent-$own_id
   ($child[0].model.provider | endswith("/" + ($parent[0].model.provider | split("/") | last))) and
   ($child[1:] | map(.type)) == ["state_update","user","assistant"]
 ' >/dev/null || fail 'parent-profile child did not copy the parent profile'
+
+# Commands are user actions, so a task naming one reaches the child's model.
+typeset mark_parent="$tmp/mark-parent.jsonl" mark_profile=$SF_TEST_PROFILE mark_input mark_result
+export SF_AGENT_MARKER="$tmp/marker"
+sf_test_hook "$tmp/commands/mark" '{"description":"Mark"}' <<'ZSH'
+#!/usr/bin/env zsh
+: >"$SF_AGENT_MARKER"
+ZSH
+SF_TEST_PROFILE=$(jq -c --arg mark "$tmp/commands/mark" '.commands=[$mark]' <<<"$mark_profile")
+sf_test_session "$mark_parent"
+SF_TEST_PROFILE=$mark_profile
+for mark_input in '{"operation":"start","task":"/mark"}' \
+    '{"operation":"start","fork":true,"task":"/mark"}'; do
+  mark_result=$(print -r -- "$mark_input" |
+    SHELLFISH_SESSION="$mark_parent" SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" \
+    "$agent/run" 3>/dev/null) || fail "command task failed: $mark_input"
+  [[ ! -e $SF_AGENT_MARKER ]] || fail "subagent ran a command: $mark_input"
+  jq -e '.answer == "child answer"' <<<"$mark_result" >/dev/null ||
+    fail "command task did not reach the child model: $mark_input"
+  jq -e -s '.[0].profile.commands == [] and
+    ([.[] | select(.type == "user") | .content[0].text] == ["/mark"])' \
+    "$tmp/.subagent-$(jq -r '.agent_id' <<<"$mark_result").jsonl" >/dev/null ||
+    fail "child kept commands: $mark_input"
+done
 
 # A fork inherits only the settled parent prefix, including its effective state.
 typeset fork_parent="$tmp/fork-parent.jsonl" fork_request="$tmp/fork-request.json"

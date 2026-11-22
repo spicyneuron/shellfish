@@ -49,9 +49,11 @@ read_outcome() {
   '"$body" "$child"
 }
 
-# Removes this tool from a session header, since subagents cannot delegate.
+# Removes this tool from a session header, since subagents cannot delegate, and
+# every command, since commands are user actions and the model writes the task.
 typeset detach='if .type == "session" then
-  .profile.tools |= map(select(split("/") | last != $self)) else . end'
+  .profile.tools |= map(select(split("/") | last != $self)) |
+  .profile.commands = [] else . end'
 
 input=$(cat) || fail 'cannot read input'
 zmodload zsh/system || fail 'cannot load session locking'
