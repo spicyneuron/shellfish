@@ -161,7 +161,7 @@ The bundled commands are selected by the profile:
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
 | `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox policy |
 
-See [Chat controls](CONFIG.md#chat) for client-owned commands, editor keys, and queued prompts, and [Conversation sections](CONFIG.md#conversation-sections) for stable command targets. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
+See [Chat controls](CONFIG.md#chat) for client-owned commands, editor keys, and queued prompts, and [Conversation sections](CONFIG.md#conversation-sections) for stable command targets. Bundled submission hooks compact automatically near a known context-window limit and report Git identity changes.
 
 Both compaction commands leave the source unchanged and open a child through the client. Startup context and the first user message are protected outside the recent-history allowance. They preserve recent turns' model-visible content in full, targeting 80 KiB of text and always keeping the latest turn. `/compact` summarizes the older conversation into the first user message, alongside the original user request preserved verbatim. Later compactions replace that summary rather than accumulating summaries. `/compact_tools` instead replaces older tool results, including images, with omission markers while preserving the conversation, tool calls, and exit status. Neither command creates a child when there is nothing to reduce. Automatic compaction preserves the interrupted prompt as an editable draft.
 
@@ -175,9 +175,7 @@ Skills come from these sources in precedence order:
 
 With `~/.shellfish`, the last source is `~/.agents/skills/`. A project's `.shellfish` uses that project's `.agents/skills/` instead. There is no bundled skill fallback.
 
-Set `"config": {"skills": ["skill-creator", "code-review"]}` to allow only those literal names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Missing names are ignored. The filter controls advertising, the `skill` tool, and explicit `$skill-name` requests, not filesystem permissions.
-
-With the `skills/mention` hook, `$skill-name` in an ordinary prompt loads matching allowed skills before inference, including user-only skills with `disable-model-invocation: true`. The submitted prompt stays unchanged. Unknown and excluded names are ignored.
+Set `"config": {"skills": ["skill-creator", "code-review"]}` to allow only those literal names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Missing names are ignored. The filter controls advertising and the `skill` tool, not filesystem permissions.
 
 ## Optional bundled components
 

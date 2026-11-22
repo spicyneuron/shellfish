@@ -12,13 +12,12 @@ config="$home/.shellfish"
 mkdir -p "$project/.agents/skills" "$config/skills" "$home/.agents/skills"
 
 make_skill() {
-  local root=$1 name=$2 description=$3 disabled=${4:-false}
+  local root=$1 name=$2 description=$3
   mkdir -p "$root/$name"
   cat >"$root/$name/SKILL.md" <<EOF
 ---
 name: $name
 description: $description
-disable-model-invocation: $disabled
 license: test
 ---
 
@@ -33,7 +32,6 @@ make_skill "$config/skills" config-only 'configured skill'
 make_skill "$home/.agents/skills" personal 'personal skill'
 make_skill "$tmp/linked-skills" linked 'linked skill'
 ln -s "$tmp/linked-skills/linked" "$config/skills/linked"
-make_skill "$project/.agents/skills" hidden 'must not be advertised' true
 make_skill "$project/.agents/skills" bad_name 'invalid skill'
 make_skill "$project/.claude/skills" claude-only 'must be ignored'
 
@@ -56,10 +54,7 @@ done
 [[ $descriptions[personal] == 'personal skill' ]]
 [[ $descriptions[linked] == 'linked skill' ]]
 [[ $skill_paths[linked] == "${tmp:A}/linked-skills/linked/SKILL.md" ]]
-[[ -z ${descriptions[hidden]-} && -z ${descriptions[bad_name]-} ]]
-[[ -z ${descriptions[claude-only]-} ]]
-HOME="$home" sf_skills_discover "$config" "$project" true
-[[ ${reply[(Ie)hidden]} -gt 0 ]]
+[[ -z ${descriptions[bad_name]-} && -z ${descriptions[claude-only]-} ]]
 
 # Another .shellfish directory uses its own sibling .agents, not the home one.
 flavor="$tmp/flavor"
@@ -91,44 +86,9 @@ sf_skills_body "$tmp/odd & \"root\"/odd/SKILL.md"
 loaded=$(sf_skills_wrap odd "$tmp/odd & \"root\"/odd" "$REPLY")
 [[ $loaded == *'directory="'*'odd &amp; &quot;root&quot;/odd">'* ]]
 [[ $loaded != *'description: odd description'* ]]
-if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
-    SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null 2>&1); then
-  fail 'skill tool loaded a model-disabled skill'
-fi
 
-# Prompt references load each valid skill once, including user-only skills.
-sf_test_frozen_profile
-SF_TEST_PROFILE=$(jq -c --arg hook "$ROOT/share/hooks/skills/mention" '.hooks=[$hook]' \
-  <<<"$SF_TEST_PROFILE")
-session="$tmp/skills.jsonl"
-(cd "$project" && sf_test_session "$session")
-control="$tmp/prompt-skills.json"
-HOME="$home" SHELLFISH_DIR="$config" sf_test_run \
-  'Use $shared and $config-only, then $shared. Ignore $hidden, $missing, and foo$personal.' \
-  "$session" >"$control"
-jq -e -s '
-  map(select(.type == "hook_result")) | length == 1 and
-  (.[0].user_text | startswith("**Loaded $shared**\n# shared instructions")) and
-  (.[0].user_text | contains("# shared instructions")) and
-  (.[0].user_text | contains("<skill") | not) and
-  (.[0].model_content[0].text | contains("<skill name=\"shared\" directory=\"")) and
-  (.[0].model_content[0].text | contains("# shared instructions")) and
-  (.[0].model_content[0].text | contains("description: project description") | not) and
-  (.[0].user_text | contains("Loaded $config-only\n# config-only instructions")) and
-  (.[0].user_text | contains("Loaded $hidden\n# hidden instructions")) and
-  (.[0].model_content[0].text | startswith("<context script=\"skills/mention\">\n<skill name=") and
-    endswith("</skill>\n</context>")) and
-  (.[0].model_content[0].text | [scan("<skill name=")] | length == 3) and
-  (.[0].model_content[0].text | [scan("# shared instructions")] | length == 1) and
-  (.[0].model_content[0].text | contains("# config-only instructions") and contains("# hidden instructions"))
-' "$control" >/dev/null
-for prompt in 'No skill here' '$missing'; do
-  HOME="$home" SHELLFISH_DIR="$config" sf_test_run "$prompt" "$session" >"$control"
-  jq -e -s 'all(.[]; .type != "hook_result")' "$control" >/dev/null
-done
-
-# The frozen allowlist applies to tools and explicit references from every source.
-SF_TEST_PROFILE=$(jq -c '.config.skills=["shared","personal","hidden","missing","shared"]' \
+# The frozen allowlist applies to the tool from every source.
+SF_TEST_PROFILE=$(jq -c '.config.skills=["shared","personal","missing","shared"]' \
   <<<"$SF_TEST_PROFILE")
 session="$tmp/filtered.jsonl"
 (cd "$project" && sf_test_session "$session")
@@ -139,19 +99,12 @@ for name in shared personal; do
   [[ $loaded == *"# $name instructions"* ]]
 done
 [[ $loaded == *"directory=\"${home:A}/.agents/skills/personal\""* ]]
-for name in config-only hidden skill-creator missing; do
+for name in config-only skill-creator missing; do
   if (cd "$project" && print -rn -- "{\"name\":\"$name\"}" | HOME="$home" \
       SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null); then
     fail "skill tool loaded an unavailable skill: $name"
   fi
 done
-HOME="$home" SHELLFISH_DIR="$config" sf_test_run \
-  '$shared $personal $hidden $config-only $missing' "$session" >"$control"
-jq -e -s '
-  [ .[] | select(.type == "hook_result") | .model_content[0].text ] | length == 1 and
-  (.[0] | contains("# shared instructions") and contains("# personal instructions") and
-    contains("# hidden instructions") and (contains("# config-only instructions") | not))
-' "$control" >/dev/null
 
 SF_TEST_PROFILE=$(jq -c '.config.skills=[]' <<<"$SF_TEST_PROFILE")
 session="$tmp/no-skills.jsonl"
@@ -161,8 +114,6 @@ if (cd "$project" && print -rn -- '{"name":"shared"}' | HOME="$home" \
     SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null); then
   fail 'an empty allowlist allowed tool loading'
 fi
-HOME="$home" SHELLFISH_DIR="$config" sf_test_run '$shared $hidden' "$session" >"$control"
-jq -e -s 'all(.[]; .type != "hook_result")' "$control" >/dev/null
 
 for value in null false 1 '"shared"' '{}' '[null]' '[1]' '["bad_name"]' '["*"]' \
     '["shared\n"]' '["abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklm"]'; do
@@ -176,8 +127,3 @@ for value in null false 1 '"shared"' '{}' '[null]' '[1]' '["bad_name"]' '["*"]' 
   fi
   grep -q 'config.skills must be an array of skill names' "$tmp/invalid.err"
 done
-if HOME="$home" SHELLFISH_DIR="$config" sf_test_run '$shared' "$session" \
-    >"$control" 2>"$tmp/invalid.err"; then
-  fail 'prompt hook accepted invalid config.skills'
-fi
-grep -q 'config.skills must be an array of skill names' "$tmp/invalid.err"

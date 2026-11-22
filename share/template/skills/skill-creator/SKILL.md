@@ -34,7 +34,6 @@ Turn the agreed design into the shortest instructions that will reliably produce
 - Inspect project instructions and existing skills there so the new skill follows local conventions and does not duplicate an existing capability.
 - Create `<name>/SKILL.md` there. Choose a specific name using only lowercase letters, numbers, and single hyphens.
 - Match the frontmatter `name` to the directory name. Keep `name` at most 64 characters and `description` at most 1024 characters. Use single-line scalars.
-- Omit `disable-model-invocation` unless the user asks to hide the skill from automatic invocation.
 - Keep the essential workflow in `SKILL.md`. Add supporting files with relative paths only when they are useful. Add scripts, dependencies, or broad permissions only when the workflow requires them.
 
 ## 4. Verify

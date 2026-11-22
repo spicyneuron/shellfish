@@ -26,7 +26,7 @@ sf_skills_scalar() {
 sf_skills_metadata() {
   emulate -L zsh
   setopt extended_glob
-  local file=$1 line key value name='' description='' disabled=false
+  local file=$1 line key value name='' description=''
   integer first=1 closed=0
   while IFS= read -r line || [[ -n $line ]]; do
     line=${line%$'\r'}
@@ -52,29 +52,21 @@ sf_skills_metadata() {
         sf_skills_scalar "$value" || return 1
         description=$REPLY
         ;;
-      disable-model-invocation)
-        sf_skills_scalar "$value" || return 1
-        case ${REPLY:l} in
-          true) disabled=true ;;
-          false) disabled=false ;;
-          *) return 1 ;;
-        esac
-        ;;
     esac
   done <"$file"
   (( closed )) || return 1
   [[ $name == [a-z0-9]##(-[a-z0-9]##)# && ${#name} -le 64 ]] || return 1
   [[ ${file:h:t} == $name ]] || return 1
   [[ -n $description && ${#description} -le 1024 && $description != *$'\0'* ]] || return 1
-  reply=( "$name" "$description" "$disabled" )
+  reply=( "$name" "$description" )
 }
 
 # Populates reply with name, description, and canonical SKILL.md path triplets.
 sf_skills_discover() {
   emulate -L zsh
   setopt extended_glob
-  local config_dir=${1-} project_dir=${2:-$PWD} include_disabled=${3:-false} selection
-  local root canonical directory file name description disabled
+  local config_dir=${1-} project_dir=${2:-$PWD} selection
+  local root canonical directory file name description
   local -a roots discovered allowed
   local -A seen_roots seen_names
   selection=$(jq -r '
@@ -103,10 +95,8 @@ sf_skills_discover() {
       sf_skills_metadata "$file" || continue
       name=$reply[1]
       description=$reply[2]
-      disabled=$reply[3]
       [[ -z ${seen_names[$name]-} ]] || continue
       seen_names[$name]=1
-      [[ $disabled == false || $include_disabled == true ]] || continue
       [[ $selection == '*' || ${allowed[(Ie)$name]} -gt 0 ]] || continue
       discovered+=( "$name" "$description" "${file:A}" )
     done

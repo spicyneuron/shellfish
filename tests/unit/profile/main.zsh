@@ -496,14 +496,6 @@ for hook_name in "$ROOT"/share/commands/*(/); do
     $manifest[0] | command_manifest
   ' >/dev/null || fail "bundled command manifest is invalid: ${hook_name:t}"
 done
-sf_jq -en --slurpfile manifest "$ROOT/share/hooks/skills/mention/manifest.json" '
-  include "lib/profile";
-  $manifest[0].match.pattern as $pattern |
-  ($manifest[0] | hook_manifest and .on == "user_prompt_submit") and
-  (["$", "$-", "$Name", "abc$name", "$$name", "ordinary prompt"] |
-    all(.[]; test($pattern) | not)) and
-  (["$name", "$0", "use $name"] | all(.[]; test($pattern)))
-' >/dev/null || fail 'skills match accepted a non-name dollar sign'
 
 # Tool references preserve configured order.
 typeset tools="$SF_TEST_CONFIG/tools"

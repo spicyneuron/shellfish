@@ -47,9 +47,6 @@
     "sandbox/grants",
     "project/instructions",
 
-    // User prompt extensions.
-    "skills/mention",
-
     // Automatic functionality.
     "autocompact",
     "git/identity"
