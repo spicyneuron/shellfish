@@ -44,9 +44,9 @@
     // Session start context.
     "project/environment",
     "git/environment",
+    "project/instructions",
     "skills/list",
     "sandbox/grants",
-    "project/instructions",
 
     // Automatic functionality.
     "autocompact",
