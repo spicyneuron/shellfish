@@ -64,7 +64,7 @@ def hook_manifest:
         (try ("" | test($pattern) | type == "boolean") catch false))));
 
 # A command is named by its folder and matched as "/NAME" or an alias. Declared
-# arguments, shown in help, let "/NAME ARGUMENTS" match too.
+# arguments allow text after the name and provide the usage hint in help.
 def command_manifest:
   component_manifest(["aliases", "arguments", "description"]; []) and
   (.description | nonempty_control_free_string) and

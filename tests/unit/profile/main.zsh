@@ -216,6 +216,9 @@ for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
   ' <<<"$REPLY" >/dev/null || fail "starter profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")
 done
+jq -e '(.commands | any(endswith("/commands/skill"))) and
+  (.tools | any(endswith("/tools/skill")) | not)' <<<"$profile" >/dev/null ||
+  fail 'readonly should offer /skill without giving the model the skill tool'
 
 # Tool manifests are read live from the resolved folders.
 sf_profile_components "$profile"
