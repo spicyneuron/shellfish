@@ -12,12 +12,13 @@ config="$home/.shellfish"
 mkdir -p "$project/.agents/skills" "$config/skills" "$home/.agents/skills"
 
 make_skill() {
-  local root=$1 name=$2 description=$3
+  local root=$1 name=$2 description=$3 disabled=${4:-false}
   mkdir -p "$root/$name"
   cat >"$root/$name/SKILL.md" <<EOF
 ---
 name: $name
 description: $description
+disable-model-invocation: $disabled
 license: test
 ---
 
@@ -32,6 +33,7 @@ make_skill "$config/skills" config-only 'configured skill'
 make_skill "$home/.agents/skills" personal 'personal skill'
 make_skill "$tmp/linked-skills" linked 'linked skill'
 ln -s "$tmp/linked-skills/linked" "$config/skills/linked"
+make_skill "$project/.agents/skills" hidden 'must not be advertised' true
 make_skill "$project/.agents/skills" bad_name 'invalid skill'
 make_skill "$project/.claude/skills" claude-only 'must be ignored'
 
@@ -54,7 +56,10 @@ done
 [[ $descriptions[personal] == 'personal skill' ]]
 [[ $descriptions[linked] == 'linked skill' ]]
 [[ $skill_paths[linked] == "${tmp:A}/linked-skills/linked/SKILL.md" ]]
-[[ -z ${descriptions[bad_name]-} && -z ${descriptions[claude-only]-} ]]
+[[ -z ${descriptions[hidden]-} && -z ${descriptions[bad_name]-} ]]
+[[ -z ${descriptions[claude-only]-} ]]
+HOME="$home" sf_skills_discover "$config" "$project" true
+[[ ${reply[(Ie)hidden]} -gt 0 ]]
 
 # Another .shellfish directory uses its own sibling .agents, not the home one.
 flavor="$tmp/flavor"
@@ -86,9 +91,13 @@ sf_skills_body "$tmp/odd & \"root\"/odd/SKILL.md"
 loaded=$(sf_skills_wrap odd "$tmp/odd & \"root\"/odd" "$REPLY")
 [[ $loaded == *'directory="'*'odd &amp; &quot;root&quot;/odd">'* ]]
 [[ $loaded != *'description: odd description'* ]]
+if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
+    SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null 2>&1); then
+  fail 'skill tool loaded a model-disabled skill'
+fi
 
 # The frozen allowlist applies to the tool from every source.
-SF_TEST_PROFILE=$(jq -c '.config.skills=["shared","personal","missing","shared"]' \
+SF_TEST_PROFILE=$(jq -c '.config.skills=["shared","personal","hidden","missing","shared"]' \
   <<<"$SF_TEST_PROFILE")
 session="$tmp/filtered.jsonl"
 (cd "$project" && sf_test_session "$session")
@@ -99,7 +108,7 @@ for name in shared personal; do
   [[ $loaded == *"# $name instructions"* ]]
 done
 [[ $loaded == *"directory=\"${home:A}/.agents/skills/personal\""* ]]
-for name in config-only skill-creator missing; do
+for name in config-only hidden skill-creator missing; do
   if (cd "$project" && print -rn -- "{\"name\":\"$name\"}" | HOME="$home" \
       SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null); then
     fail "skill tool loaded an unavailable skill: $name"
