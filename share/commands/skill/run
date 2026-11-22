@@ -1,0 +1,27 @@
+#!/usr/bin/env zsh
+
+emulate -R zsh
+setopt extended_glob no_aliases no_multios pipe_fail
+
+typeset input name request file
+integer index
+input=$(cat) || exit 1
+name=${input%%[[:space:]]*}
+request=${${input#"$name"}##[[:space:]]#}
+if [[ -z $name ]]; then
+  print -u2 -r -- 'usage: /skill NAME [PROMPT]'
+  exit 0
+fi
+
+source "$SHELLFISH_SHARE_DIR/lib/skills.zsh" || exit 1
+sf_skills_discover "${SHELLFISH_DIR-}" "$PWD" true || exit 1
+for (( index = 1; index <= ${#reply}; index += 3 )); do
+  [[ $reply[index] == "$name" ]] || continue
+  file=$reply[index+2]
+  sf_skills_body "$file" || exit 1
+  sf_skills_wrap "$name" "${file:h}" "$REPLY" || exit 1
+  print -rnu2 -- "**Loaded skill** $name"
+  [[ -z $request ]] || print -r -u3 -- '{"action":"submit"}'
+  exit 0
+done
+print -u2 -r -- "skill is not available: $name"

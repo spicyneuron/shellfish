@@ -95,6 +95,45 @@ if (cd "$project" && print -rn -- '{"name":"hidden"}' | HOME="$home" \
     SHELLFISH_DIR="$config" SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$tool" >/dev/null 2>&1); then
   fail 'skill tool loaded a model-disabled skill'
 fi
+listed=$(cd "$project" && HOME="$home" SHELLFISH_DIR="$config" SHELLFISH_SHARE_DIR="$ROOT/share" \
+  SHELLFISH_CONFIG="$(sf_test_session_config "$session")" zsh -f "$ROOT/share/hooks/skills/list/run" 2>/dev/null)
+[[ $listed == *'- shared:'* && $listed != *hidden* ]] || fail "skill list exposed a user-only skill: $listed"
+
+# /skill loads any allowed skill, including user-only ones. Alone it stages
+# the skill for the next prompt; with a prompt it sends both in one turn.
+sf_test_frozen_profile
+SF_TEST_PROFILE=$(jq -c --arg command "$ROOT/share/commands/skill" '.commands=[$command]' \
+  <<<"$SF_TEST_PROFILE")
+control="$tmp/command.jsonl"
+skill_command() {
+  session="$tmp/command-session.jsonl"
+  (cd "$project" && sf_test_session "$session")
+  HOME="$home" SHELLFISH_DIR="$config" sf_test_run "$1" "$session" >"$control"
+}
+skill_command '/skill hidden'
+jq -e -s '
+  map(.type) == ["session","hook_result"] and .[1].action == "deny" and
+  .[1].user_text == "**Loaded skill** hidden" and
+  (.[1].model_content[0].text | startswith("<context script=\"skill\">\n<skill name=\"hidden\"") and
+    contains("# hidden instructions") and (contains("description:") | not))
+' "$session" >/dev/null || fail '/skill did not stage a user-only skill'
+skill_command $'/skill hidden\treview\nthis diff'
+jq -e -s 'map(.type) == ["session","hook_result","user","assistant"] and
+  (.[1] | has("action") | not) and .[2].content[0].text == "/skill hidden\treview\nthis diff"
+' "$session" >/dev/null || fail '/skill with a prompt did not submit it'
+jq -L "$ROOT" -es 'include "lib/session";
+  .[1:] | session_messages | .[0].content | map(.text) | add |
+  contains("# hidden instructions") and endswith("/skill hidden\treview\nthis diff")
+' "$session" >/dev/null || fail '/skill context did not reach the model with its prompt'
+skill_error() {
+  skill_command "$1"
+  jq -e -s --arg message "$2" 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
+    (.[1].user_text | rtrimstr("\n")) == $message and
+    (.[1] | has("model_content") | not)' "$session" >/dev/null ||
+    fail "/skill did not withhold the prompt and show: $2"
+}
+skill_error /skill 'usage: /skill NAME [PROMPT]'
+skill_error '/skill missing now' 'skill is not available: missing'
 
 # The frozen allowlist applies to the tool from every source.
 SF_TEST_PROFILE=$(jq -c '.config.skills=["shared","personal","hidden","missing","shared"]' \
@@ -116,6 +155,7 @@ for name in config-only hidden skill-creator missing; do
 done
 
 SF_TEST_PROFILE=$(jq -c '.config.skills=[]' <<<"$SF_TEST_PROFILE")
+skill_error '/skill hidden now' 'skill is not available: hidden'
 session="$tmp/no-skills.jsonl"
 (cd "$project" && sf_test_session "$session")
 export SHELLFISH_SESSION="$session"

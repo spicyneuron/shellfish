@@ -35,7 +35,8 @@
     "compact_tools",
     "copy",
     "user_shell",
-    "sandbox"
+    "sandbox",
+    "skill"
   ],
 
   // Hooks run in this order within the lifecycle their manifest names.
