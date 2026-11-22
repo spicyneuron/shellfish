@@ -7,13 +7,11 @@ name=$(jq -ejr 'select(type == "object" and keys == ["name"] and
   exit 2
 }
 source "$SHELLFISH_SHARE_DIR/lib/skills.zsh" || exit 1
-sf_skills_discover "${SHELLFISH_DIR-}" "$PWD" || exit 1
-integer index
-for (( index = 1; index <= ${#reply}; index += 3 )); do
-  [[ $reply[index] == $name ]] || continue
-  sf_skills_body "$reply[index+2]" || exit 1
-  sf_skills_wrap "$name" "${reply[index+2]:h}" "$REPLY"
-  exit $?
-done
-print -r -- "skill is not available: $name"
-exit 2
+if sf_skills_load "$name"; then
+  exit 0
+elif (( $? == 2 )); then
+  print -r -- "skill is not available: $name"
+  exit 2
+else
+  exit 1
+fi

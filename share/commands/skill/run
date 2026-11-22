@@ -3,8 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset name file
-integer index
+typeset name
 name=$(cat) || exit 1
 name=${name%%[[:space:]]#}
 if [[ -z $name || $name == *[[:space:]]* ]]; then
@@ -13,13 +12,10 @@ if [[ -z $name || $name == *[[:space:]]* ]]; then
 fi
 
 source "$SHELLFISH_SHARE_DIR/lib/skills.zsh" || exit 1
-sf_skills_discover "${SHELLFISH_DIR-}" "$PWD" true || exit 1
-for (( index = 1; index <= ${#reply}; index += 3 )); do
-  [[ $reply[index] == "$name" ]] || continue
-  file=$reply[index+2]
-  sf_skills_body "$file" || exit 1
-  sf_skills_wrap "$name" "${file:h}" "$REPLY" || exit 1
+if sf_skills_load "$name" true; then
   print -rnu2 -- "**Loaded skill** $name"
-  exit 0
-done
-print -u2 -r -- "skill is not available: $name"
+elif (( $? == 2 )); then
+  print -u2 -r -- "skill is not available: $name"
+else
+  exit 1
+fi
