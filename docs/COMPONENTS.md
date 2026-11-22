@@ -90,7 +90,7 @@ A hook manifest declares its lifecycle with `on`, such as `{"on":"stop"}`. An op
 | Lifecycle | Purpose | Arguments | stdin | Available actions |
 | --- | --- | --- | --- | --- |
 | `session_start` | Add context once when creating a session | None | Empty | None |
-| `user_prompt_submit` | Add context or handle a prompt before submission | None | Exact prompt | `deny`, `handoff`, `session_update`, and `submit` for commands |
+| `user_prompt_submit` | Add context or handle a prompt before submission | None | Exact prompt | `deny`, `handoff`, `session_update` |
 | `pre_tool_use` | Gate a tool call | `NAME ID` | Tool request JSON | `deny` |
 | `permission_request` | Review requested sandbox access | `NAME ID` | Tool request JSON | `approve`, `deny` |
 | `post_tool_use` | Add context after a durable tool result | `NAME ID` | Tool response JSON | None |
@@ -117,7 +117,7 @@ A command handles a prompt that starts with `/NAME`, followed by whitespace or t
  "user_text": "${output.stderr}"}
 ```
 
-Shellfish calls `run` without arguments and passes argument text, without leading whitespace, on stdin. Commands use hook-style channels, presentation, and actions. They may request `handoff` or `session_update`, or `submit` to send the prompt as typed for inference with the command's output as context, after which submission hooks run. Otherwise the prompt is withheld and the output waits as context for the next prompt. A nonzero exit fails the turn.
+Shellfish calls `run` without arguments and passes argument text, without leading whitespace, on stdin. Commands use hook-style channels, presentation, and actions. They may request `handoff` or `session_update`. Otherwise the prompt is withheld. A nonzero exit fails the turn.
 
 Commands also receive `SHELLFISH_COMMANDS`, a JSON array of the profile's command names, descriptions, arguments, and aliases, so a help command can list what is available.
 

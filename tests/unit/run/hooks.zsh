@@ -230,7 +230,6 @@ input=$(cat)
 jq -e '.[0] == {name:"go",aliases:["g"],arguments:"[TO]",description:"Go"}' \
   <<<"$SHELLFISH_COMMANDS" >/dev/null || exit 3
 [[ $input != away ]] || jq -cn '{action:"handoff",argv:["next"]}' >&3
-[[ $input != send* ]] || { print -r -u3 -- '{"action":"submit"}'; print -rn -- "context for $input"; }
 ZSH
 SF_TEST_PROFILE=$(jq -c --arg go "$tmp/commands/go" '.commands=[$go]' <<<"$SF_TEST_PROFILE")
 new_session command; sf_test_run '/g  away' "$session" >"$stream" || fail 'command failed'
@@ -260,39 +259,6 @@ assert_canonical_session "$session"
 jq -e -s 'map(.type) == ["session","hook_result"] and .[1].user_text == "usage: /stay" and
   .[1].action == "deny"' "$session" >/dev/null || fail 'command usage was not shown'
 SF_TEST_PROFILE=$(jq -c '.commands |= .[:1]' <<<"$SF_TEST_PROFILE")
-# A submitting command's output is context for the prompt as typed, which
-# prompt hooks then see. Without submit, prompt hooks do not run.
-sf_test_hook "$tmp/seen" '{"on":"user_prompt_submit","user_text":"${output.stdout}"}' <<'ZSH'
-#!/usr/bin/env zsh
-print -rn -- "seen: $(cat)"
-ZSH
-SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
-sf_test_bind_hooks user_prompt_submit "$tmp/seen"
-new_session command-submit; sf_test_run '/go send it' "$session" >"$stream" ||
-  fail 'submitting command failed'
-assert_canonical_session "$session"
-jq -e -s 'map(.type) == ["session","hook_result","hook_result","user","assistant"] and
-  .[1].user_text == "send it" and (.[1] | has("action") | not) and
-  .[2].user_text == "seen: /go send it" and .[3].content[0].text == "/go send it"
-' "$session" >/dev/null || fail 'submitted command prompt or hook order was wrong'
-jq -L "$ROOT" -es 'include "lib/session";
-  .[1:] | session_messages | .[0].content | map(.text) | add |
-  contains("context for send it") and contains("seen: /go send it") and endswith("/go send it")
-' "$session" >/dev/null || fail 'submitted command context did not reach the model'
-new_session command-withhold; sf_test_run /go "$session" >"$stream" || fail 'bare command failed'
-jq -e -s 'map(.type) == ["session","hook_result"]' "$session" >/dev/null ||
-  fail 'prompt hooks ran for a withheld command'
-# Only commands may submit.
-sf_test_hook "$tmp/eager" '{"on":"user_prompt_submit"}' <<'ZSH'
-#!/usr/bin/env zsh
-print -r -u3 -- '{"action":"submit"}'
-ZSH
-SF_TEST_PROFILE=$(jq -c '.hooks=[]' <<<"$SF_TEST_PROFILE")
-sf_test_bind_hooks user_prompt_submit "$tmp/eager"
-new_session hook-submit
-sf_test_run ordinary "$session" >"$stream" 2>"$tmp/submit.err" && fail 'a hook submitted'
-[[ $(<"$tmp/submit.err") == *'returned invalid control'* ]] ||
-  fail 'hook submit diagnostic was lost'
 cp -R "$tmp/commands/go" "$tmp/commands/g"
 SF_TEST_PROFILE=$(jq -c --arg g "$tmp/commands/g" '.commands+=[$g]' <<<"$SF_TEST_PROFILE")
 new_session command-duplicate

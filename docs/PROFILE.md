@@ -160,7 +160,7 @@ The bundled commands are selected by the profile:
 | `/copy [N]` | Copy the latest or selected conversation section |
 | `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
 | `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox policy |
-| `/skill NAME [PROMPT]` | Load a skill as context, sending PROMPT with it or staging it for the next prompt |
+| `/skill NAME` | Load a skill as context for the next prompt |
 
 See [Chat controls](CONFIG.md#chat) for client-owned commands, editor keys, and queued prompts, and [Conversation sections](CONFIG.md#conversation-sections) for stable command targets. Bundled submission hooks compact automatically near a known context-window limit and report Git identity changes.
 

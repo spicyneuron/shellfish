@@ -10,9 +10,9 @@ zmodload -F zsh/files b:zf_rm
 # arguments it does not take, then directory, capture limit, draft and
 # component for each hook. An unmatched hook has no capture limit.
 sf_run_hook_project() {
-  local lifecycle=$1 input=$2 available=$3
+  local lifecycle=$1 input=$2
   sf_jq_fields -rn --argjson model "$SF_RUN[model]" --argjson hooks "$SF_RUN[hooks]" \
-    --argjson commands "$available" --arg lifecycle "$lifecycle" --arg input "$input" \
+    --argjson commands "$SF_RUN[commands]" --arg lifecycle "$lifecycle" --arg input "$input" \
     --argjson max_capture "$SF_RUN[max_capture]" --arg id "$SF_RUN[hook_id]" '
       include "lib/fields";
       include "lib/profile";
@@ -67,21 +67,19 @@ sf_run_hook_line() {
   [[ $line == '{}' ]] || control=$line
 }
 
-# IS_COMMAND is true for a command, which may also submit.
 sf_run_hook_complete() {
-  local lifecycle=$1 outcome=$2 command=$3 is_command=$4
+  local lifecycle=$1 outcome=$2 command=$3
   local -A settled
   print -rl -- "$outcome" "${content[@]}" | sf_jq_fields -cs --argjson component "$SF_COMPONENT[values]" \
     --argjson control "$control" --arg lifecycle "$lifecycle" --arg id "$SF_RUN[hook_id]" \
-    --argjson section "${SF_RUN[agent_section]:-0}" --argjson command "$is_command" '
+    --argjson section "${SF_RUN[agent_section]:-0}" '
     include "lib/fields";
     include "lib/session";
     include "lib/profile";
     .[0] as $outcome | .[1:] as $content |
     ({user_prompt_submit:["deny","handoff","session_update"],
       permission_request:["approve","deny"],pre_tool_use:["deny"],
-      stop:["deny"]}[$lifecycle] // [] |
-      if $command then . + ["submit"] else . end) as $actions |
+      stop:["deny"]}[$lifecycle] // []) as $actions |
     if $control == {} or ($control | (.action | IN($actions[])) and
       if .action == "handoff" then keys == ["action","argv"] and
         (.argv | type == "array" and length > 0 and all(.[]; type == "string"))
@@ -116,14 +114,12 @@ sf_run_hook_complete() {
 }
 
 # Run each hook with the lifecycle's original input and arguments. A successful
-# action ends the list; no action leaves reply empty. --hooks skips commands.
+# action ends the list; no action leaves reply empty.
 sf_run_hooks() {
   setopt local_options no_err_exit
   local -a watch=()
-  local available=$SF_RUN[commands]
   if [[ $1 == --poll ]]; then watch=( "$1" "$2" ); shift 2; fi
-  if [[ $1 == --hooks ]]; then available='[]'; shift; fi
-  local session=$1 lifecycle=$2 input_text=$3 turn_state=$4 prompt=$3
+  local session=$1 lifecycle=$2 input_text=$3 turn_state=$4
   shift 4
   local command input config_dir directory error='' control action='' reason='' payload=''
   local catalog draft
@@ -133,7 +129,7 @@ sf_run_hooks() {
 
   reply=( action '' reason '' payload '' )
   [[ " $SF_RUN[lifecycles] " == *" $lifecycle "* ]] || return 0
-  sf_run_hook_project "$lifecycle" "$input_text" "$available" || {
+  sf_run_hook_project "$lifecycle" "$input_text" || {
     sf_fail "cannot inspect $lifecycle hooks"
     return
   }
@@ -185,7 +181,7 @@ sf_run_hooks() {
       content=() content_bytes=0
       sf_scratch -d hook || { error='cannot prepare hook capture'; break; }
       directory=$REPLY
-      # A command's prompt is withheld unless the command submits it.
+      # A command's prompt is never submitted.
       [[ -n $catalog ]] && control='{"action":"deny"}' || control='{}'
       sf_run_component_begin "$session" "$plan[i+3]"
       # The preceding hook only advanced the ID if it wrote a result.
@@ -210,8 +206,7 @@ sf_run_hooks() {
               error="$lifecycle hook failed with status $reply[2]: $command"
               [[ ! -s $directory/stderr ]] || error+=": $(<"$directory/stderr")"
             else
-              sf_run_hook_complete "$lifecycle" "$REPLY" "$command" \
-                "${${catalog:+true}:-false}" || error=$SF_ERROR
+              sf_run_hook_complete "$lifecycle" "$REPLY" "$command" || error=$SF_ERROR
             fi ;;
         esac
       fi
@@ -225,7 +220,5 @@ sf_run_hooks() {
     error='stop hook denied without model feedback'
   fi
   [[ -z $error ]] || { sf_fail "$error"; return; }
-  # A submitted prompt then passes through the prompt hooks as typed.
-  [[ $action != submit ]] || { sf_run_hooks --hooks "$session" "$lifecycle" "$prompt" "$turn_state"; return; }
   reply=( action "$action" reason "$reason" payload "$payload" )
 }

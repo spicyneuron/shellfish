@@ -3,13 +3,12 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-typeset input name request file
+typeset name file
 integer index
-input=$(cat) || exit 1
-name=${input%%[[:space:]]*}
-request=${${input#"$name"}##[[:space:]]#}
-if [[ -z $name ]]; then
-  print -u2 -r -- 'usage: /skill NAME [PROMPT]'
+name=$(cat) || exit 1
+name=${name%%[[:space:]]#}
+if [[ -z $name || $name == *[[:space:]]* ]]; then
+  print -u2 -r -- 'usage: /skill NAME'
   exit 0
 fi
 
@@ -21,7 +20,6 @@ for (( index = 1; index <= ${#reply}; index += 3 )); do
   sf_skills_body "$file" || exit 1
   sf_skills_wrap "$name" "${file:h}" "$REPLY" || exit 1
   print -rnu2 -- "**Loaded skill** $name"
-  [[ -z $request ]] || print -r -u3 -- '{"action":"submit"}'
   exit 0
 done
 print -u2 -r -- "skill is not available: $name"
