@@ -9,10 +9,11 @@ typeset -a argv fields
 integer suffix=1 cutoff=0 has_draft=0 rewind=0
 # /rewind truncates this session in place, defaulting to its last user section.
 [[ ${1-} != --rewind ]] || { rewind=1; name=rewind }
-target=$(cat)
+target=$(cat) || exit 1
 if [[ -n $target && ( $target != <1-> || ${#target} -gt 9 ) ]]; then
-  print -ru2 -- "usage: /$name [N]"
-  exit 0
+  source "$SHELLFISH_SHARE_DIR/lib/command-usage.zsh" || exit 1
+  sf_command_usage "$name"
+  exit $?
 fi
 target=${target:-0}
 

@@ -7,8 +7,9 @@ typeset name
 name=$(cat) || exit 1
 name=${name%%[[:space:]]#}
 if [[ -z $name || $name == *[[:space:]]* ]]; then
-  print -u2 -r -- 'usage: /skill NAME'
-  exit 0
+  source "$SHELLFISH_SHARE_DIR/lib/command-usage.zsh" || exit 1
+  sf_command_usage user_skill
+  exit $?
 fi
 
 source "$SHELLFISH_SHARE_DIR/lib/skills.zsh" || exit 1

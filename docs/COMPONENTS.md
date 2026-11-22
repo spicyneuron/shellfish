@@ -117,7 +117,7 @@ A command handles a prompt that starts with `/NAME`, followed by whitespace or t
  "user_text": "${output.stderr}"}
 ```
 
-Shellfish calls `run` without arguments and passes argument text, without leading whitespace, on stdin. Commands use hook-style channels, presentation, and actions. They may request `handoff` or `session_update`. Otherwise the prompt is withheld. A nonzero exit fails the turn.
+Shellfish calls `run` without arguments and passes argument text, without leading whitespace, on stdin. Commands validate their own arguments. They use hook-style channels, presentation, and actions. They may request `handoff` or `session_update`. The command prompt is withheld, and model context emitted by the command waits for the next submitted prompt. A nonzero exit fails the turn.
 
 Commands also receive `SHELLFISH_COMMANDS`, a JSON array of the profile's command names, descriptions, arguments, and aliases, so a help command can list what is available.
 

@@ -184,8 +184,8 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty
 # shows its usage instead of running it.
 typeset command_session="$tmp/command.jsonl" command_stream="$tmp/command.stream"
 jq -c --arg root "$ROOT/share/" '
-  .profile.commands = (["help","new","resume","copy","fork","sandbox","user_shell",
-    "compact"] | map($root + "commands/" + .)) |
+  .profile.commands = (["help","new","resume","copy","fork","rewind","sandbox","user_shell",
+    "user_skill","compact"] | map($root + "commands/" + .)) |
   .profile.hooks = [$root + "hooks/autocompact"]
 ' < <(head -n 1 "$tmp/startup.jsonl") >"$tmp/command-header"
 submit() {
@@ -195,15 +195,30 @@ submit() {
 submit /h
 jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
   (.[1].user_text | contains("/verbose, /v") and contains("/copy [N]") and
-    test("/compact\\s"))' "$command_session" >/dev/null ||
+    contains("/user_skill NAME") and test("/compact\\s"))' "$command_session" >/dev/null ||
   fail 'help did not list profile commands'
 submit /sandbox
 jq -e -s 'map(.type) == ["session","hook_result"] and
   .[1].user_preview_lines == "full" and .[1].action == "deny"' \
   "$command_session" >/dev/null || fail 'sandbox output did not request a full preview'
-submit '/copy x'
-jq -e -s '(.[1].user_text | rtrimstr("\n")) == "usage: /copy [N]" and .[1].action == "deny"' \
-  "$command_session" >/dev/null || fail 'command did not receive its arguments'
+for name in copy fork rewind; do
+  submit "/$name x"
+  jq -e -s --arg usage "usage: /$name [N]" '
+    (.[1].user_text | rtrimstr("\n")) == $usage and .[1].action == "deny"
+  ' "$command_session" >/dev/null || fail "/$name did not report usage"
+done
+submit /shell
+jq -e -s '
+  map(.type) == ["session","hook_result"] and
+  (.[1].user_text | rtrimstr("\n")) == "usage: /user_shell COMMAND" and
+  (.[1] | has("model_content") | not)
+' "$command_session" >/dev/null || fail '/shell did not show only usage'
+submit '/shell echo hello'
+jq -e -s '
+  map(.type) == ["session","hook_result"] and
+  .[1].user_text == "**Shell** echo hello\nhello\n" and
+  (.[1].model_content[0].text | contains("$ echo hello\nhello"))
+' "$command_session" >/dev/null || fail '/shell did not show and stage its output'
 submit $'/copy\t1'
 jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
   (.[1].user_text | startswith("usage:") | not)' "$command_session" >/dev/null ||

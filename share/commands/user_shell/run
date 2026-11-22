@@ -5,10 +5,11 @@ setopt no_aliases no_multios pipe_fail
 
 typeset command output
 integer command_status
-command=$(cat)
+command=$(cat) || exit 1
 if [[ -z $command ]]; then
-  print -u2 -r -- 'usage: /user_shell COMMAND'
-  exit 0
+  source "$SHELLFISH_SHARE_DIR/lib/command-usage.zsh" || exit 1
+  sf_command_usage user_shell
+  exit $?
 fi
 
 output=$(
@@ -19,5 +20,5 @@ output=$(
   command_status=$?
   (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
 )
-print -r -- "$output" >&2
+print -ru2 -- "**Shell** $command"$'\n'"$output"
 print -rn -- "The user ran this shell command:"$'\n'"\$ $command"$'\n'"$output"

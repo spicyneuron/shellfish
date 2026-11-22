@@ -209,6 +209,8 @@ for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
     (.profile |
       ([.commands[], .hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
       (.commands | any(endswith("/help"))) and
+      (.commands | map(split("/") | last) |
+        index(["user_shell", "user_skill"]) != null and index("skill") == null) and
       (.system[0].text | contains($sandbox | sub("\n+$"; ""))) and
       (.tools | any(endswith("/subagent")) | not) and
       (.hooks | any(endswith("/sandbox/grants"))) and
@@ -216,9 +218,8 @@ for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
   ' <<<"$REPLY" >/dev/null || fail "starter profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")
 done
-jq -e '(.commands | any(endswith("/commands/skill"))) and
-  (.tools | any(endswith("/tools/skill")) | not)' <<<"$profile" >/dev/null ||
-  fail 'readonly should offer /skill without giving the model the skill tool'
+jq -e '(.tools | any(endswith("/tools/skill")) | not)' <<<"$profile" >/dev/null ||
+  fail 'readonly should not give the model the skill tool'
 
 # Tool manifests are read live from the resolved folders.
 sf_profile_components "$profile"
