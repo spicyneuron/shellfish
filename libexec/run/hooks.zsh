@@ -6,13 +6,14 @@ zmodload -F zsh/files b:zf_rm
 (( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_run_component_begin] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
-# Model, command catalog and arguments, then directory, capture limit, draft
-# and component for each hook. An unmatched hook has no capture limit.
+# Model, command catalog and arguments, a usage result for a command given
+# arguments it does not take, then directory, capture limit, draft and
+# component for each hook. An unmatched hook has no capture limit.
 sf_run_hook_project() {
   local lifecycle=$1 input=$2
   sf_jq_fields -rn --argjson model "$SF_RUN[model]" --argjson hooks "$SF_RUN[hooks]" \
     --argjson commands "$SF_RUN[commands]" --arg lifecycle "$lifecycle" --arg input "$input" \
-    --argjson max_capture "$SF_RUN[max_capture]" '
+    --argjson max_capture "$SF_RUN[max_capture]" --arg id "$SF_RUN[hook_id]" '
       include "lib/fields";
       include "lib/profile";
       def planned($input):
@@ -31,22 +32,23 @@ sf_run_hook_project() {
            (.draft | if .user_text == "" then "" else tojson end), tojson]
         else [$directory, "", "", ""] end | .[] | field;
       ($model.request.model | field),
+      # A name ends at whitespace or the end of the prompt.
       ([if $lifecycle == "user_prompt_submit" then first($commands[] | . as $component |
-        .manifest.arguments as $arguments |
         (.name, .manifest.aliases[]?) | ("/" + .) as $prefix |
-        if $input == $prefix then [$component, ""]
-        elif $arguments != null and ($input | startswith($prefix + " ")) and
-          ($input | contains("\n") | not) then
-          [$component, ($input[$prefix | length:] | sub("^[[:space:]]+"; ""))]
-        else empty end) else empty end] | first) as $command |
+        $input[$prefix | length:] as $rest |
+        select(($input | startswith($prefix)) and ($rest == "" or ($rest | test("^[[:space:]]")))) |
+        [$component, ($rest | sub("^[[:space:]]+"; ""))]) else empty end] | first) as $command |
       if $command == null then
-        ("" | field), ("" | field),
+        ("" | field), ("" | field), ("" | field),
         ($hooks[] | select(.manifest.on == $lifecycle) | planned($input))
       else
         ([$commands[] | {name} + (.manifest |
           {aliases, arguments, description} | with_entries(select(.value != null)))] | tojson | field),
         ($command[1] | field),
-        ($command[0] | planned($command[1]))
+        if $command[0].manifest.arguments == null and $command[1] != "" then
+          ({type:"hook_result", id:$id, lifecycle:$lifecycle, action:"deny",
+            user_text:"usage: /\($command[0].name)"} | tojson | field)
+        else ("" | field), ($command[0] | planned($command[1])) end
       end,
       ("ok" | field)
     '
@@ -132,7 +134,13 @@ sf_run_hooks() {
     return
   }
   plan=( "${reply[@]}" )
-  (( ${#plan} > 3 )) || { reply=( action '' reason '' payload '' ); return 0; }
+  if [[ -n $plan[4] ]]; then
+    sf_run_append "$session" "$plan[4]" || return
+    (( SF_RUN[hook_id] += 1 ))
+    reply=( action deny reason '' payload '' )
+    return 0
+  fi
+  (( ${#plan} > 4 )) || { reply=( action '' reason '' payload '' ); return 0; }
   catalog=$plan[2]
   # A prompt naming a command runs only that command, with its arguments as input.
   [[ -z $catalog ]] || input_text=$plan[3]
@@ -161,7 +169,7 @@ sf_run_hooks() {
   if ! print -rn -- "$input_text" >"$input"; then
     error="cannot prepare $lifecycle hook input"
   else
-    for (( i = 4; i <= ${#plan}; i += 4 )); do
+    for (( i = 5; i <= ${#plan}; i += 4 )); do
       command=$plan[i]
       [[ -d $command && -x $command/run ]] || {
         error="hook command is not executable: $command"

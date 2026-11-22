@@ -242,6 +242,23 @@ jq -eRn '[inputs | fromjson] as $events |
 new_session command-deny; sf_test_run /go "$session" >"$stream" || fail 'bare command failed'
 jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny"' \
   "$session" >/dev/null || fail 'command prompt was submitted'
+new_session command-lines; sf_test_run $'/go\tup\ndown' "$session" >"$stream" ||
+  fail 'multiline command failed'
+jq -e -s '.[1].user_text == "up\ndown"' "$session" >/dev/null ||
+  fail 'whitespace after a command name did not start its arguments'
+# A command without declared arguments is not run when given some.
+sf_test_hook "$tmp/commands/stay" '{"description":"Stay","user_text":"${input}"}' <<'ZSH'
+#!/usr/bin/env zsh
+: >"${0:h}/ran"
+ZSH
+SF_TEST_PROFILE=$(jq -c --arg stay "$tmp/commands/stay" '.commands+=[$stay]' <<<"$SF_TEST_PROFILE")
+new_session command-usage; sf_test_run '/stay here' "$session" >"$stream" ||
+  fail 'command usage failed the turn'
+assert_canonical_session "$session"
+[[ ! -e $tmp/commands/stay/ran ]] || fail 'command ran with undeclared arguments'
+jq -e -s 'map(.type) == ["session","hook_result"] and .[1].user_text == "usage: /stay" and
+  .[1].action == "deny"' "$session" >/dev/null || fail 'command usage was not shown'
+SF_TEST_PROFILE=$(jq -c '.commands |= .[:1]' <<<"$SF_TEST_PROFILE")
 cp -R "$tmp/commands/go" "$tmp/commands/g"
 SF_TEST_PROFILE=$(jq -c --arg g "$tmp/commands/g" '.commands+=[$g]' <<<"$SF_TEST_PROFILE")
 new_session command-duplicate

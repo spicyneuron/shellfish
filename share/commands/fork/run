@@ -11,7 +11,7 @@ integer suffix=1 cutoff=0 has_draft=0 rewind=0
 [[ ${1-} != --rewind ]] || { rewind=1; name=rewind }
 target=$(cat)
 if [[ -n $target && ( $target != <1-> || ${#target} -gt 9 ) ]]; then
-  print -ru2 -- "Usage: /$name [N]"
+  print -ru2 -- "usage: /$name [N]"
   exit 0
 fi
 target=${target:-0}

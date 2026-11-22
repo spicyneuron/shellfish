@@ -110,7 +110,7 @@ Permission review hooks may attach a `reason` to either `approve` or `deny`. The
 
 ## Commands
 
-A command handles a single-line `/NAME` prompt instead of submitting it, before submission hooks run. Its manifest requires a user-facing `description`. Optional `arguments` supplies a usage hint and enables `/NAME ARGUMENTS`. Without it, only the exact `/NAME` matches. Optional `aliases` supplies alternate names. Names and aliases must be unique within the profile.
+A command handles a prompt that starts with `/NAME`, followed by whitespace or the end of the prompt, instead of submitting it, before submission hooks run. Its manifest requires a user-facing `description`. Optional `arguments` supplies a usage hint and enables `/NAME ARGUMENTS`, where the arguments may span lines. Text after a command without it shows `usage: /NAME` instead of running the command. Optional `aliases` supplies alternate names. Names and aliases must be unique within the profile.
 
 ```json
 {"description": "Copy a conversation section", "arguments": "[N]", "aliases": ["c"],

@@ -180,7 +180,8 @@ GIT_MARKER="$tmp/git-called" PATH="$git_bin:$PATH" SHELLFISH_SESSION="$tmp/empty
   zsh -f "$git_prompt" user_prompt_submit 3>"$git_control" >/dev/null
 [[ ! -e $tmp/git-called ]]
 
-# Commands leave ordinary, multiline, and undeclared-argument prompts untouched.
+# A command name ends at whitespace. Text after one that takes no arguments
+# shows its usage instead of running it.
 typeset command_session="$tmp/command.jsonl" command_stream="$tmp/command.stream"
 jq -c --arg root "$ROOT/share/" '
   .profile.commands = (["help","new","resume","copy","fork","sandbox","user_shell",
@@ -203,15 +204,31 @@ jq -e -s 'map(.type) == ["session","hook_result"] and
 submit '/copy x'
 jq -e -s '(.[1].user_text | rtrimstr("\n")) == "usage: /copy [N]" and .[1].action == "deny"' \
   "$command_session" >/dev/null || fail 'command did not receive its arguments'
-for prompt in ordinary $'/help\nordinary' '/new please'; do
+submit $'/copy\t1'
+jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny" and
+  (.[1].user_text | startswith("usage:") | not)' "$command_session" >/dev/null ||
+  fail 'a tab did not separate command arguments'
+for prompt in ordinary /helpme; do
   submit "$prompt"
   jq -e -s --arg prompt "$prompt" 'map(.type) == ["session","user","assistant"] and
-    .[1].content[0].text == $prompt' "$command_session" >/dev/null
+    .[1].content[0].text == $prompt' "$command_session" >/dev/null ||
+    fail "prompt was taken as a command: $prompt"
+done
+for prompt in '/help me' $'/help\nordinary' '/new please'; do
+  submit "$prompt"
+  jq -e -s --arg usage "usage: ${prompt%%[[:space:]]*}" '
+    map(.type) == ["session","hook_result"] and .[1].action == "deny" and
+    .[1].user_text == $usage and (.[1] | has("model_content") | not)
+  ' "$command_session" >/dev/null || fail "undeclared arguments did not show usage: $prompt"
 done
 submit '/shell printf '\''${output.stderr}'\''; exit 7'
 jq -e -s 'map(.type) == ["session","hook_result"] and
   (.[1].model_content[0].text | contains("The user ran this shell command:\n$ printf") and contains("${output.stderr}") and contains("(exit 7)")) and
   (.[1].user_text | startswith("**Shell** printf"))' "$command_session" >/dev/null
+submit $'/shell printf one\nprintf two'
+jq -e -s 'map(.type) == ["session","hook_result"] and
+  (.[1].model_content[0].text | contains("onetwo"))' "$command_session" >/dev/null ||
+  fail 'a multiline command prompt did not reach its command'
 
 # Copy and fork address core IDs. Command notices remain in a retained prefix;
 # submission hook output is dropped before a prompt so that resending reruns it.
