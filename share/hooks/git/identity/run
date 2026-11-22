@@ -2,24 +2,15 @@
 
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
-zmodload zsh/datetime
-source "$SHELLFISH_SHARE_DIR/lib/capped.zsh" || exit 1
+source "$SHELLFISH_SHARE_DIR/lib/git-identity.zsh" || exit 1
 
-typeset previous branch hash identity text from to
+typeset previous identity text from to
 previous=$(jq -ers '
   [.[] | select(.type == "state_update" and .name == "git/identity")][-1].value |
   select(type == "string")
 ' "$SHELLFISH_SESSION" 2>/dev/null) || exit 0
 typeset -F deadline=$(( EPOCHREALTIME + SF_PROBE_BUDGET ))
-branch=$(sf_capped "$deadline" git symbolic-ref --quiet --short HEAD 2>/dev/null)
-case $? in
-  0) identity="branch:$branch" ;;
-  1)
-    hash=$(sf_capped "$deadline" git rev-parse --verify HEAD 2>/dev/null) || exit 0
-    identity="commit:$hash"
-    ;;
-  *) exit 0 ;;
-esac
+identity=$(sf_git_identity "$deadline") || exit 0
 [[ $identity != "$previous" ]] || exit 0
 
 case "$previous -> $identity" in
@@ -34,7 +25,6 @@ from=${previous#*:}
 to=${identity#*:}
 [[ $previous != commit:* ]] || from="detached commit $from"
 [[ $identity != commit:* ]] || to="detached commit $to"
-jq -cn --arg identity "$identity" '{state_update:[{name:"git/identity",value:$identity}]}' >&3 ||
-  exit 1
+sf_git_save_identity "$identity" || exit 1
 print -rn -- "**Git checkout changed**"$'\n'"$from → $to" >&2
 print -rn -- "$text"
