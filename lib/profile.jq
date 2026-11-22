@@ -66,10 +66,12 @@ def hook_manifest:
 # A command defaults to its folder name and matches "/NAME" or an alias. Declared
 # arguments allow text after the name and provide the usage hint in help.
 def command_manifest:
-  component_manifest(["aliases", "arguments", "description", "name"]; []) and
+  component_manifest(["aliases", "arguments", "description", "name", "requires_arguments"]; []) and
   (.description | nonempty_control_free_string) and
   ((has("name") | not) or (.name | tool_name and nonempty_control_free_string)) and
   ((has("arguments") | not) or (.arguments | nonempty_control_free_string)) and
+  ((has("requires_arguments") | not) or
+    (has("arguments") and (.requires_arguments | type == "boolean"))) and
   ((.aliases // []) | type == "array" and length == (unique | length) and
     all(.[]; tool_name));
 

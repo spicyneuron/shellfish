@@ -489,9 +489,12 @@ sf_jq -en '
   include "lib/profile";
   ({name:"copy",description:"Copy",arguments:"[N]",aliases:["c"],user_text:"${output.stderr}"} |
     command_manifest) and
+  ({description:"Shell",arguments:"COMMAND",requires_arguments:true} | command_manifest) and
   ([{}, {description:""}, {description:"x",arguments:""}, {description:"x",aliases:["c","c"]},
     {description:"x",aliases:["/c"]}, {description:"x",name:"/x"},
-    {description:"x",name:"x\n"}, {description:"x",name:null}, {description:"x",on:"stop"}] |
+    {description:"x",name:"x\n"}, {description:"x",name:null}, {description:"x",on:"stop"},
+    {description:"x",requires_arguments:true},
+    {description:"x",arguments:"X",requires_arguments:"true"}] |
     all(.[]; command_manifest | not))
 ' >/dev/null || fail 'command manifest validation failed'
 typeset hook_name

@@ -6,8 +6,8 @@ zmodload -F zsh/files b:zf_rm
 (( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 (( $+functions[sf_run_component_begin] )) || source "$SF_ROOT/libexec/run/component.zsh"
 
-# Model, command catalog and arguments, a usage result for a command given
-# arguments it does not take, then directory, capture limit, draft and
+# Model, command catalog and arguments, a usage result for missing or
+# unexpected arguments, then directory, capture limit, draft and
 # component for each hook. An unmatched hook has no capture limit.
 sf_run_hook_project() {
   local lifecycle=$1 input=$2
@@ -45,9 +45,12 @@ sf_run_hook_project() {
         ([$commands[] | {name} + (.manifest |
           {aliases, arguments, description} | with_entries(select(.value != null)))] | tojson | field),
         ($command[1] | field),
-        if $command[0].manifest.arguments == null and $command[1] != "" then
+        $command[0].manifest as $manifest |
+        if ($manifest.arguments == null and $command[1] != "") or
+           ($manifest.requires_arguments and $command[1] == "") then
           ({type:"hook_result", id:$id, lifecycle:$lifecycle, action:"deny",
-            user_text:"usage: /\($command[0].name)"} | tojson | field)
+            user_text:("usage: /" + $command[0].name +
+              (if $manifest.arguments then " " + $manifest.arguments else "" end))} | tojson | field)
         else ("" | field), ($command[0] | planned($command[1])) end
       end,
       ("ok" | field)

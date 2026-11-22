@@ -1,1 +1,1 @@
-{"name":"shell","description":"Run COMMAND and stage its output as context","arguments":"COMMAND","user_text":"${output.stderr}"}
+{"name":"shell","description":"Run COMMAND and stage its output as context","arguments":"COMMAND","requires_arguments":true,"user_text":"**Shell** ${input}\n${output.stderr}"}

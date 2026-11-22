@@ -208,13 +208,19 @@ for name in copy fork rewind; do
     (.[1].user_text | rtrimstr("\n")) == $usage and .[1].action == "deny"
   ' "$command_session" >/dev/null || fail "/$name did not report usage"
 done
-submit /shell
-jq -e -s '
-  map(.type) == ["session","hook_result"] and
-  (.[1].user_text | rtrimstr("\n")) == "usage: /shell COMMAND" and
-  (.[1] | has("model_content") | not)
-' "$command_session" >/dev/null || fail '/shell did not show only usage'
+for prompt in /shell $'/shell \t\n'; do
+  submit "$prompt"
+  jq -e -s '
+    map(.type) == ["hook_result"] and
+    .[0].user_text == "usage: /shell COMMAND" and
+    (.[0] | has("model_content") | not)
+  ' "$command_stream" >/dev/null || fail '/shell did not show only usage'
+done
 submit '/shell echo hello'
+jq -e -s '
+  map(.type) == ["_draft","hook_result"] and .[0].id == .[1].id and
+  .[0].user_text == "**Shell** echo hello\n"
+' "$command_stream" >/dev/null || fail '/shell did not preview the command before its result'
 jq -e -s '
   map(.type) == ["session","hook_result"] and
   .[1].user_text == "**Shell** echo hello\nhello\n" and

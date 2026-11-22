@@ -110,7 +110,7 @@ Permission review hooks may attach a `reason` to either `approve` or `deny`. The
 
 ## Commands
 
-A command handles a prompt that starts with `/NAME`, followed by whitespace or the end of the prompt, instead of submitting it, before submission hooks run. Its manifest requires a user-facing `description`. The optional `name` sets the slash name without changing the folder selected by the profile. It defaults to the folder name. Optional `arguments` supplies a usage hint and enables `/NAME ARGUMENTS`, where the arguments may span lines. Text after a command without it shows `usage: /NAME` instead of running the command. Optional `aliases` supplies alternate names. Names and aliases must be unique within the profile.
+A command handles a prompt that starts with `/NAME`, followed by whitespace or the end of the prompt, instead of submitting it, before submission hooks run. Its manifest requires a user-facing `description`. The optional `name` sets the slash name without changing the folder selected by the profile. It defaults to the folder name. Optional `arguments` supplies a usage hint and enables `/NAME ARGUMENTS`, where the arguments may span lines. Set `requires_arguments` to `true` alongside `arguments` to show usage instead of running when the argument text is empty. Text after a command without `arguments` also shows usage. Optional `aliases` supplies alternate names. Names and aliases must be unique within the profile.
 
 ```json
 {"description": "Copy a conversation section", "arguments": "[N]", "aliases": ["c"],
