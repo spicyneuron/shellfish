@@ -146,13 +146,13 @@ SF_TUI_STYLE[syntax.removed]='fg=red,bg=darkred'
 typeset removed_word="$SF_TUI_STYLE[syntax.removed],bold"
 typeset added_word="$SF_TUI_STYLE[syntax.added],bold"
 typeset indent=$'heading\n'
-diff=$'@@ -2,4 +2,4 @@\n-é one stays two\n-same dust\n+é red stays blue\n+same gold\n context\n--- first\n\\ No newline at end of file\n+++ last'
+diff=$'@@ -2,4 +2,4 @@\n-é one stays two\n-same dust\n+é red stays blue\n+same gold\n context\n--- first\n+++ last\n@@ -10 +10 @@\n-flag=false\n+flag=true\n\\ No newline at end of file'
 SF_TUI_HIGHLIGHT_SPANS=()
 sf_tui_diff_highlight "$diff" ${#indent}
 span_texts "$indent$diff" "$removed_word"
-assert_equal 'one,two,dust,--,first' "$REPLY"
+assert_equal 'one,two,dust,--,first,false' "$REPLY"
 span_texts "$indent$diff" "$added_word"
-assert_equal 'red,blue,gold,++,last' "$REPLY"
+assert_equal 'red,blue,gold,++,last,true' "$REPLY"
 
 # Even totals do not imply balanced replacement blocks across context.
 typeset fallback large=$'@@ -1,9 +1,9 @@\n-old\n+new'
@@ -161,7 +161,6 @@ for fallback in \
   $'@@ -1 +1,2 @@\n-old\n+new\n+added' \
   $'@@ -1,3 +1,3 @@\n-removed\n context\n-old\n+new\n+added' \
   "$large" \
-  $'@@ -1 +1 @@\n-a b c d e f g h i j k l m\n+new' \
   $'@@ -1 +1 @@\n-'${(l:257::a:):-}$'\n+new'; do
   SF_TUI_HIGHLIGHT_SPANS=()
   sf_tui_diff_highlight "$fallback"
@@ -172,3 +171,17 @@ for fallback in \
   span_texts "$fallback" "$SF_TUI_STYLE[syntax.added]"
   [[ $REPLY == '+new'* ]] || fail 'fallback lost line highlighting'
 done
+
+# Git failure retains both line colors and the original text.
+sf_test_tmp tui-word-diff
+printf '#!/bin/sh\nexit 2\n' >"$tmp/git"
+chmod +x "$tmp/git"
+diff=$'@@ -1 +1 @@\n-keep old\n+keep new'
+SF_TUI_HIGHLIGHT_SPANS=()
+PATH="$tmp:$PATH" sf_tui_diff_highlight "$diff"
+span_texts "$diff"
+assert_equal '@@ -1 +1 @@,-keep old,+keep new' "$REPLY"
+span_texts "$diff" "$SF_TUI_STYLE[syntax.removed]"
+assert_equal '-keep old' "$REPLY"
+span_texts "$diff" "$SF_TUI_STYLE[syntax.added]"
+assert_equal '+keep new' "$REPLY"

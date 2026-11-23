@@ -461,7 +461,7 @@ sf_tui_markdown_highlight() {
   [[ -z $fence ]] || REPLY="$fence"$'\t'"$language"$'\t'"$comment"
 }
 
-# reply maps hunk-relative line numbers to their partners, only for a balanced hunk.
+# reply maps removed lines to added lines within a balanced hunk.
 sf_tui_diff_pairs() {
   integer old=$1 new=$1 index=0 added=0
   shift
@@ -483,7 +483,6 @@ sf_tui_diff_pairs() {
         ;;
       (+*)
         (( ++added <= ${#removed} )) || return 0
-        pairs[index]=${removed[added]}
         pairs[removed[added]]=$index
         new=$(( new - 1 ))
         ;;
@@ -498,97 +497,130 @@ sf_tui_diff_pairs() {
   done
 }
 
-sf_tui_diff_tokens() {
-  local text=${1:1} MATCH MBEGIN MEND
-  tokens=()
-  while [[ $text =~ '^([[:alnum:]_]+|[[:blank:]]+|.)' ]]; do
-    tokens+=( "$MATCH" )
-    (( ${#tokens} <= 24 )) || return 1
-    text=${text[MEND+1,-1]}
-  done
+# Compare each line pair independently, but launch Git only once per diff.
+sf_tui_diff_git() {
+  local scratch index mate
+  integer code=0
+  zmodload -F zsh/files b:zf_mkdir b:zf_rm || return 1
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-word-diff.XXXXXX") || return 1
+  scratch=${scratch:A}
+  {
+    zf_mkdir -- "$scratch/old" "$scratch/new" || return 1
+    for index mate in "${(@kv)pairs}"; do
+      printf '%s\n' "${lines[index]:1}" >"$scratch/old/$index" &&
+        printf '%s\n' "${lines[mate]:1}" >"$scratch/new/$index" || return 1
+    done
+    GIT_DIR="$scratch/.git" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+      GIT_CONFIG_COUNT=0 GIT_CONFIG_PARAMETERS='' git -C "$scratch" \
+      diff --no-index --no-color --no-ext-diff --no-textconv --no-prefix --text \
+      --word-diff=porcelain --word-diff-regex='[[:alnum:]_]+|[[:blank:]]+|.' \
+      -- old new || code=$?
+    (( code <= 1 ))
+  } always {
+    zf_rm -rf -- "$scratch"
+  }
 }
 
-# Keep the longest common token sequence, and emphasize the rest.
-sf_tui_diff_words() {
-  local before=$1 after=$2 kind=$4
-  local style=${SF_TUI_STYLE[syntax.$kind]-} last_style next_style
-  integer start=$3 end=$(( start + 1 )) i j cell stride
-  local -a tokens=() left right score kept
-  (( ${#before} <= 256 && ${#after} <= 256 )) || return 1
-  [[ -n $style ]] || return 0
-  sf_tui_diff_tokens "$before" || return 1
-  left=( "${tokens[@]}" )
-  sf_tui_diff_tokens "$after" || return 1
-  right=( "${tokens[@]}" )
-  stride=$(( ${#right} + 1 ))
-  for (( i = ${#left}; i >= 1; i-- )); do
-    for (( j = ${#right}; j >= 1; j-- )); do
-      cell=$(( (i - 1) * stride + j ))
-      if [[ ${left[i]} == ${right[j]} ]]; then
-        score[cell]=$(( 1 + ${score[cell+stride+1]:-0} ))
-      else
-        score[cell]=$(( ${score[cell+stride]:-0} > ${score[cell+1]:-0} ?
-          ${score[cell+stride]:-0} : ${score[cell+1]:-0} ))
-      fi
-    done
+# Porcelain runs reconstruct both lines. A negative length marks changed text.
+sf_tui_diff_word_runs() {
+  local patch=$1 line index mate text old new
+  local -a left right
+  integer reading=0
+  for line in "${(@f)patch}"; do
+    case $line in
+      ('diff --git old/'*)
+        index=${line#'diff --git old/'}
+        index=${index%% *}
+        mate=${pairs[$index]-}
+        reading=0
+        ;;
+      ('@@ '*)
+        [[ -n $mate ]] || continue
+        reading=1 old='' new='' left=( 1 ) right=( 1 )
+        ;;
+      (*)
+        (( reading )) || continue
+        text=${line:1}
+        case $line in
+          (' '?*)
+            old+=$text new+=$text
+            if (( left[-1] > 0 )); then
+              left[-1]=$(( left[-1] + ${#text} ))
+            else
+              left+=( ${#text} )
+            fi
+            if (( right[-1] > 0 )); then
+              right[-1]=$(( right[-1] + ${#text} ))
+            else
+              right+=( ${#text} )
+            fi
+            ;;
+          (-?*) old+=$text; left+=( -${#text} ) ;;
+          (+?*) new+=$text; right+=( -${#text} ) ;;
+          ('~')
+            reading=0
+            if [[ $old == "${lines[index]:1}" && $new == "${lines[mate]:1}" ]]; then
+              words[$index]="${(j: :)left}"
+              words[$mate]="${(j: :)right}"
+            fi
+            ;;
+        esac
+        ;;
+    esac
   done
-  i=1 j=1
-  while (( i <= ${#left} && j <= ${#right} )); do
-    cell=$(( (i - 1) * stride + j ))
-    if [[ ${left[i]} == ${right[j]} ]]; then
-      if [[ $kind == removed ]]; then kept[i]=1; else kept[j]=1; fi
-      (( ++i, ++j ))
-    elif (( ${score[cell+stride]:-0} >= ${score[cell+1]:-0} )); then
-      (( ++i ))
-    else
-      (( ++j ))
-    fi
-  done
-
-  [[ $kind == added ]] || tokens=( "${left[@]}" )
-  last_style=$style
-  for (( i = 1; i <= ${#tokens}; i++ )); do
-    next_style=$style
-    [[ -n ${kept[i]-} ]] || next_style+=,bold
-    if [[ $next_style != $last_style ]]; then
-      SF_TUI_HIGHLIGHT_SPANS+=( $start $end "$last_style" )
-      start=$end last_style=$next_style
-    fi
-    (( end += ${#tokens[i]} ))
-  done
-  SF_TUI_HIGHLIGHT_SPANS+=( $start $end "$last_style" )
 }
 
 sf_tui_diff_highlight() {
-  local source=$1 line kind MATCH MBEGIN MEND
+  local source=$1 line kind patch style MATCH MBEGIN MEND
   local -a lines=( "${(@ps:\n:)source}" ) match mbegin mend reply
+  local -A pairs=() words=()
   local header='^@@ -[0-9]+(,([0-9]{1,2}))? [+][0-9]+(,([0-9]{1,2}))? @@'
-  integer start=${2:-0} index hunk=0 mate count
+  integer start=${2:-0} index count row mate run pos end
+  if [[ -n ${SF_TUI_STYLE[syntax.removed]-}${SF_TUI_STYLE[syntax.added]-} ]]; then
+    for (( index = 1; index <= ${#lines}; index++ )); do
+      [[ ${lines[index]} == '@@ '* && ${lines[index]} =~ $header ]] || continue
+      count=$(( 10#${match[2]:-1} ))
+      (( count > 0 && count <= 8 && count == 10#${match[4]:-1} )) || continue
+      sf_tui_diff_pairs $count "${(@)lines[index+1,index+2*count+2]}"
+      for (( row = 1; row <= ${#reply}; row++ )); do
+        mate=${reply[row]:-0}
+        (( mate && ${#lines[index+row]} <= 256 && ${#lines[index+mate]} <= 256 )) ||
+          continue
+        pairs[$(( index + row ))]=$(( index + mate ))
+      done
+      (( ${#pairs} <= 160 )) || break
+    done
+    if (( ${#pairs} > 0 && ${#pairs} <= 160 )) && patch=$(sf_tui_diff_git 2>/dev/null); then
+      sf_tui_diff_word_runs "$patch"
+    fi
+  fi
+
   for (( index = 1; index <= ${#lines}; index++ )); do
     line=${lines[index]}
+    end=$(( start + ${#line} ))
     kind=''
-    mate=${reply[index-hunk]:-0}
-    if [[ $line == '@@ '* ]]; then
-      kind=hunk hunk=$index reply=()
-      if [[ $line =~ $header ]]; then
-        count=$(( 10#${match[2]:-1} ))
-        if (( count > 0 && count <= 8 && count == 10#${match[4]:-1} )); then
-          sf_tui_diff_pairs $count "${(@)lines[index+1,index+2*count+2]}"
-        fi
+    if [[ -n ${words[$index]-} ]]; then
+      if [[ $line == '-'* ]]; then kind=removed; else kind=added; fi
+      style=${SF_TUI_STYLE[syntax.$kind]-}
+      if [[ -n $style ]]; then
+        pos=$start
+        for run in ${=words[$index]}; do
+          if (( run < 0 )); then
+            SF_TUI_HIGHLIGHT_SPANS+=( $pos $(( pos - run )) "$style,bold" )
+            (( pos -= run ))
+          else
+            SF_TUI_HIGHLIGHT_SPANS+=( $pos $(( pos + run )) "$style" )
+            (( pos += run ))
+          fi
+        done
       fi
-    elif (( mate )); then
-      if [[ $line == '-'* ]]; then
-        kind=removed
-        sf_tui_diff_words "$line" "${lines[hunk+mate]}" $start $kind && kind=''
-      else
-        kind=added
-        sf_tui_diff_words "${lines[hunk+mate]}" "$line" $start $kind && kind=''
-      fi
+      kind=''
+    elif [[ $line == '@@ '* ]]; then kind=hunk
     elif [[ $line == ('+++'|'---')(| *) ]]; then kind=file
     elif [[ $line == '+'* ]]; then kind=added
     elif [[ $line == '-'* ]]; then kind=removed
     fi
-    [[ -z $kind ]] || sf_tui_highlight_span $start $(( start + ${#line} )) $kind
-    (( start += ${#line} + 1 ))
+    [[ -z $kind ]] || sf_tui_highlight_span $start $end $kind
+    start=$(( end + 1 ))
   done
 }
