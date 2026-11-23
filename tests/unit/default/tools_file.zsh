@@ -74,7 +74,7 @@ assert_equal '' "$(<$tmp/fd3)" 'read_file wrote content for a refused read'
 # Edit matching file content.
 output=$(run_tool edit_file \
   '{"file_path":"file-tool.txt","old_string":"alpha","new_string":"beta"}')
-[[ $output == '@@ -1 +1 @@'* && $output == *-alpha* && $output == *+beta* ]]
+assert_equal $'@@ -1 +1 @@\n-alpha\n+beta' "$output"
 assert_equal '' "$(<$tmp/fd3)" 'edit_file wrote presentation control data'
 
 # Skip unchanged edits.
@@ -101,14 +101,23 @@ assert_equal 'edit_file: old_string appears 2 times in twice.txt; include more s
 
 # Write new files and report the change.
 output=$(run_tool write_file '{"file_path":"created.txt","content":"created\n"}')
-[[ -f "$tmp/created.txt" && $output == *+created* ]]
+assert_equal $'@@ -0,0 +1 @@\n+created' "$output"
+assert_equal created "$(<$tmp/created.txt)"
 
 # Overwrite existing files and report the change against their old contents.
 output=$(run_tool write_file '{"file_path":"created.txt","content":"replaced\n"}')
-[[ $(<$tmp/created.txt) == replaced && $output == *-created* && $output == *+replaced* ]] ||
-  fail 'write_file did not overwrite an existing file'
+assert_equal $'@@ -1 +1 @@\n-created\n+replaced' "$output"
+assert_equal replaced "$(<$tmp/created.txt)"
 assert_equal 'write_file: created.txt is already up to date' \
   "$(run_tool write_file '{"file_path":"created.txt","content":"replaced\n"}')"
+
+# Diff the contents of a symlink target without treating the symlink as a change.
+ln -s created.txt "$tmp/linked.txt"
+chmod +x "$tmp/created.txt"
+output=$(run_tool write_file '{"file_path":"linked.txt","content":"linked"}')
+assert_equal $'@@ -1 +1 @@\n-replaced\n+linked\n\\ No newline at end of file' "$output"
+[[ -L "$tmp/linked.txt" && -x "$tmp/created.txt" ]]
+assert_equal linked "$(<$tmp/created.txt)"
 mkdir -p "$tmp/folder"
 assert_equal 'write_file: folder is a directory' \
   "$(run_tool write_file '{"file_path":"folder","content":"x"}' || true)"
@@ -144,8 +153,8 @@ done
 
 # Diff failures retain the write but clean up its temporary files.
 mkdir "$tmp/fail-bin" "$tmp/scratch"
-printf '#!/bin/sh\nexit 2\n' >"$tmp/fail-bin/diff"
-chmod +x "$tmp/fail-bin/diff"
+printf '#!/bin/sh\nexit 2\n' >"$tmp/fail-bin/git"
+chmod +x "$tmp/fail-bin/git"
 for tool in edit_file write_file; do
   print -rn -- old >"$tmp/fail.txt"
   if [[ $tool == edit_file ]]; then

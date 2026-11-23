@@ -30,7 +30,7 @@ This entire codebase fits comfortably within the context window of any modern LL
 
 ## Installation
 
-Shellfish requires `zsh` 5+, `awk`, `curl`, and [`jq`](https://github.com/jqlang/jq). On Linux it also requires `setsid`. On macOS it uses the system `script` utility for process-group creation. The default harness needs [`fence`](https://github.com/fencesandbox/fence) for sandboxed tools.
+Shellfish requires `zsh` 5+, `awk`, `curl`, `git`, and [`jq`](https://github.com/jqlang/jq). On Linux it also requires `setsid`. On macOS it uses the system `script` utility for process-group creation. The default harness needs [`fence`](https://github.com/fencesandbox/fence) for sandboxed tools.
 
 ```sh
 # With `~/.local/bin` on `PATH`

@@ -1,49 +1,36 @@
 sf_file_write() {
   setopt local_options no_err_exit
-  local tool=$1 file_path=$2 content=$3 snapshot diff_file existed diff_status
-  snapshot=$(mktemp "${TMPDIR:-/tmp}/shellfish-file-original.XXXXXX") || {
+  local tool=$1 file_path=$2 content=$3 scratch diff
+  local -i existed=0 diff_status=0
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-file-diff.XXXXXX") || {
     printf '%s: cannot prepare diff for %s\n' "$tool" "$file_path"
     return 2
   }
-  diff_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-file-diff.XXXXXX") || {
-    rm -f -- "$snapshot"
-    printf '%s: cannot prepare diff for %s\n' "$tool" "$file_path"
-    return 2
-  }
+  scratch=${scratch:A}
   {
-    if [[ -e $file_path || -L $file_path ]]; then
-      cp -- "$file_path" "$snapshot" || {
-        printf '%s: cannot prepare diff for %s\n' "$tool" "$file_path"
-        return 2
-      }
-      existed=true
-    else
-      existed=false
+    [[ ! -e $file_path && ! -L $file_path ]] || existed=1
+    if ! { if (( existed )); then cat -- "$file_path"; fi } >"$scratch/before" ||
+       ! printf '%s' "$content" >"$scratch/after"; then
+      printf '%s: cannot prepare diff for %s\n' "$tool" "$file_path"
+      return 2
     fi
-    printf '%s' "$content" >"$file_path" || {
+    cat -- "$scratch/after" >"$file_path" || {
       printf '%s: cannot write %s\n' "$tool" "$file_path"
       return 2
     }
-    if diff -U1 -L '' -L '' -- "$snapshot" "$file_path" >"$diff_file"; then
-      diff_status=0
+    diff=$(GIT_DIR="$scratch/.git" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+      GIT_CONFIG_COUNT=0 GIT_CONFIG_PARAMETERS='' git -C "$scratch" \
+      diff --no-index --no-color --no-ext-diff --no-textconv --text --unified=1 \
+      -- before after) || diff_status=$?
+    if (( diff_status == 0 )); then
+      (( ! existed )) || printf '%s: %s is already up to date\n' "$tool" "$file_path"
+    elif (( diff_status == 1 )) && [[ $diff == *$'\n@@ '* ]]; then
+      printf '@@ %s\n' "${diff#*$'\n@@ '}"
     else
-      diff_status=$?
+      printf '%s: cannot render diff for %s\n' "$tool" "$file_path"
+      return 2
     fi
-    case $diff_status in
-      0) [[ $existed == false ]] || printf '%s: %s is already up to date\n' "$tool" "$file_path" ;;
-      1)
-        awk '
-          NR == 1 && /^--- / { next }
-          NR == 2 && /^\+\+\+ / { next }
-          { print }
-        ' "$diff_file"
-        ;;
-      *)
-        printf '%s: cannot render diff for %s\n' "$tool" "$file_path"
-        return 2
-        ;;
-    esac
   } always {
-    rm -f -- "$snapshot" "$diff_file"
+    rm -rf -- "$scratch"
   }
 }
