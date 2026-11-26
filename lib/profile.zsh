@@ -266,7 +266,7 @@ sf_profile_resolve() {
         sf_fail "cannot resolve $kind reference: ${reference#* }" || return
       resolved=$REPLY
       case $kind in
-        system) [[ -f $resolved && ( -r $resolved || -x $resolved ) ]] ;;
+        system) [[ -f $resolved && -r $resolved ]] ;;
         *) [[ -d $resolved && -x $resolved/run ]] ;;
       esac || sf_fail "invalid $kind reference: ${reference#* }" || return
       if [[ $kind == system ]]; then
