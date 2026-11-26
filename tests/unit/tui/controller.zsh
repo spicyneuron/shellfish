@@ -25,8 +25,8 @@ print -r -- '#!/bin/sh' >"$tmp/commands/example/run"
 chmod +x "$tmp/commands/example/run"
 print -r -- '{"description":"Example command","aliases":["e","example-alias"]}' \
   >"$tmp/commands/example/manifest.json"
-sf_tui_commands "$tmp/commands/example" @commands/help
-assert_equal '/example,/example-alias,/help,/queue,/quit,/refresh,/verbose' \
+sf_tui_commands "$tmp/commands/example" @commands/help @commands/user_shell @commands/user_skill
+assert_equal '/example,/example-alias,/help,/queue,/quit,/refresh,/shell,/skill,/verbose' \
   "${(j:,:)SF_TUI_COMMANDS}"
 SF_TUI_COMPLETIONS=( /example /example-alias )
 sf_tui_commands
@@ -81,6 +81,31 @@ assert_equal "cannot present session: $malformed" "$SF_TUI_ERROR"
 [[ $(<"$tmp/loading") == *$'\r\e[2K' ]] || fail 'failed resume left loading activity'
 assert_equal '' "$(jobs -p)"
 
+# Paging uses durable section IDs and expands all records in the target.
+SF_TUI_SESSION="$tmp/pager.jsonl"
+{
+  head -n 1 "$replay"
+  print -rl -- \
+    '{"type":"user","section":10,"content":[{"type":"text","text":"Earlier prompt."}]}' \
+    '{"type":"assistant","section":12,"content":[{"type":"reasoning","text":"Reasoning.\nMore reasoning."}]}' \
+    '{"type":"tool_result","section":12,"id":"call","exit_code":0,"user_preview_lines":1,"user_text":"Tool\nPreview\nFull tool output."}' \
+    '{"type":"assistant","section":12,"content":[{"type":"text","text":"Answer."}]}' \
+    '{"type":"hook_result","id":"notice","user_text":"Unnumbered notice."}'
+} >"$SF_TUI_SESSION"
+functions[sf_tui_external_saved]=$functions[sf_tui_external]
+sf_tui_external() { cat -- "${@[-1]}"; }
+SF_TUI_PREVIEW=1 SF_TUI_PREVIEW_REASONING=1
+sf_tui_verbose 12 >"$tmp/paged" || fail 'cannot page section 12'
+typeset paged=$(<"$tmp/paged")
+[[ $paged == *' 12 ─'*'More reasoning.'*'Full tool output.'*'Answer.'* &&
+   $paged != *'Earlier prompt.'* && $paged != *'Unnumbered notice.'* ]] ||
+  fail 'pager output was not limited to the expanded section' "$paged"
+assert_equal 1 "$SF_TUI_PREVIEW"
+assert_equal Hello "${(j:,:)SF_TUI_HISTORY}"
+functions[sf_tui_external]=$functions[sf_tui_external_saved]
+unfunction sf_tui_external_saved
+SF_TUI_PREVIEW=full SF_TUI_PREVIEW_REASONING=full
+
 # Model context settles under its lifecycle without exposing model text.
 SF_TUI_SESSION="$tmp/session.jsonl"
 SF_TUI_STATE=working
@@ -89,7 +114,7 @@ pump '{"type":"_draft","lifecycle":"session_start","id":"2","user_text":"Loading
 sf_tui_transcript 79 20
 [[ $SF_TUI_VIEWPORT_TEXT == *'Loading git environment'* ]] ||
   fail 'hook activity did not reach the viewport'
-pump '{"type":"hook_result","lifecycle":"session_start","id":"2","model_text":"Git branch: secret"}'
+pump '{"type":"hook_result","lifecycle":"session_start","id":"2","model_content":[{"type":"text","text":"Git branch: secret"}]}'
 sf_tui_transcript 79 20
 [[ $SF_TUI_VIEWPORT_TEXT != *'↪ session_start'* &&
     $SF_TUI_VIEWPORT_TEXT != *'Loading git environment'* &&
@@ -146,7 +171,7 @@ functions[sf_tui_transport_reply]=$functions[sf_tui_transport_reply_saved]
 unfunction sf_tui_transport_reply_saved
 
 # Later activity closes an expired request.
-pump '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"pwd"},"exit_code":126,"model_text":"sandbox access approval timed out","user_text":"Shell pwd\nsandbox access approval timed out"}'
+pump '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"pwd"},"exit_code":126,"model_content":[{"type":"text","text":"sandbox access approval timed out"}],"user_text":"Shell pwd\nsandbox access approval timed out"}'
 assert_equal working "$SF_TUI_STATE"
 assert_equal '' "$SF_TUI_PERMISSION_ID"
 assert_equal 0 "$SF_TUI_PERMISSION_DEADLINE"
@@ -238,10 +263,8 @@ SF_TUI_STATE=working
 sf_tui_action message_start agent
 sf_tui_action message_delta 0 text $'committed\nnext\n' ''
 sf_tui_transcript 20 20
-sf_tui_terminal_stage
-sf_tui_terminal_finish
+sf_tui_terminal_commit
 typeset committed=$PREDISPLAY
-sf_tui_terminal_restore
 SF_TUI_QUEUE=( queued )
 sf_tui_transport_reset
 exec {SF_TUI_TRANSPORT_OUTPUT_FD}< <(print -r -- broken)

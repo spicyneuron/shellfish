@@ -1,5 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
+zmodload -F zsh/files b:zf_rm
 
 # Where sessions live, how one is named, and the two durable mutations.
 
@@ -90,7 +91,7 @@ sf_session_update() {
   [[ -n $error ]] || mv -f -- "$temp" "$session_path" ||
     error="cannot replace session: $session_path"
   if [[ -n $error ]]; then
-    rm -f -- "$temp" 2>/dev/null
+    zf_rm -f -- "$temp" 2>/dev/null
     sf_fail "$error"
     return 1
   fi

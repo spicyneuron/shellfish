@@ -5,11 +5,7 @@ setopt no_aliases no_multios pipe_fail
 
 typeset command output
 integer command_status
-command=$(cat)
-if [[ -z $command ]]; then
-  print -u2 -r -- 'usage: /user_shell COMMAND'
-  exit 0
-fi
+command=$(cat) || exit 1
 
 output=$(
   unset SHELLFISH_SESSION SHELLFISH_TURN_STATE
@@ -19,5 +15,5 @@ output=$(
   command_status=$?
   (( ! command_status )) || print -r -- $'\n(exit '"$command_status"')'
 )
-print -r -- "$output" >&2
+print -ru2 -- "$output"
 print -rn -- "The user ran this shell command:"$'\n'"\$ $command"$'\n'"$output"

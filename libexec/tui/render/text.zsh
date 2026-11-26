@@ -25,18 +25,10 @@ sf_tui_token_count() {
   fi
 }
 
+# Control characters other than newline and tab become replacement characters.
 sf_tui_safe() {
-  local character text=$1
-  local -a characters
-  REPLY=''
-  characters=( ${(s::)text} )
-  for character in $characters; do
-    if [[ $character == $'\n' || $character == $'\t' || $character != [[:cntrl:]] ]]; then
-      REPLY+=$character
-    else
-      REPLY+='�'
-    fi
-  done
+  setopt local_options extended_glob
+  REPLY=${1//([[:cntrl:]]~[$'\n\t'])/�}
 }
 
 # One safe display line, clipped by terminal cells rather than characters.

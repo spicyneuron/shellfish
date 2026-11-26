@@ -4,10 +4,11 @@ emulate -R zsh
 setopt no_aliases no_multios pipe_fail
 
 typeset target text copier
-target=$(cat)
+target=$(cat) || exit 1
 if [[ -n $target && ( $target != <1-> || ${#target} -gt 9 ) ]]; then
-  print -u2 -r -- 'usage: /copy [N]'
-  exit 0
+  source "$SHELLFISH_SHARE_DIR/lib/command-usage.zsh" || exit 1
+  sf_command_usage copy
+  exit $?
 fi
 target=${target:-0}
 

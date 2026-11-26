@@ -1,4 +1,4 @@
-# Shared Agent Skills discovery for bundled hook scripts and tools.
+# Shared Agent Skills discovery and loading.
 
 sf_skills_scalar() {
   emulate -L zsh
@@ -135,4 +135,20 @@ sf_skills_wrap() {
   jq -nr --arg name "$1" --arg directory "$2" --arg body "$3" '
     "<skill name=\"" + ($name | @html) + "\" directory=\"" +
     ($directory | @html) + "\">\n" + $body + "</skill>"'
+}
+
+# Print wrapped instructions for NAME. Return 2 if unavailable, 1 on failure.
+sf_skills_load() {
+  local name=$1 file REPLY
+  local -a reply
+  integer index
+  sf_skills_discover "${SHELLFISH_DIR-}" "$PWD" "${2:-false}" || return 1
+  for (( index = 1; index <= ${#reply}; index += 3 )); do
+    [[ $reply[index] == "$name" ]] || continue
+    file=$reply[index+2]
+    sf_skills_body "$file" || return 1
+    sf_skills_wrap "$name" "${file:h}" "$REPLY" || return 1
+    return 0
+  done
+  return 2
 }

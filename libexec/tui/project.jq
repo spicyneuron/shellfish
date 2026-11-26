@@ -1,7 +1,7 @@
 # Live core events and loaded durable records become one presentation action
 # vocabulary. Actions are arrays of strings; the first element is the type.
 # $mode is the starting record policy, $window the known context window, and
-# $drawn the readable blocks of the open live message.
+# stdin starts with the open live message's drawn blocks, then the batch.
 
 def compact_tokens:
   if . < 1000 then tostring
@@ -54,7 +54,7 @@ def preview: .user_preview_lines // "default" | tostring;
 def clip: if length > 300 then .[0:300] + "…" else . end;
 
 # Context and notice select presentation styling.
-def hook_class: if (.model_text // "") == "" then "notice" else "context" end;
+def hook_class: if has("model_content") then "context" else "notice" end;
 # The core marks sandbox requests so that no template can hide them. The
 # client draws the badge; an empty template still shows the tool name.
 def result_text:
@@ -159,6 +159,7 @@ def event_actions($window; $drawn):
 
 def nul_safe: gsub("\u0000"; "�");
 
+(input | fromjson) as $drawn |
 [inputs | fromjson] |
 reduce .[] as $line (
   {mode: $mode, window: (if $window == "" then null else ($window | tonumber) end),

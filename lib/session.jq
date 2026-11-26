@@ -52,57 +52,51 @@ def canonical_tool_call:
 
 # The prompt text leads, followed by any attached images.
 def canonical_user_message:
-  type == "object" and (del(.section) | keys == ["content", "type"]) and
-  section_field and .type == "user" and
+  type == "object" and .type == "user" and
+  (del(.section) | keys == ["content", "type"]) and section_field and
   (.content | type == "array" and (.[0] | canonical_text) and
     all(.[1:][]; canonical_image)) and
   (.content[0].text | nul_free_string);
 
 def canonical_state_update:
-  type == "object" and keys == ["name", "type", "value"] and .type == "state_update" and
+  type == "object" and .type == "state_update" and keys == ["name", "type", "value"] and
   (.name | type == "string" and length <= 128 and
     test("^[A-Za-z0-9][A-Za-z0-9_.:/-]*\\z"));
 
 def canonical_error:
-  type == "object" and (del(.section) | keys == ["type", "user_text"]) and
-  section_field and .type == "error" and
+  type == "object" and .type == "error" and
+  (del(.section) | keys == ["type", "user_text"]) and section_field and
   (.user_text | nul_free_string) and .user_text != "";
 
 def preview_hint:
   . == "full" or (type == "number" and floor == . and . >= 0 and . <= 2147483647);
 
-# A settled result: its REQUIRED fields plus optional texts, nonempty when
-# present, and a preview hint.
+# A settled result: its REQUIRED fields plus optional content, display text,
+# and a preview hint.
 def result_fields($required):
   type == "object" and
-  ((keys - ($required + ["model_text", "type", "user_preview_lines", "user_text"])) |
+  ((keys - ($required + ["model_content", "type", "user_preview_lines", "user_text"])) |
     length == 0) and
   (($required - keys) | length == 0) and
   (if has("user_text") then .user_text | type == "string" and length > 0 else true end) and
-  (if has("model_text") then .model_text | type == "string" and length > 0 else true end) and
+  (if has("model_content") then .model_content | type == "array" and length > 0 and
+    all(.[]; canonical_content_part) else true end) and
   ((has("user_preview_lines") | not) or (.user_preview_lines | preview_hint));
 
-def model_content_fields:
-  (has("model_content") | not) or ((has("model_text") | not) and
-    (.model_content | type == "array" and length > 0 and
-      all(.[]; canonical_content_part)));
-
 # A settled sandbox access request records whether it was approved, and
-# whether for the session. Model content replaces model text.
+# whether for the session.
 def canonical_tool_result:
-  section_field and (del(.section, .sandbox_access, .model_content) |
+  section_field and .type == "tool_result" and (del(.section, .sandbox_access) |
     result_fields(["exit_code", "id", "input", "name"])) and
   ((has("sandbox_access") | not) or
     (.sandbox_access | IN("approved", "session", "denied", "cancelled"))) and
-  model_content_fields and
-  .type == "tool_result" and
   (.id | identifier) and (.name | tool_name) and (.input | type == "object") and
   (.exit_code | type == "number" and floor == . and . >= 0 and . <= 255);
 
 def canonical_hook_result:
-  section_field and (del(.section, .action, .reason, .model_content) | result_fields(["id", "lifecycle"])) and
-  model_content_fields and
-  .type == "hook_result" and (.lifecycle | record_lifecycle) and
+  section_field and .type == "hook_result" and
+  (del(.section, .action, .reason) | result_fields(["id", "lifecycle"])) and
+  (.lifecycle | record_lifecycle) and
   (.id | test("^[1-9][0-9]*$")) and
   (if has("action") then .action == "deny" and
     (.lifecycle | IN("user_prompt_submit", "permission_request", "pre_tool_use", "stop")) and
@@ -126,41 +120,33 @@ def canonical_response:
       ($calls | length) > 0 and (([$calls[].id] | unique | length) == ($calls | length))
     else ($calls | length) == 0 end);
 
+def text_part: {type:"text",text:.};
+
 def merge_text:
   reduce .[] as $part ([];
     if $part.type == "text" and .[-1].type? == "text" then .[-1].text += $part.text
     else . + [$part] end);
 
-# Attachments turn text-only context into content parts.
-def join_content:
-  if any(.[]; type == "array") then
-    [to_entries[] | (if .key > 0 then {type:"text",text:"\n\n"} else empty end),
-      (.value | if type == "array" then .[] else {type:"text",text:.} end)] | merge_text
-  else join("\n\n") end;
-
 # Hook results from one lifecycle share a group.
 def render_context:
-  if type == "string" or type == "array" then .
-  elif any(.texts[]; type == "array") then
-    [{type:"text",text:("<hook name=\"" + (.lifecycle | @html) + "\">\n")}] +
-      (.texts | join_content) + [{type:"text",text:"\n</hook>"}]
-  else
-    "<hook name=\"" + (.lifecycle | @html) + "\">\n" +
-    ([.texts[] | if endswith("\n") then . else . + "\n" end] | add) + "</hook>"
-  end;
+  [("<hook name=\"\(.lifecycle | @html)\">\n" | text_part),
+    (.contents[] | .[],
+      (if .[-1].type == "text" and (.[-1].text | endswith("\n")) then empty
+       else "\n" | text_part end)),
+    ("</hook>" | text_part)] | merge_text;
 
 def add_hook_context($record):
-  ($record.model_content // $record.model_text) as $content |
   ([to_entries[] | select(.value.lifecycle? == $record.lifecycle) | .key] | first) as $index |
-  if $index == null then . + [{lifecycle:$record.lifecycle,texts:[$content]}]
-  else .[$index].texts += [$content] end;
+  if $index == null then . + [{lifecycle:$record.lifecycle,contents:[$record.model_content]}]
+  else .[$index].contents += [$record.model_content] end;
 
-def join_context($parts):
-  [$parts[] | select(. != "") | render_context] | join_content;
+def join_context($context; $content):
+  [($context[] | render_context), ($content | select(length > 0))] |
+  [to_entries[] | (if .key > 0 then "\n\n" | text_part else empty end), .value[]] | merge_text;
 
 def context_message($context; $request):
-  {type:"user", content:(join_context([$context[], $request]) |
-    if type == "array" then . else [{type:"text",text:.}] end)};
+  {type:"user", content:join_context($context; [$request | select(. != "") | text_part])} |
+  if .content == [] then .content = ["" | text_part] else . end;
 
 def claim_section($record):
   if $record.section == null then .
@@ -168,26 +154,30 @@ def claim_section($record):
     if $record.section == .agent_section then . else error("wrong agent section") end
   elif ($record.type | IN("assistant", "error")) and .agent_section != null then
     if $record.section == .agent_section then . else error("wrong assistant section") end
-  elif (.sections | index($record.section)) != null then error("repeated section")
-  else .sections += [$record.section] |
-    if ($record.type | IN("assistant", "error")) then .agent_section = $record.section else . end
+  else
+    # The same section can be written as 12 or 12.0.
+    ($record.section | floor | tostring) as $id |
+    if .sections[$id] then error("repeated section")
+    else .sections[$id] = true |
+      if ($record.type | IN("assistant", "error")) then .agent_section = $record.section else . end
+    end
   end;
 
 def session_state:
   reduce .[] as $record
-    ({next:"user", calls:[], context:[], hooks:[], messages:[], response:null,
-      requests:0, call_total:0, sections:[], agent_section:null};
+    ({next:"user", calls:[], context:[], hooks:{}, messages:[], response:null,
+      requests:0, call_total:0, sections:{}, agent_section:null};
       if ($record | canonical_state_update) then .
       elif ($record | canonical_hook_result) then
         claim_section($record) |
-        if (.hooks | index($record.id)) != null then
+        if .hooks[$record.id] then
           error("repeated hook id: " + $record.id)
         else
-          .hooks += [$record.id] |
+          .hooks[$record.id] = true |
           (if $record.lifecycle == "stop" and $record.action? == "deny" then
              .next = "assistant"
            else . end) |
-          if ($record.model_content // $record.model_text // "") == "" then .
+          if ($record | has("model_content") | not) then .
           # Post-tool context annotates the result it follows.
           elif $record.lifecycle == "post_tool_use" and (.context | length) == 0 and
               .messages[-1].type? == "tool_result" then
@@ -231,24 +221,18 @@ def session_state:
         .messages += [{type:"tool_call", id:$call.id, name:$call.name, input:$call.input},
           {type:"tool_result", call_id:$call.id, name:$call.name,
            exit_code:$record.exit_code, parts:.context,
-           result:($record.model_content // $record.model_text // "")}] |
+           result:($record.model_content // [])}] |
         .context = [] |
         .calls = .calls[1:] |
         .next = (if (.calls | length) == 0 then "assistant" else "tool_result" end)
       else error("unrecognized session record") end);
 
 # A response awaiting results reaches no request, and trailing context waits
-# here for the request that carries it. A result with model content is a part
-# array, led by any context.
+# here for the request that carries it. Context leads the result parts.
 def state_messages:
   [.messages[] |
     if .type == "tool_result" then
-      .content = (if (.result | type == "array") or any(.parts[].texts[]?; type == "array") then
-          (join_context(.parts) | if type == "array" then .
-            else [select(. != "") | {type:"text",text:.}] end) +
-          (.result | if type == "array" then .
-            else [select(. != "") | {type:"text",text:.}] end)
-        else join_context([.parts[], .result]) end) |
+      .content = join_context(.parts; .result) |
       del(.parts, .result)
     else . end] +
   if (.context | length) == 0 then [] else [context_message(.context; "")] end;

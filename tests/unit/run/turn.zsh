@@ -17,6 +17,7 @@ jq -eRn -L "$ROOT" '
   $durable[0] == {type:"user",section:1,content:[{type:"text",text:"two\nwords"}]} and
   ($durable[1] | .type == "assistant" and .section == 2 and .stop == "end" and
     (.usage | token_usage)) and
+  ($events | any(. == {type:"_assistant_start",section:2})) and
   ($events | any(.type == "_assistant_message_delta"))
 ' <"$stream" >/dev/null || fail 'simple turn emitted the wrong objects'
 jq -c 'select(.type | startswith("_") | not)' "$stream" >"$tmp/emitted"
@@ -43,9 +44,9 @@ if jq -e '.messages | any(.type == "tool_result")' <<<"$request" >/dev/null; the
   jq -e '
     .messages[-4:] == [
       {type:"tool_call",id:"call_1",name:"ordered",input:{value:"first"}},
-      {type:"tool_result",call_id:"call_1",name:"ordered",content:"first",exit_code:0},
+      {type:"tool_result",call_id:"call_1",name:"ordered",content:[{type:"text",text:"first"}],exit_code:0},
       {type:"tool_call",id:"call_2",name:"ordered",input:{value:"second"}},
-      {type:"tool_result",call_id:"call_2",name:"ordered",content:"second",exit_code:0}
+      {type:"tool_result",call_id:"call_2",name:"ordered",content:[{type:"text",text:"second"}],exit_code:0}
     ]
   ' <<<"$request" >/dev/null || exit 9
   [[ $(<$TOOL_ORDER) == $'first\nsecond' ]] || exit 8
@@ -93,7 +94,7 @@ jq -eRn '
     ] and
   ($events | map(select(.type == "tool_result") | .input)) ==
     [{value:"first"},{value:"second"}] and
-  ($events | map(select(.type == "tool_result") | [.user_text,.model_text])) ==
+  ($events | map(select(.type == "tool_result") | [.user_text,.model_content[0].text])) ==
     [["Ordered first","first"],["Ordered second","second"]]
 ' <"$stream" >/dev/null || fail 'tool calls did not settle in order'
 assert_canonical_session "$session"
@@ -120,8 +121,8 @@ SHELLFISH_MAX_TOOL_CALLS_PER_REQUEST=1 sf_test_run limited "$session" >"$stream"
 jq -eRn '
   [inputs | fromjson | select(.type == "tool_result")] as $results |
   ($results | length) == 2 and
-  $results[0].exit_code == 127 and ($results[0].model_text | contains("not allowed")) and
-  $results[1].exit_code == 126 and ($results[1].model_text | contains("limit"))
+  $results[0].exit_code == 127 and ($results[0].model_content[0].text | contains("not allowed")) and
+  $results[1].exit_code == 126 and ($results[1].model_content[0].text | contains("limit"))
 ' <"$stream" >/dev/null || fail 'ordinary tool denials did not settle calls'
 assert_canonical_session "$session"
 
@@ -200,7 +201,7 @@ runs = []
 
 
 class Review:
-    def __init__(self, name, action="allow", delay=0, fail=False):
+    def __init__(self, name, action="approve", delay=0, fail=False):
         session = tmp / (name + ".jsonl")
         session.write_bytes(header)
         self.process = subprocess.Popen(
@@ -265,10 +266,10 @@ try:
         raise AssertionError("cancelled reviewer is still alive")
 
     # A verdict starts a short countdown, and without a client it applies at once.
-    for action, decision, exit_code in [("allow", "approve", 0), ("deny", "deny", 126)]:
+    for action, exit_code in [("approve", 0), ("deny", 126)]:
         review = Review("verdict-" + action, action=action)
         update = review.until("_tool_permission_update")
-        assert update["decision"] == decision and update["timeout"] == 10, update
+        assert update["decision"] == action and update["timeout"] == 10, update
         review.process.stdin.close()
         review.finish(exit_code)
 
@@ -277,7 +278,7 @@ try:
     override.answer("approve")
     override.finish(0)
 
-    for name, action, fail in [("defer", "", False), ("failure", "allow", True)]:
+    for name, action, fail in [("defer", "", False), ("failure", "approve", True)]:
         review = Review(name, action=action, fail=fail)
         verdict = review.until("_tool_permission_review")
         assert verdict["decision"] == "", verdict

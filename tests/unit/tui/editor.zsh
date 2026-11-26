@@ -17,19 +17,21 @@ zle() {
   ZLE_CALL="$*"
   ZLE_CALLS+=( "$*" )
 }
-# Submit prompts.
+# Record submissions at the transport boundary.
+typeset sent=''
+sf_tui_transport_start() { sent=$(jq -r '.content[0].text' <<<"$1"); }
+
+# Submit prompts without ending the editor.
 BUFFER=prompt
-SF_TUI_DRAFT=prompt
-SF_TUI_DRAFT_CURSOR=6
-SF_TUI_DRAFT_SAVED=1
 SF_TUI_ACTION=''
 ZLE_CALL=''
 sf_tui_accept
-assert_equal submit "$SF_TUI_ACTION"
-assert_equal prompt "$SF_TUI_SUBMITTED"
-assert_equal accept-line "$ZLE_CALL"
+assert_equal working "$SF_TUI_STATE"
+assert_equal prompt "$sent"
+assert_equal -R "$ZLE_CALL"
 
 # Clear drafts on interrupt.
+SF_TUI_STATE=idle
 BUFFER=draft
 sf_tui_interrupt
 assert_equal '' "$BUFFER"
@@ -124,6 +126,15 @@ assert_equal '' "$BUFFER"
 assert_equal 1 "${#SF_TUI_QUEUE}"
 assert_equal $'first queued\ncontinued' "$SF_TUI_QUEUE[1]"
 
+BUFFER='/queue'
+CURSOR=${#BUFFER}
+sf_tui_accept
+assert_equal '' "$BUFFER"
+assert_equal 1 "${#SF_TUI_QUEUE}"
+assert_equal 1 "${#SF_TUI_HISTORY}"
+[[ $ZLE_CALL == '-M '*'/queue drop N'*'/queue clear'*'Ctrl-X'* ]] ||
+  fail 'bare queue command did not show queue help'
+
 BUFFER='second queued'
 CURSOR=${#BUFFER}
 sf_tui_accept
@@ -144,19 +155,19 @@ SF_TUI_HISTORY=( first second )
 BUFFER=''
 ZLE_CALL=''
 sf_tui_send
-assert_equal submit "$SF_TUI_ACTION"
-assert_equal first "$SF_TUI_SUBMITTED"
+assert_equal working "$SF_TUI_STATE"
+assert_equal first "$sent"
 assert_equal second "${(j:,:)SF_TUI_QUEUE}"
 assert_equal first,second "${(j:,:)SF_TUI_HISTORY}"
-assert_equal accept-line "$ZLE_CALL"
+assert_equal -R "$ZLE_CALL"
 
 # A draft takes priority over the paused queue.
 SF_TUI_STATE=idle
 SF_TUI_ACTION=''
 BUFFER=now
 sf_tui_send
-assert_equal submit "$SF_TUI_ACTION"
-assert_equal now "$SF_TUI_SUBMITTED"
+assert_equal working "$SF_TUI_STATE"
+assert_equal now "$sent"
 assert_equal second "${(j:,:)SF_TUI_QUEUE}"
 assert_equal '' "$BUFFER"
 
@@ -401,21 +412,18 @@ for binding in "${(@f)$(bindkey -M sf-present)}"; do
     fail "$widget bypassed input dispatch"
 done
 
-# Stop when pending chat rows cannot be staged on submission.
-typeset saved_stage=$functions[sf_tui_terminal_stage]
-typeset saved_repaint=$functions[sf_tui_repaint_checked]
-sf_tui_terminal_stage() { return 1; }
-sf_tui_repaint_checked() { SF_TUI_SAFE_ROWS=1; }
+# Leave the editor if the turn cannot start.
+typeset saved_start=$functions[sf_tui_transport_start]
+sf_tui_transport_start() { SF_TUI_TRANSPORT_ERROR='cannot start test turn'; return 1; }
 SF_TUI_STATE=idle
 SF_TUI_ERROR=''
 SF_TUI_ACTION=''
-BUFFER=unstageable
+BUFFER=unstartable
 sf_tui_accept || fail 'accept reported a failure'
-assert_equal '' "$SF_TUI_ACTION"
-assert_equal stopped "$SF_TUI_STATE"
-assert_equal 'cannot stage chat rows' "$SF_TUI_ERROR"
-functions[sf_tui_terminal_stage]=$saved_stage
-functions[sf_tui_repaint_checked]=$saved_repaint
+assert_equal failed "$SF_TUI_ACTION"
+assert_equal accept-line "$ZLE_CALL"
+assert_equal 'cannot start test turn' "$SF_TUI_ERROR"
+functions[sf_tui_transport_start]=$saved_start
 
 # Clipboard readers and a failing optional resizer are isolated from host tools.
 sf_test_tmp tui-editor-paste

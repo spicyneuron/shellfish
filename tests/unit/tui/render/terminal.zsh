@@ -1,33 +1,40 @@
 #!/usr/bin/env zsh
 
 source "${0:A:h:h:h:h}/_helpers.zsh"
-sf_test_source libexec/tui/render/terminal.zsh
+sf_test_source libexec/tui/render/main.zsh
 sf_test_tmp terminal
 
 typeset -g BUFFER=draft CURSOR=3 PREDISPLAY=old POSTDISPLAY=footer
 
-# Staging saves the draft until pending rows commit.
+# Commit writes settled rows only, then restores the draft.
 SF_TUI_SAFE_TEXT=$'hello\n'
 SF_TUI_SAFE_ROWS=1
 SF_TUI_SAFE_HIGHLIGHTS=( 0 5 bold )
 typeset -ga CONSUMED=()
 sf_tui_rows_consume() { CONSUMED+=( "$*" ); }
-sf_tui_terminal_stage || fail 'staging safe rows failed'
-assert_equal draft "$SF_TUI_DRAFT"
-assert_equal 3 "$SF_TUI_DRAFT_CURSOR"
-
-# Finish commits staged rows.
-sf_tui_terminal_finish
-assert_equal $'hello\n' "$PREDISPLAY"
-assert_equal '' "$BUFFER"
-assert_equal 0 "$SF_TUI_PENDING_ROWS"
+zle() {
+  assert_equal $'hello\n' "$PREDISPLAY"
+  assert_equal '' "$BUFFER"
+  assert_equal 'P0 5 bold' "$region_highlight[1]"
+  [[ $1 != -I || ${REJECT_INVALIDATE:-0} == 0 ]]
+}
+sf_tui_terminal_commit
+assert_equal 0 "$SF_TUI_SAFE_ROWS"
 assert_equal 1 "$SF_TUI_PREFIX_VISIBLE"
 assert_equal 1 "$CONSUMED[1]"
 
-sf_tui_terminal_restore
 assert_equal draft "$BUFFER"
 assert_equal 3 "$CURSOR"
-assert_equal 0 "$SF_TUI_DRAFT_SAVED"
+
+# A failed invalidation does not consume any rows or steal the draft.
+SF_TUI_SAFE_ROWS=1
+if REJECT_INVALIDATE=1 sf_tui_terminal_commit; then
+  fail 'commit accepted a failed invalidation'
+fi
+assert_equal 1 "$SF_TUI_SAFE_ROWS"
+assert_equal 1 "${#CONSUMED}"
+assert_equal draft "$BUFFER"
+assert_equal 3 "$CURSOR"
 
 # Forced sync cleanup emits one terminator.
 SF_TUI_SYNC_ACTIVE=1

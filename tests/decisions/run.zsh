@@ -69,7 +69,7 @@ for ref; do
         {type:"assistant", stop:"tool_calls", content:[{type:"tool_call", id:"call_1",
           name:"shell", input:{command:$case.tool_command}}]},
         {type:"tool_result", id:"call_1", name:"shell", input:{command:$case.tool_command},
-          exit_code:0, model_text:$case.tool}
+          exit_code:0, model_content:[{type:"text",text:$case.tool}]}
       else empty end),
       {type:"assistant", stop:"tool_calls", content:[{type:"tool_call", id:"call_2",
         name:"shell", input:$input}]}

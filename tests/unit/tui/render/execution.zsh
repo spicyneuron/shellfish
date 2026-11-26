@@ -8,6 +8,7 @@ sf_test_source libexec/tui/render/main.zsh
 
 typeset -gi COLUMNS=80 LINES=10
 typeset -g BUFFER='' CURSOR=0 PREDISPLAY='' POSTDISPLAY=''
+zle() { return 0; }
 
 view() {
   sf_tui_transcript "${1:-80}" 100 || fail 'rendering executions failed'
@@ -328,10 +329,8 @@ integer batch
 for batch in 1 2 3; do
   sf_tui_transcript 20 4 || fail 'rendering a tall execution failed'
   (( ! SF_TUI_SAFE_ROWS )) || {
-    sf_tui_terminal_stage || fail 'staging a tall execution failed'
-    sf_tui_terminal_finish || fail 'committing a tall execution failed'
+    sf_tui_terminal_commit || fail 'committing a tall execution failed'
     drained+=$PREDISPLAY$'\n'
-    sf_tui_terminal_restore
   }
 done
 assert_equal $'─ agent ──────── 1 ─\n\n⛭ shell · one\n│ two\n│ three\n│ four\n╰ five' \

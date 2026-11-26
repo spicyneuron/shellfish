@@ -1,5 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
+zmodload -F zsh/files b:zf_rm
 
 (( $+functions[sf_environment_load] )) || source "$SF_ROOT/lib/environment.zsh"
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
@@ -53,12 +54,12 @@ sf_run_tool_execute() {
   sf_scratch tool-input || { sf_fail 'cannot prepare tool input'; return; }
   stdin=$REPLY
   print -r -- "$execution_input" >"$stdin" || {
-    rm -f -- "$stdin"
+    zf_rm -f -- "$stdin"
     sf_fail 'cannot prepare tool input'
     return
   }
   sf_scratch -d tool || {
-    rm -f -- "$stdin"
+    zf_rm -f -- "$stdin"
     sf_fail 'cannot prepare tool capture'
     return
   }
@@ -121,8 +122,8 @@ sf_run_tool_execute() {
       { sf_fail 'cannot decode tool result'; return; }
   fi
   } always {
-    rm -rf -- "$capture"
-    rm -f -- "$stdin" "$capture.fence.json"
+    zf_rm -rf -- "$capture"
+    zf_rm -f -- "$stdin" "$capture.fence.json"
   }
 }
 

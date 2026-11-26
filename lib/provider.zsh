@@ -1,5 +1,6 @@
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
+zmodload -F zsh/files b:zf_rm
 
 (( $+functions[sf_jq] )) || source "$SF_ROOT/lib/jq.zsh"
 (( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
@@ -58,19 +59,19 @@ sf_provider_capture() {
   directory=$REPLY
   input="$directory.input"
   print -r -- "$SF_PROVIDER_PLAN[request]" >"$input" || {
-    rm -rf -- "$directory" "$input"
+    zf_rm -rf -- "$directory" "$input"
     SF_ERROR='cannot prepare provider request'
     return 1
   }
   if ! sf_process_run "$directory" "$SF_PROVIDER_PLAN[cwd]" "${input:A}" "$max_capture" "$max_capture" : \
       /usr/bin/env "${SF_ENVIRONMENT_VALUES[@]}" "$command"; then
-    rm -rf -- "$directory" "$input"
+    zf_rm -rf -- "$directory" "$input"
     return 1
   fi
   process=( "${reply[@]}" )
   process[stdout]=$(<"$directory/stdout")
   process[stderr]=$(<"$directory/stderr")
-  rm -rf -- "$directory" "$input"
+  zf_rm -rf -- "$directory" "$input"
   reply=( "${(@kv)process}" )
 }
 
@@ -121,7 +122,7 @@ sf_provider_run() {
     sf_process_isolated_command "$group_file" "$status_file" "$SF_PROVIDER_PLAN[cwd]" "$input_file" \
       "$output_pipe" "$error_file" /dev/null \
       env "${SF_ENVIRONMENT_VALUES[@]}" "$command" || {
-    rm -rf -- "$directory"
+    zf_rm -rf -- "$directory"
     SF_PROVIDER[directory]=''
     SF_PROVIDER[group_file]=''
     SF_ERROR='cannot prepare provider capture'
@@ -185,7 +186,7 @@ sf_provider_run() {
     REPLY=$assistant
   fi
   if (( signal_status )); then
-    rm -rf -- "$directory"
+    zf_rm -rf -- "$directory"
     SF_PROVIDER[directory]=''
     return $signal_status
   fi
@@ -197,10 +198,10 @@ sf_provider_run() {
     else
       SF_ERROR='provider exited before completing a response'
     fi
-    rm -rf -- "$directory"
+    zf_rm -rf -- "$directory"
     SF_PROVIDER[directory]=''
     return 1
   fi
-  rm -rf -- "$directory"
+  zf_rm -rf -- "$directory"
   SF_PROVIDER[directory]=''
 }

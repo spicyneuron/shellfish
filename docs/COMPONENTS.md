@@ -92,7 +92,7 @@ A hook manifest declares its lifecycle with `on`, such as `{"on":"stop"}`. An op
 | `session_start` | Add context once when creating a session | None | Empty | None |
 | `user_prompt_submit` | Add context or handle a prompt before submission | None | Exact prompt | `deny`, `handoff`, `session_update` |
 | `pre_tool_use` | Gate a tool call | `NAME ID` | Tool request JSON | `deny` |
-| `permission_request` | Review requested sandbox access | `NAME ID` | Tool request JSON | `allow`, `deny` |
+| `permission_request` | Review requested sandbox access | `NAME ID` | Tool request JSON | `approve`, `deny` |
 | `post_tool_use` | Add context after a durable tool result | `NAME ID` | Tool response JSON | None |
 | `stop` | Check whether a turn may finish | `REQUEST_COUNT` | Final assistant text | `deny` |
 
@@ -104,20 +104,20 @@ Hook attachments follow the same lifecycle placement as text context and persist
 
 Hook actions are JSON lines on fd 3, such as `{"action":"deny","reason":"Run the tests first"}`. The last action from a hook applies after exit 0. At submission, `deny` withholds the prompt; at `pre_tool_use`, it refuses the call; and at `stop`, it continues inference after settled model text.
 
-Permission review hooks may attach a `reason` to either `allow` or `deny`. Their decisions apply automatically after a grace period unless the user takes control or answers first. An `allow` approves specific access or unrestricted execution for one call, never for the session. `pre_tool_use` denials remain binding.
+Permission review hooks may attach a `reason` to either `approve` or `deny`. Their decisions apply automatically after a grace period unless the user takes control or answers first. An `approve` grants specific access or unrestricted execution for one call, never for the session. `pre_tool_use` denials remain binding.
 
 `handoff` supplies an `argv` array for a capable client to run after the turn exits cleanly. `session_update` supplies a complete session `profile` to replace atomically. Tool hooks cannot rewrite inputs or results. See the bundled hooks for input and action examples.
 
 ## Commands
 
-A command handles a single-line `/NAME` prompt instead of submitting it, before submission hooks run. Its manifest requires a user-facing `description`. Optional `arguments` supplies a usage hint and enables `/NAME ARGUMENTS`. Without it, only the exact `/NAME` matches. Optional `aliases` supplies alternate names. Names and aliases must be unique within the profile.
+A command handles a prompt that starts with `/NAME`, followed by whitespace or the end of the prompt, instead of submitting it, before submission hooks run. Its manifest requires a user-facing `description`. The optional `name` sets the slash name without changing the folder selected by the profile. It defaults to the folder name. Optional `arguments` supplies a usage hint and enables `/NAME ARGUMENTS`, where the arguments may span lines. Set `requires_arguments` to `true` alongside `arguments` to show usage instead of running when the argument text is empty. Text after a command without `arguments` also shows usage. Optional `aliases` supplies alternate names. Names and aliases must be unique within the profile.
 
 ```json
 {"description": "Copy a conversation section", "arguments": "[N]", "aliases": ["c"],
  "user_text": "${output.stderr}"}
 ```
 
-Shellfish calls `run` without arguments and passes argument text, without leading whitespace, on stdin. Commands use hook-style channels, presentation, and actions. They may request `handoff` or `session_update`. Otherwise the prompt is withheld. A nonzero exit fails the turn.
+Shellfish calls `run` without arguments and passes argument text, without leading whitespace, on stdin. Commands validate their own arguments. They use hook-style channels, presentation, and actions. They may request `handoff` or `session_update`. The command prompt is withheld, and model context emitted by the command waits for the next submitted prompt. A nonzero exit fails the turn.
 
 Commands also receive `SHELLFISH_COMMANDS`, a JSON array of the profile's command names, descriptions, arguments, and aliases, so a help command can list what is available.
 
@@ -128,5 +128,7 @@ Put a provider directory under `providers/` and select it through the model's `p
 Shellfish invokes the provider once per request with JSON on stdin. The provider translates the request to its API and returns normalized output, keeping API-specific parsing and validation inside the provider. Conversation providers may stream text and reasoning deltas, then return one complete assistant response. Decision providers return one result object. Diagnostics go to stderr, and success requires exit 0.
 
 An optional `context_window` executable discovers capacity without generating a response. Failed discovery leaves capacity unknown rather than failing inference.
+
+In a conversation request, tool result `content` is an ordered list of text and image parts, empty if there is no context or output.
 
 Use the [bundled providers](../share/providers/) as starting points and the [request definitions](../lib/provider.jq) for the normalized input and output shapes.

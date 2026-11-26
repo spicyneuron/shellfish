@@ -209,6 +209,8 @@ for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
     (.profile |
       ([.commands[], .hooks[], .tools[]] | length > 0 and all(.[]; startswith($share))) and
       (.commands | any(endswith("/help"))) and
+      (.commands | map(split("/") | last) |
+        index(["user_shell", "user_skill"]) != null and index("skill") == null) and
       (.system[0].text | contains($sandbox | sub("\n+$"; ""))) and
       (.tools | any(endswith("/subagent")) | not) and
       (.hooks | any(endswith("/sandbox/grants"))) and
@@ -216,6 +218,8 @@ for name in @profiles/default.jsonc @template/profiles/readonly.jsonc; do
   ' <<<"$REPLY" >/dev/null || fail "starter profile did not resolve: $name"
   profile=$(jq -c '.profile' <<<"$REPLY")
 done
+jq -e '(.tools | any(endswith("/tools/skill")) | not)' <<<"$profile" >/dev/null ||
+  fail 'readonly should not give the model the skill tool'
 
 # Tool manifests are read live from the resolved folders.
 sf_profile_components "$profile"
@@ -483,10 +487,14 @@ sf_jq -en '
 ' >/dev/null || fail 'hook match validation failed'
 sf_jq -en '
   include "lib/profile";
-  ({description:"Copy",arguments:"[N]",aliases:["c"],user_text:"${output.stderr}"} |
+  ({name:"copy",description:"Copy",arguments:"[N]",aliases:["c"],user_text:"${output.stderr}"} |
     command_manifest) and
+  ({description:"Shell",arguments:"COMMAND",requires_arguments:true} | command_manifest) and
   ([{}, {description:""}, {description:"x",arguments:""}, {description:"x",aliases:["c","c"]},
-    {description:"x",aliases:["/c"]}, {description:"x",on:"stop"}] |
+    {description:"x",aliases:["/c"]}, {description:"x",name:"/x"},
+    {description:"x",name:"x\n"}, {description:"x",name:null}, {description:"x",on:"stop"},
+    {description:"x",requires_arguments:true},
+    {description:"x",arguments:"X",requires_arguments:"true"}] |
     all(.[]; command_manifest | not))
 ' >/dev/null || fail 'command manifest validation failed'
 typeset hook_name
@@ -496,14 +504,6 @@ for hook_name in "$ROOT"/share/commands/*(/); do
     $manifest[0] | command_manifest
   ' >/dev/null || fail "bundled command manifest is invalid: ${hook_name:t}"
 done
-sf_jq -en --slurpfile manifest "$ROOT/share/hooks/skills/mention/manifest.json" '
-  include "lib/profile";
-  $manifest[0].match.pattern as $pattern |
-  ($manifest[0] | hook_manifest and .on == "user_prompt_submit") and
-  (["$", "$-", "$Name", "abc$name", "$$name", "ordinary prompt"] |
-    all(.[]; test($pattern) | not)) and
-  (["$name", "$0", "use $name"] | all(.[]; test($pattern)))
-' >/dev/null || fail 'skills match accepted a non-name dollar sign'
 
 # Tool references preserve configured order.
 typeset tools="$SF_TEST_CONFIG/tools"
@@ -554,7 +554,7 @@ for name in alpha beta; do
     "input_schema":{"type":"object"},"sandbox":false,"allow_sandbox_bypass":false,}' \
     >"$catalog/tools/$name/manifest.jsonc"
 done
-print -r -- '{"description":"Go","aliases":["g"]}' >"$catalog/commands/go/manifest.json"
+print -r -- '{"name":"forward","description":"Go","aliases":["g"]}' >"$catalog/commands/go/manifest.json"
 print -r -- '{"description":"Back"}' >"$catalog/commands/back/manifest.json"
 print -r -- '{"on":"session_start"}' >"$catalog/hooks/start/manifest.json"
 print -r -- '{"on":"stop"}' >"$catalog/hooks/stop/manifest.json"
@@ -566,7 +566,8 @@ sf_profile_components "$profile"
 jq -e --arg root "$catalog" '
   keys == ["commands","hooks","tools"] and
   (.tools | map(.name)) == ["beta","alpha"] and
-  (.commands | map(.name)) == ["back","go"] and
+  (.commands | map(.name)) == ["back","forward"] and
+  .commands[1].command == $root + "/commands/go/run" and
   (.hooks | map(.name)) == ["stop","start"] and
   .tools[0].command == $root + "/tools/beta/run" and
   .tools[0].manifest == {description:"literal \"text\"\nnext",
@@ -586,6 +587,10 @@ for kind name in tools alpha commands go hooks start; do
     fail "malformed $kind manifest lost its file or diagnostic"
   print -r -- "$saved" >"$manifest"
 done
+print -r -- '{"name":"g","description":"Back"}' >"$catalog/commands/back/manifest.json"
+sf_profile_components "$profile" && fail 'command name collided with an alias'
+[[ $SF_ERROR == *'duplicate command name: /g'* ]]
+print -r -- '{"description":"Back"}' >"$catalog/commands/back/manifest.json"
 chmod -x "$catalog/commands/go/run"
 sf_profile_components "$profile" && fail 'catalog accepted a nonexecutable command'
 [[ $SF_ERROR == "invalid commands reference: $catalog/commands/go" ]]

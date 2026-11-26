@@ -73,20 +73,18 @@ def tool_plan($profile; $tools; $call; $turn; $max_capture; $section):
 def tool_refusal($reason; $exit_code):
   {output:{stdout:$reason,stderr:$reason,exit_code:$exit_code},ran:false};
 
-# Model text is stdout, which leads any content parts as model content. A
-# sandbox request that was never answered keeps no badge unless the tool ran,
-# which implies approval.
+# Stdout leads any other model content. An unanswered sandbox request keeps
+# no badge unless the tool ran, which implies approval.
 def tool_result($component; $outcome):
   ($component.draft | del(.user_text)) + {type:"tool_result",input:$component.input,
     exit_code:$outcome.output.exit_code,
-    user_text:render_template($component.template; $component + $outcome)} +
-  (if ($outcome.content // []) == [] then {model_text:$outcome.output.stdout}
-   else {model_content:([$outcome.output.stdout | select(. != "") |
-     {type:"text",text:.}] + $outcome.content)} end) |
+    user_text:render_template($component.template; $component + $outcome),
+    model_content:([$outcome.output.stdout | select(. != "") | text_part] +
+      ($outcome.content // []))} |
   if .sandbox_access != "requested" then .
   elif $outcome.ran then .sandbox_access = "approved"
   else del(.sandbox_access) end |
-  with_entries(select(.value != "")) |
+  with_entries(select(.value != "" and .value != [])) |
   if canonical_tool_result then . else error("invalid tool result") end;
 
 # Results for every pending call. The call that was running when the turn

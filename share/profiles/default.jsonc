@@ -35,6 +35,7 @@
     "compact_tools",
     "copy",
     "user_shell",
+    "user_skill",
     "sandbox"
   ],
 
@@ -43,12 +44,9 @@
     // Session start context.
     "project/environment",
     "git/environment",
+    "project/instructions",
     "skills/list",
     "sandbox/grants",
-    "project/instructions",
-
-    // User prompt extensions.
-    "skills/mention",
 
     // Automatic functionality.
     "autocompact",

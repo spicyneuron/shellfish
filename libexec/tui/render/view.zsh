@@ -91,7 +91,8 @@ sf_tui_transcript() {
       SF_TUI_SAFE_TEXT+=$'\n'
       safe_offset=$(( safe_offset + 1 ))
     }
-    sf_tui_shift_spans SF_TUI_SAFE_HIGHLIGHTS $safe_offset "$spans"
+    sf_tui_shift_spans $safe_offset "$spans"
+    SF_TUI_SAFE_HIGHLIGHTS+=( "${(@)reply}" )
     SF_TUI_SAFE_TEXT+=$text
     safe_offset=$(( safe_offset + ${#text} ))
   done
@@ -116,21 +117,22 @@ sf_tui_transcript() {
       SF_TUI_VIEWPORT_TEXT+=$'\n'
       offset=$(( offset + 1 ))
     }
-    sf_tui_shift_spans SF_TUI_VIEWPORT_HIGHLIGHTS $offset "$spans"
+    sf_tui_shift_spans $offset "$spans"
+    SF_TUI_VIEWPORT_HIGHLIGHTS+=( "${(@)reply}" )
     SF_TUI_VIEWPORT_TEXT+=$text
     offset=$(( offset + ${#text} ))
   done
 }
 
+# Sets reply to SPANS moved BASE characters right.
 sf_tui_shift_spans() {
-  local name=$1
-  integer base=$2 index
-  local -a parts=( ${=3} ) shifted=()
+  integer base=$1 index
+  local -a parts=( ${=2} )
+  reply=()
   for (( index = 1; index <= ${#parts}; index += 3 )); do
-    shifted+=(
+    reply+=(
       $(( base + parts[index] )) $(( base + parts[index + 1] )) "$parts[index + 2]" )
   done
-  set -A "$name" "${(@P)name}" "${(@)shifted}"
 }
 
 sf_tui_chat_start() {
@@ -234,7 +236,7 @@ sf_tui_update_highlights() {
     view)
       spans=( "${(@)SF_TUI_VIEWPORT_HIGHLIGHTS}" "${(@)SF_TUI_CHROME_HIGHLIGHTS}" )
       ;;
-    pending) spans=( "${(@)SF_TUI_PENDING_HIGHLIGHTS}" ) ;;
+    safe) spans=( "${(@)SF_TUI_SAFE_HIGHLIGHTS}" ) ;;
     *) return 1 ;;
   esac
   region_highlight=()
@@ -295,7 +297,7 @@ sf_tui_repaint() {
   local -a reply drawers=() items=()
   local -A labels
   integer remaining
-  if [[ $SF_TUI_STATE == idle && ${SF_TUI_ACTION-} != submit ]]; then
+  if [[ $SF_TUI_STATE == idle ]]; then
     prompt_style=prompt_waiting
   fi
   SF_TUI_CHROME_HIGHLIGHTS=()

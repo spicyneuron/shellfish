@@ -184,7 +184,7 @@ for tool in edit_file write_file; do
   SF_TEST_PROVIDER_TOOL_BYPASS=false \
     sf_test_run "${tool%_file}" "$tmp/$tool.jsonl" >"$tmp/$tool.stream"
   jq -eRn '[inputs | fromjson | select(.type == "tool_result")] |
-    length == 1 and .[0].exit_code == 0 and (.[0].model_text | startswith("@@"))' \
+    length == 1 and .[0].exit_code == 0 and (.[0].model_content[0].text | startswith("@@"))' \
     <"$tmp/$tool.stream" >/dev/null || fail "copied sandboxed $tool failed"
 done
 

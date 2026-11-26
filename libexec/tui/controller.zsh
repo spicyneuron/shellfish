@@ -18,18 +18,16 @@ typeset -gi SF_TUI_EXIT_STATUS=0
 typeset -gi SF_TUI_ERROR_SETTLED=0
 typeset -gi SF_TUI_CREATING=0 SF_TUI_STEER=0
 typeset -g SF_TUI_TTY=''
-# Client command names and aliases, also completed. /queue runs in sf_tui_submit.
-typeset -grA SF_TUI_CLIENT_COMMANDS=(
-  /quit /quit /q /quit /refresh /refresh /r /refresh /queue /queue
-  /verbose /verbose /v /verbose )
-typeset -ga SF_TUI_COMMANDS=( ${(ovu)SF_TUI_CLIENT_COMMANDS} )
+# Canonical names are completed. Each can have a short alias.
+typeset -grA SF_TUI_CLIENT_ALIASES=( /quit /q /refresh /r /queue '' /verbose /v )
+typeset -ga SF_TUI_COMMANDS=( ${(ok)SF_TUI_CLIENT_ALIASES} )
 
 # Arguments are the session header's stored command paths.
 sf_tui_commands() {
   local reference profile names
   local -a directories=()
   SF_TUI_COMPLETIONS=()
-  SF_TUI_COMMANDS=( ${(ovu)SF_TUI_CLIENT_COMMANDS} )
+  SF_TUI_COMMANDS=( ${(ok)SF_TUI_CLIENT_ALIASES} )
   for reference in "$@"; do
     sf_cli_path "$reference" || return 0
     directories+=( "$REPLY" )
@@ -69,8 +67,17 @@ sf_tui_discard_queue() {
   REPLY+='. Use ↑↓ keys to recover.'
 }
 
+sf_tui_command_name() {
+  local name=$1
+  REPLY=$name
+  [[ -z $name ]] || REPLY=${${(k)SF_TUI_CLIENT_ALIASES[(Re)$name]}:-$name}
+}
+
+# Only commands that exit the editor can be run from the queue.
 sf_tui_client_command() {
-  case ${SF_TUI_CLIENT_COMMANDS[$1]-} in
+  local REPLY
+  sf_tui_command_name "$1"
+  case $REPLY in
     /quit)
       SF_TUI_ACTION=quit
       ;;
@@ -85,26 +92,49 @@ sf_tui_client_command() {
 
 sf_tui_submit() {
   local submitted=$1
+  local name=${submitted%%[[:space:]]*} args target
   integer queue_index
+  args=${submitted#$name}
+  sf_tui_command_name "$name"
+  name=$REPLY
   REPLY=ignore
-  if [[ $submitted == (/verbose|/v) ]]; then
-    sf_tui_verbose
-    REPLY=repaint
-    return 0
-  fi
-  if [[ $submitted =~ '^/queue[[:space:]]+clear[[:space:]]*$' ]]; then
-    SF_TUI_QUEUE=()
-    REPLY=repaint
-    return
-  fi
-  if [[ $submitted =~ '^/queue[[:space:]]+drop[[:space:]]+([0-9]+)[[:space:]]*$' ]]; then
-    queue_index=$match[1]
-    (( queue_index >= 1 && queue_index <= ${#SF_TUI_QUEUE} )) || return 0
-    SF_TUI_QUEUE[queue_index]=()
-    REPLY=repaint
-    return
-  fi
-  [[ $submitted != /queue([[:space:]]|$)* ]] || return 0
+  case $name in
+    /verbose)
+      if [[ $args =~ '^[[:space:]]*([1-9][0-9]{0,8})?[[:space:]]*$' ]]; then
+        target=$match[1]
+        if sf_tui_verbose "$target"; then
+          REPLY=repaint
+        else
+          target=${target:+section $target}
+          reply=( "Cannot view ${target:-expanded output}." )
+          REPLY=notice
+        fi
+      else
+        reply=( 'Usage: /verbose [N]' )
+        REPLY=notice
+      fi
+      return 0
+      ;;
+    /queue)
+      if [[ $args =~ '^[[:space:]]+clear[[:space:]]*$' ]]; then
+        SF_TUI_QUEUE=()
+      elif [[ $args =~ '^[[:space:]]+drop[[:space:]]+([0-9]+)[[:space:]]*$' ]]; then
+        queue_index=$match[1]
+        (( queue_index >= 1 && queue_index <= ${#SF_TUI_QUEUE} )) || return 0
+        SF_TUI_QUEUE[queue_index]=()
+      else
+        reply=(
+          'Prompts entered during a turn wait in the queue.'
+          '/queue drop N  Discard queued prompt N.'
+          '/queue clear   Discard all queued prompts.'
+          'Ctrl-X         Send the draft or first queued prompt now.' )
+        REPLY=notice
+        return 0
+      fi
+      REPLY=repaint
+      return 0
+      ;;
+  esac
   if [[ $SF_TUI_STATE == (working|queued) ]]; then
     [[ -n $submitted ]] || return 0
     SF_TUI_QUEUE+=( "$submitted" )
@@ -419,7 +449,7 @@ sf_tui_permission_close() {
 
 # Replay an existing session through the same projector as a live turn.
 sf_tui_load() {
-  local session=$1 line
+  local session=$1 section=${2-} line selected
   local -a loaded=()
   integer endings=0
   [[ -f $session && ! -L $session && -r $session && -s $session ]] || {
@@ -431,7 +461,13 @@ sf_tui_load() {
     SF_TUI_ERROR="cannot read incomplete session: $session"
     return 1
   }
-  while IFS= read -r line; do loaded+=( "$line" ); done <"$session"
+  if [[ -n $section ]]; then
+    selected=$(jq -ce --argjson section "$section" 'select(.section == $section)' \
+      -- "$session" 2>/dev/null) || return 1
+    loaded=( "${(@f)selected}" )
+  else
+    while IFS= read -r line; do loaded+=( "$line" ); done <"$session"
+  fi
   sf_tui_reset
   sf_tui_project load "${loaded[@]}" && sf_tui_drain_actions || {
     SF_TUI_ERROR="cannot present session: $session"
@@ -515,32 +551,18 @@ sf_tui_controller() {
     fi
   fi
 
-  while (( ! exit_status )); do
-    [[ $SF_TUI_ACTION == epoch ]] || SF_TUI_ACTION=''
-    {
-      stty intr undef 2>/dev/null || { exit_status=1; break; }
-      if vared -h -M sf-present -p "$PROMPT" input; then
-        editor_status=0
-      else
-        editor_status=$?
-      fi
-    } always { stty "$saved_tty" 2>/dev/null || true }
-    [[ $SF_TUI_ACTION == epoch ]] || input=''
-    case $SF_TUI_ACTION in
-      epoch) SF_TUI_ACTION='' ;;
-      submit)
-        SF_TUI_STATE=idle
-        sf_tui_turn "$SF_TUI_SUBMITTED" || exit_status=1
-        ;;
-      handoff|quit) break ;;
-      *)
-        editor_error="Chat editor exited unexpectedly (status $editor_status, state $SF_TUI_STATE)."
-        [[ -z $SF_TUI_ERROR ]] || editor_error="$SF_TUI_ERROR"$'\n'"$editor_error"
-        SF_TUI_ERROR=$editor_error
-        exit_status=1
-        ;;
-    esac
-  done
+  {
+    stty intr undef 2>/dev/null || return 1
+    vared -h -M sf-present -p "$PROMPT" input || editor_status=$?
+  } always { stty "$saved_tty" 2>/dev/null || true }
+  if [[ $SF_TUI_ACTION == failed ]]; then
+    exit_status=1
+  elif [[ $SF_TUI_ACTION != (handoff|quit) ]]; then
+    editor_error="Chat editor exited unexpectedly (status $editor_status, state $SF_TUI_STATE)."
+    [[ -z $SF_TUI_ERROR ]] || editor_error="$SF_TUI_ERROR"$'\n'"$editor_error"
+    SF_TUI_ERROR=$editor_error
+    exit_status=1
+  fi
   sf_tui_heartbeat_stop
   sf_tui_terminal_sync_end force
   [[ $SF_TUI_STATE == idle ]] || sf_tui_transport_stop

@@ -32,7 +32,7 @@ case $input in
   fail) print -r -u3 -- '{"state_update":[{"name":"prompt/failed","value":true}],"action":"deny"}'; print -rn -u2 -- 'hook broke'; exit 3 ;;
   deny) print -r -u3 -- '{"action":"deny"}' ;;
   reason) print -r -u3 -- '{"action":"deny","reason":"prompt refused"}' ;;
-  invalid) print -r -u3 -- '{"action":"allow"}' ;;
+  invalid) print -r -u3 -- '{"action":"approve"}' ;;
   state) print -r -u3 -- '{"state_update":[{"name":"prompt/state","value":2}]}' ;;
   interrupt) print -r -u3 -- '{"state_update":[{"name":"prompt/started","value":true}]}'
     : >"$INTERRUPT_MARKER"; sleep 30 ;;
@@ -44,8 +44,8 @@ for input in image image-only; do
   new_session "$input"; sf_test_run "$input" "$session" >"$stream" || fail 'hook image failed'
   assert_canonical_session "$session"
   jq -es '.[1].model_content[-1] ==
-    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="} and
-    (.[1] | has("model_text") | not)' "$session" >/dev/null || fail 'hook image was not durable'
+    {type:"image",url:"data:image/png;base64,iVBORw0KGgo="}' "$session" >/dev/null ||
+    fail 'hook image was not durable'
   jq -L "$ROOT" -es 'include "lib/session";
     .[1:] | session_messages | .[0].content |
     any(.[]; .type == "image" and .url == "data:image/png;base64,iVBORw0KGgo=")
@@ -75,7 +75,7 @@ jq -e -s 'map(.type) == ["session","hook_result"] and
 new_session handoff; sf_test_run handoff "$session" >"$stream" || fail 'handoff failed'
 jq -eRn '[inputs | fromjson] as $e | $e[-1] == {type:"_handoff",argv:["/usr/bin/printf","next.jsonl"]} and
   any($e[]; .type == "state_update" and .name == "prompt/handoff" and .value == true) and
-  $e[-2].model_text == "<context script=\"prompt\">\nhandoff context\n</context>" and ([ $e[] | select(.type == "user") ] | length) == 0' \
+  $e[-2].model_content[0].text == "<context script=\"prompt\">\nhandoff context\n</context>" and ([ $e[] | select(.type == "user") ] | length) == 0' \
   <"$stream" >/dev/null || fail 'last action or handoff durability failed'
 new_session update; sf_test_run update "$session" >"$stream" || fail 'session update failed'
 jq -e -s 'map(.type) == ["session","hook_result"] and .[0].profile.sandbox.tools.shell.filesystem.allowWrite == ["/tmp/reference"]' "$session" >/dev/null &&
@@ -84,7 +84,7 @@ new_session bad-update; sf_test_run bad-update "$session" >"$stream" 2>"$tmp/upd
 jq -eRn '[inputs | fromjson] | all(.type != "_session_update")' <"$stream" >/dev/null ||
   fail 'invalid update notified the client'
 assert_equal 'invalid session update' "$(<"$tmp/update.err")"
-jq -e -s '.[-2].model_text == "<context script=\"prompt\">\nupdate context\n</context>" and
+jq -e -s '.[-2].model_content[0].text == "<context script=\"prompt\">\nupdate context\n</context>" and
   .[-1] == {type:"error",user_text:"invalid session update"}' "$session" >/dev/null ||
   fail 'invalid update lost settled result'
 new_session fail; sf_test_run fail "$session" >"$stream" 2>"$tmp/fail.err" && fail 'nonzero hook succeeded'
@@ -142,8 +142,8 @@ sf_test_bind_hooks stop "$stop"
 new_session stop; sf_test_run stop "$session" >"$stream" || fail 'stop continuation failed'
 assert_equal 'answer 2' "$(<$stop_input)" 'stop input was not final assistant text'
 assert_equal 2 "$(<$count)" 'stop did not continue provider'
-jq -e -s 'map(select(.type == "hook_result") | {model_text,action,reason}) ==
-  [{model_text:"<context script=\"stop\">\nchecking again\n</context>",action:"deny",reason:"not finished"}]' "$session" \
+jq -e -s 'map(select(.type == "hook_result") | {section,model_content,action,reason}) ==
+  [{section:2,model_content:[{type:"text",text:"<context script=\"stop\">\nchecking again\n</context>"}],action:"deny",reason:"not finished"}]' "$session" \
   >/dev/null || fail 'stop feedback did not settle'
 rm -f "$count"
 new_session stop-image
@@ -153,14 +153,14 @@ assert_canonical_session "$session"
 new_session limit
 SHELLFISH_MAX_REQUESTS_PER_TURN=1 sf_test_run stop "$session" >"$stream" 2>"$tmp/limit.err" &&
   fail 'request limit succeeded'
-jq -e -s '.[-2].model_text == "<context script=\"stop\">\nchecking again\n</context>" and
+jq -e -s '.[-2].model_content[0].text == "<context script=\"stop\">\nchecking again\n</context>" and
   .[-1] == {type:"error",section:2,user_text:"provider request limit reached: 1"}' "$session" >/dev/null ||
   fail 'request limit lost feedback'
 : >"$STOP_SILENT"
 rm -f "$count"
 new_session no-feedback; sf_test_run stop "$session" >"$stream" 2>"$tmp/feedback.err" && fail 'missing feedback succeeded'
 assert_equal 1 "$(<$count)" 'stop without feedback requested again'
-jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_text") | not) and
+jq -e -s '.[-2].user_text == "checking again" and (.[-2] | has("model_content") | not) and
   .[-1] == {type:"error",section:2,user_text:"stop hook denied without model feedback"}' "$session" \
   >/dev/null || fail 'missing stop feedback was accepted'
 # Ordered hooks see original input and preceding results. An action stops the list.
@@ -233,12 +233,32 @@ jq -e '.[0] == {name:"go",aliases:["g"],arguments:"[TO]",description:"Go"}' \
 ZSH
 SF_TEST_PROFILE=$(jq -c --arg go "$tmp/commands/go" '.commands=[$go]' <<<"$SF_TEST_PROFILE")
 new_session command; sf_test_run '/g  away' "$session" >"$stream" || fail 'command failed'
-jq -eRn '[inputs | fromjson][-1] == {type:"_handoff",argv:["next"]}' <"$stream" >/dev/null &&
+jq -eRn '[inputs | fromjson] as $events |
+  $events[-1] == {type:"_handoff",argv:["next"]} and
+  [$events[] | select(.type == "_draft")] ==
+    [{type:"_draft",lifecycle:"user_prompt_submit",id:"1",user_text:"away"}]' <"$stream" >/dev/null &&
   jq -e -s 'map(.type) == ["session","hook_result"] and .[1].user_text == "away" and
     (.[1] | has("action") | not)' "$session" >/dev/null || fail 'command handoff or input was wrong'
 new_session command-deny; sf_test_run /go "$session" >"$stream" || fail 'bare command failed'
 jq -e -s 'map(.type) == ["session","hook_result"] and .[1].action == "deny"' \
   "$session" >/dev/null || fail 'command prompt was submitted'
+new_session command-lines; sf_test_run $'/go\tup\ndown' "$session" >"$stream" ||
+  fail 'multiline command failed'
+jq -e -s '.[1].user_text == "up\ndown"' "$session" >/dev/null ||
+  fail 'whitespace after a command name did not start its arguments'
+# A command without declared arguments is not run when given some.
+sf_test_hook "$tmp/commands/stay" '{"description":"Stay","user_text":"${input}"}' <<'ZSH'
+#!/usr/bin/env zsh
+: >"${0:h}/ran"
+ZSH
+SF_TEST_PROFILE=$(jq -c --arg stay "$tmp/commands/stay" '.commands+=[$stay]' <<<"$SF_TEST_PROFILE")
+new_session command-usage; sf_test_run '/stay here' "$session" >"$stream" ||
+  fail 'command usage failed the turn'
+assert_canonical_session "$session"
+[[ ! -e $tmp/commands/stay/ran ]] || fail 'command ran with undeclared arguments'
+jq -e -s 'map(.type) == ["session","hook_result"] and .[1].user_text == "usage: /stay" and
+  .[1].action == "deny"' "$session" >/dev/null || fail 'command usage was not shown'
+SF_TEST_PROFILE=$(jq -c '.commands |= .[:1]' <<<"$SF_TEST_PROFILE")
 cp -R "$tmp/commands/go" "$tmp/commands/g"
 SF_TEST_PROFILE=$(jq -c --arg g "$tmp/commands/g" '.commands+=[$g]' <<<"$SF_TEST_PROFILE")
 new_session command-duplicate

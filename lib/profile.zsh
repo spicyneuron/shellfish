@@ -5,6 +5,7 @@ setopt no_aliases no_multios pipe_fail
 (( $+functions[sf_jsonc_read] )) || source "$SF_ROOT/lib/jsonc.zsh"
 (( $+functions[sf_cli_diagnostic] )) || source "$SF_ROOT/lib/cli.zsh"
 (( $+functions[sf_environment_dir] )) || source "$SF_ROOT/lib/environment.zsh"
+(( $+functions[sf_scratch] )) || source "$SF_ROOT/lib/scratch.zsh"
 
 sf_profile_validation_error() {
   local output=$1 fallback=$2
@@ -175,7 +176,7 @@ sf_profile_components() {
           else select(hook_manifest and has("on")) //
             error("hook manifest must be valid and declare \"on\": " + $directory) end
         ) as $manifest |
-        {name:($directory | split("/") | last), command:($directory + "/run"),
+        {name:($manifest.name // ($directory | split("/") | last)), command:($directory + "/run"),
          manifest:$manifest}]) |
     ([.commands[] | .name, .manifest.aliases[]?] |
       group_by(.) | map(select(length > 1))[0][0]) as $name |
@@ -194,6 +195,7 @@ sf_profile_components() {
 sf_profile_resolve() {
   local name=${1:-default} extra=${2:-'{}'}
   local config_dir file base='' profile config model reference kind resolved final
+  local scratch='' prompt_file
   local -a references resolutions=() system_files=()
   local -A decoded
 
@@ -244,9 +246,9 @@ sf_profile_resolve() {
       include "lib/profile";
       {profile:($profile | del(.model)), model:$model} |
       entry("config"; tojson),
-      entry("references"; [.profile | (.system[] | strings | ["system", .]),
-        (.tools[] | ["tools", .]), (.commands[] | ["commands", .]),
-        (.hooks[] | ["hooks", .])] | unique |
+      entry("references"; [.profile | (.tools[] | ["tools", .]),
+        (.commands[] | ["commands", .]), (.hooks[] | ["hooks", .]),
+        (.system[] | strings | ["system", .])] |
         map(join(" ")) | join("\n")),
       ("ok" | field)
   ' || {
@@ -257,44 +259,61 @@ sf_profile_resolve() {
   config=$decoded[config]
   references=( ${(f)decoded[references]} )
 
-  for reference in "${references[@]}"; do
-    kind=${reference%% *}
-    sf_profile_lookup "$config_dir" "$kind" "${reference#* }" ||
-      sf_fail "cannot resolve $kind reference: ${reference#* }" || return
-    resolved=$REPLY
-    case $kind in
-      system) [[ -f $resolved && -r $resolved ]] ;;
-      *) [[ -d $resolved && -x $resolved/run ]] ;;
-    esac || sf_fail "invalid $kind reference: ${reference#* }" || return
-    [[ $kind != system ]] || system_files+=( --rawfile "$reference" "$resolved" )
-    resolutions+=( "$reference" "$resolved" )
-  done
+  {
+    for reference in "${references[@]}"; do
+      kind=${reference%% *}
+      sf_profile_lookup "$config_dir" "$kind" "${reference#* }" ||
+        sf_fail "cannot resolve $kind reference: ${reference#* }" || return
+      resolved=$REPLY
+      case $kind in
+        system) [[ -f $resolved && -r $resolved ]] ;;
+        *) [[ -d $resolved && -x $resolved/run ]] ;;
+      esac || sf_fail "invalid $kind reference: ${reference#* }" || return
+      if [[ $kind == system ]]; then
+        prompt_file=$resolved
+        if [[ -x $resolved ]]; then
+          if [[ -z $scratch ]]; then
+            sf_scratch -d system || sf_fail 'cannot prepare system prompt output' || return
+            scratch=$REPLY
+          fi
+          prompt_file=$scratch/${#system_files}
+          "$resolved" </dev/null >"$prompt_file" ||
+            sf_fail "system prompt failed with status $?: $resolved" || return
+        fi
+        system_files+=( --rawfile "$reference" "$prompt_file" )
+      else
+        resolutions+=( "$reference" "$resolved" )
+      fi
+    done
 
-  # System files are frozen as one text.
-  final=$(sf_jq -nce --argjson config "$config" \
-    --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" "${system_files[@]}" '
-      include "lib/profile";
-      ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at], value:.[$at + 1]}] |
-        from_entries) as $paths |
-      $config |
-      .profile.system |= ([.[] | if type == "string" then
-          $ARGS.named["system " + .] as $text |
-          if $text | index("\u0000") then error("system file contains NUL bytes: " + .)
-          else $text end
-        else .text end | sub("\n+$"; "") | select(. != "")] | join("\n\n") |
-        if . == "" then [] else [{text:.}] end) |
-      .profile.tools |= map($paths["tools " + .]) |
-      .profile.commands |= map($paths["commands " + .]) |
-      .profile.hooks |= map($paths["hooks " + .]) |
-      ((.profile.sandbox.tools | keys) - [.profile.tools[] | split("/") | last]) as $unknown |
-      if $unknown != [] then error("sandbox grants name an unselected tool: " + $unknown[0])
-      else . end |
-      header_expand($share; $home) |
-      if (.profile | canonical_profile) and (.model | canonical_model) then .
-      else error("invalid resolved profile") end
-    ' --args "${resolutions[@]}" 2>&1) || {
-    sf_profile_validation_error "$final" 'cannot resolve profile'
-    return
+    # System sources are frozen as one text.
+    final=$(sf_jq -nce --argjson config "$config" \
+      --arg share "$SF_SHARE" --arg home "${HOME:+${HOME:A}}" "${system_files[@]}" '
+        include "lib/profile";
+        ($ARGS.positional | [range(0; length; 2) as $at | {key:.[$at], value:.[$at + 1]}] |
+          from_entries) as $paths |
+        $config |
+        .profile.system |= ([.[] | if type == "string" then
+            $ARGS.named["system " + .] as $text |
+            if $text | index("\u0000") then error("system source produced NUL bytes: " + .)
+            else $text end
+          else .text end | sub("\n+$"; "") | select(. != "")] | join("\n\n") |
+          if . == "" then [] else [{text:.}] end) |
+        .profile.tools |= map($paths["tools " + .]) |
+        .profile.commands |= map($paths["commands " + .]) |
+        .profile.hooks |= map($paths["hooks " + .]) |
+        ((.profile.sandbox.tools | keys) - [.profile.tools[] | split("/") | last]) as $unknown |
+        if $unknown != [] then error("sandbox grants name an unselected tool: " + $unknown[0])
+        else . end |
+        header_expand($share; $home) |
+        if (.profile | canonical_profile) and (.model | canonical_model) then .
+        else error("invalid resolved profile") end
+      ' --args "${resolutions[@]}" 2>&1) || {
+      sf_profile_validation_error "$final" 'cannot resolve profile'
+      return
+    }
+  } always {
+    [[ -z $scratch ]] || rm -rf -- "$scratch"
   }
   REPLY=$final
 }

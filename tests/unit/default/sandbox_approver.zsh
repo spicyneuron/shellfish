@@ -33,15 +33,15 @@ SF_TEST_PROFILE=$(jq -c --arg hook "$hook" '
   .hooks=[$hook] | .system=[{text:"fixed system"}]
 ' <<<"$SF_TEST_PROFILE")
 sf_test_session "$session"
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"<context script=\"project/instructions\">\nstartup constraint\n</context>"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"session_start","id":"1","model_content":[{"type":"text","text":"<context script=\"project/instructions\">\nstartup constraint\n</context>"}]}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"opening request"}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"opening answer"}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_text":"retry constraint","action":"deny","reason":"Check the constraint."}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"stop","id":"2","model_content":[{"type":"text","text":"retry constraint"}],"action":"deny","reason":"Check the constraint."}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"revised answer"}]}'
 sf_session_append "$session" '{"type":"user","content":[{"type":"text","text":"run the local setup"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"text","text":"I will inspect it."},{"type":"tool_call","id":"call_6","name":"shell","input":{"command":"inspect"}}],"usage":{"input_tokens":100,"output_tokens":20}}'
 sf_session_append "$session" '{"type":"tool_result","id":"call_6","name":"shell","input":{"command":"inspect"},"exit_code":0,"user_text":"display only","user_preview_lines":2,"model_content":[{"type":"text","text":"inspection"},{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
-sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"3","model_text":"inspection constraint","user_text":"display only"}'
+sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"3","model_content":[{"type":"text","text":"inspection constraint"}],"user_text":"display only"}'
 sf_session_append "$session" '{"type":"state_update","name":"inspection","value":"hidden state"}'
 sf_session_append "$session" '{"type":"hook_result","lifecycle":"post_tool_use","id":"4","user_text":"display only"}'
 sf_session_append "$session" '{"type":"assistant","stop":"tool_calls","content":[{"type":"reasoning","text":"private","opaque":{"secret":"value"}},{"type":"text","text":"I will run it."},{"type":"tool_call","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}}}]}'
@@ -68,7 +68,7 @@ run_review valid
 (( hook_status == 0 )) || fail 'permission review did not resolve the request'
 jq -e . "$control" >/dev/null || { cat "$control" >&2; fail 'permission review returned invalid control'; }
 jq -e '
-  .action == "allow" and .reason == "Explicitly authorized." and
+  .action == "approve" and .reason == "Explicitly authorized." and
   .state_update[0].name == "permissions/6/call_7" and
   .state_update[0].value.reason == "Explicitly authorized." and
   (.state_update[0].value.content | fromjson) ==
@@ -99,7 +99,7 @@ jq -e -s --argjson request "$request" \
   $context.system_message == "fixed system" and
   $context.startup_context == [
     {type:"hook_result",lifecycle:"session_start",id:"1",
-      model_text:"<context script=\"project/instructions\">\nstartup constraint\n</context>"},
+      model_content:[{type:"text",text:"<context script=\"project/instructions\">\nstartup constraint\n</context>"}]},
     {type:"user",content:[{type:"text",text:"opening request"}]}
   ] and
   $context.target_tool_call == {type:"tool_call",id:"call_7",name:"shell",
@@ -114,7 +114,7 @@ jq -e -s --argjson request "$request" \
     input:{command:"inspect"},exit_code:0,model_content:[
       {type:"text",text:"inspection"},{type:"text",text:"[image omitted]"}]} and
   $context.recent_timeline[2] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
-    model_text:"inspection constraint"} and
+    model_content:[{type:"text",text:"inspection constraint"}]} and
   $context.recent_timeline[3].content == [
     {type:"text",text:"I will run it."},{type:"tool_call",id:"call_7",name:"shell",
       input:{command:"setup",request_sandbox_access:{unrestricted:true,reason:"needed"}}}] and
@@ -151,7 +151,7 @@ for batch in settled interrupted; do
       .,
       (if $batch == "settled" then
         {type:"tool_result",id:"call_6b",name:"shell",input:{command:"inspect more"},
-          exit_code:0,model_text:"second inspection"}
+          exit_code:0,model_content:[{type:"text",text:"second inspection"}]}
       else
         {type:"error",user_text:"Inspection interrupted."},
         {type:"user",content:[{type:"text",text:"continue setup"}]}
@@ -167,9 +167,9 @@ for batch in settled interrupted; do
         {type:"tool_call",id:"call_6b",name:"shell",input:{command:"inspect more"}} and
       $timeline[1].id == "call_6" and
       $timeline[2] == {type:"hook_result",lifecycle:"post_tool_use",id:"3",
-        model_text:"inspection constraint"} and
+        model_content:[{type:"text",text:"inspection constraint"}]} and
       $timeline[3] == {type:"tool_result",id:"call_6b",name:"shell",
-        input:{command:"inspect more"},exit_code:0,model_text:"second inspection"} and
+        input:{command:"inspect more"},exit_code:0,model_content:[{type:"text",text:"second inspection"}]} and
       all($timeline[]; .type != "user")
     else
       $context.latest_user_message == {type:"user",content:[{type:"text",text:"continue setup"}]} and
@@ -187,7 +187,7 @@ jq -c '
     {type:"assistant",stop:"tool_calls",content:[
       {type:"tool_call",id:$id,name:"shell",input:{command:"step"}}]},
     {type:"tool_result",id:$id,name:"shell",input:{command:"step"},exit_code:0,
-      model_text:("x" * 3000)}
+      model_content:[{type:"text",text:("x" * 3000)}]}
   else empty end
 ' "$parent_session" >"$session"
 assert_canonical_session "$session"
@@ -197,7 +197,7 @@ jq -es '
   (.[1].content[0].text | fromjson) as $actual |
   [$actual.recent_timeline[] | select(.type == "tool_result")] as $results |
   ([range(1; 41) | "s\(.)"] + ["call_6"]) as $all |
-  ($results | reverse | .[1:] | map(.model_text)) as $texts |
+  ($results | reverse | .[1:] | map(.model_content[0].text)) as $texts |
   ($results | map(.id)) == $all[($all | length) - ($results | length):] and
   ($results | length) < 41 and
   $texts[0] == "x" * 3000 and
@@ -211,7 +211,7 @@ jq -es '
 session="$tmp/startup-budget.jsonl"
 jq -c '
   if .type == "hook_result" and .lifecycle == "session_start" then
-    .model_text = ("é" * 64000)
+    .model_content[0].text = ("é" * 64000)
   else . end
 ' "$parent_session" >"$session"
 run_review valid
@@ -223,13 +223,13 @@ jq -c 'if .type == "session" then .profile.config.sandbox.approver.max_input_kb=
   "$tmp/startup-budget.jsonl" >"$tmp/large-budget.jsonl"
 session="$tmp/large-budget.jsonl"
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null || fail 'review ignored its input budget'
+jq -e '.action == "approve"' "$control" >/dev/null || fail 'review ignored its input budget'
 
 session="$tmp/default-review.jsonl"
 jq -c 'if .type == "session" then del(.model.config) else . end' \
   "$parent_session" >"$session"
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null
+jq -e '.action == "approve"' "$control" >/dev/null
 jq -e 'has("config") | not' "$sent" >/dev/null ||
   fail 'review injected provider configuration'
 session=$parent_session
@@ -239,7 +239,7 @@ session="$tmp/empty-review.jsonl"
 jq -c 'if .type == "session" then .profile.config.sandbox.approver={} else . end' \
   "$parent_session" >"$session"
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null
+jq -e '.action == "approve"' "$control" >/dev/null
 jq -e '.request.model == "test-model"' "$sent" >/dev/null
 
 # A named review model replaces the complete model without touching the parent.
@@ -261,7 +261,7 @@ jq -c 'if .type == "session" then .profile.config.sandbox.approver.model="review
   "$parent_session" >"$session"
 before=$(shasum <"$session")
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null
+jq -e '.action == "approve"' "$control" >/dev/null
 jq -e '.endpoint == "https://review.invalid/api" and .config == {http_timeout:60} and
   .request.model == "review-model" and .request.max_output_tokens == 4096 and
   .request.response_schema.additionalProperties == false and
@@ -271,14 +271,14 @@ jq -e '.endpoint == "https://review.invalid/api" and .config == {http_timeout:60
 assert_canonical_session "$captured"
 assert_equal "$before" "$(shasum <"$session")" 'configured review changed the parent session'
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null || fail 'repeated model resolution failed'
+jq -e '.action == "approve"' "$control" >/dev/null || fail 'repeated model resolution failed'
 
 # Reviews use a fixed input budget and read model files on every request.
 sed -e 's/12000/4097/' -e 's/review-model/updated-model/' \
   "$SHELLFISH_DIR/models/review/fast.v1.jsonc" >"$tmp/small-model.jsonc"
 mv "$tmp/small-model.jsonc" "$SHELLFISH_DIR/models/review/fast.v1.jsonc"
 run_review valid
-jq -e '.action == "allow"' "$control" >/dev/null || fail 'review used model-sized input budgeting'
+jq -e '.action == "approve"' "$control" >/dev/null || fail 'review used model-sized input budgeting'
 jq -e '.request.model == "updated-model"' "$sent" >/dev/null ||
   fail 'review did not reread its model file'
 
@@ -356,7 +356,7 @@ decision() {
 
 run_review "$(decision '[1,0,0]' '[0,1,0,0]' 0)"
 (( hook_status == 0 )) || fail 'decision review did not resolve'
-jq -e '.action == "allow" and
+jq -e '.action == "approve" and
   .state_update[0].value.reason ==
     "100% likely authorized." and
   (.state_update[0].value.content | fromjson | .model) == "d"
@@ -388,7 +388,7 @@ jq -e '.state_update[0].value.reason as $reason |
 jq -c 'if .type == "session" then .profile.config.sandbox.approver =
   {decision_model:"decider",allow_threshold:0.5} else . end' "$parent_session" >"$session"
 run_review "$(decision '[0.1,0.6,0.3]' '[0.1,0.2,0.5,0.2]' 0.1)"
-jq -e '.action == "allow"' "$control" >/dev/null ||
+jq -e '.action == "approve"' "$control" >/dev/null ||
   fail 'decision review ignored its allow threshold'
 jq -c 'if .type == "session" then .profile.config.sandbox.approver.decision_model="decider"
   else . end' "$parent_session" >"$session"
@@ -421,7 +421,7 @@ typeset stop_mode stop_session="$tmp/stop.jsonl"
 session=$stop_session
 jq -c 'select(.type != "hook_result" or .lifecycle != "permission_request")' \
   "$parent_session" >"$session"
-sf_session_append "$session" '{"type":"tool_result","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}},"exit_code":0,"model_text":"Setup succeeded."}'
+sf_session_append "$session" '{"type":"tool_result","id":"call_7","name":"shell","input":{"command":"setup","request_sandbox_access":{"unrestricted":true,"reason":"needed"}},"exit_code":0,"model_content":[{"type":"text","text":"Setup succeeded."}]}'
 sf_session_append "$session" '{"type":"assistant","stop":"end","content":[{"type":"text","text":"Finished the requested setup."}]}'
 assert_canonical_session "$session"
 stop_review() {
@@ -448,7 +448,7 @@ jq -es '
   $context.target_assistant_text == "Finished the requested setup.\n" and
   $context.startup_context[1].content[0].text == "opening request" and
   $context.latest_user_message.content[0].text == "run the local setup" and
-  $context.recent_timeline[-2].model_text == "Setup succeeded." and
+  $context.recent_timeline[-2].model_content[0].text == "Setup succeeded." and
   ($context | has("target_tool_call") | not)
 ' "$tmp/stop-review.jsonl" >/dev/null || fail 'stop review did not pin final text and user context'
 jq -e '.request.response_schema.properties.answers.required == ["fulfilled","reasonable","scope"] and
@@ -481,7 +481,7 @@ for stop_mode in first second; do
   jq -es '
     [ .[] | select(.type == "hook_result" and .action == "deny") ] |
     length == 2 and all(.[]; .reason == "Finish the requested tests." and
-      (.model_text | contains("Finish the requested tests.")))
+      (.model_content[0].text | contains("Finish the requested tests.")))
   ' "$tmp/stop-stream" >/dev/null || fail 'bundled stop review did not persist rejection feedback'
 done
 session=$stop_session

@@ -43,7 +43,9 @@ shellfish --system ./review.md -t shell_readonly                   # Add a promp
 
 ### Settings and session lifetime
 
-Editing a profile or its prompt files affects new sessions only.
+Shellfish reads ordinary prompt files as text. When creating a fresh session, it runs executable prompt files in order and uses their stdout as text. They run from the session directory with your permissions, without arguments or input. Only select executable prompt files you trust. A nonzero exit prevents session creation.
+
+The session header stores the combined text. Resuming or forking a session does not read the files or run them again. Editing a profile or its prompt files affects fresh sessions only.
 
 Keep credentials out of `config`. Settings live under a component's name, such as `config.read_file` or `config.sandbox.approver` for the `sandbox/approver` hook, or under a shared feature name such as `config.skills`. Components validate their own settings and supply omitted defaults. Strings that look like paths remain unchanged.
 
@@ -151,7 +153,6 @@ The bundled commands are selected by the profile:
 | Input | Action |
 | --- | --- |
 | `/help`, `/h` | Show the profile's commands and editor keys |
-| `/verbose`, `/v` | View the current session's expanded output in `$PAGER`, else `less -R`, then return to the same chat |
 | `/new` | Start a session with the active profile |
 | `/resume` | Choose another session for this directory |
 | `/fork [N]` | Branch before a user section or after an agent section |
@@ -159,10 +160,11 @@ The bundled commands are selected by the profile:
 | `/compact [INSTRUCTIONS]` | Summarize older conversation into a child session, optionally steering the summary |
 | `/compact_tools` | Clear older tool results into a child session without summarizing |
 | `/copy [N]` | Copy the latest or selected conversation section |
-| `/user_shell COMMAND`, `/shell` | Run a user-authored command and stage its output as context |
+| `/shell COMMAND` | Run a user-authored command and stage its output as context |
+| `/skill NAME` | Load a skill as context for the next prompt |
 | `/sandbox [TOOL [OP VALUE]]` | Inspect or update a tool's frozen sandbox policy |
 
-See [Chat controls](CONFIG.md#chat) for client-owned commands, editor keys, and queued prompts, and [Conversation sections](CONFIG.md#conversation-sections) for stable command targets. Bundled submission hooks compact automatically near a known context-window limit, report Git identity changes, and load skills before ordinary prompts.
+See [Chat controls](CONFIG.md#chat) for client-owned commands, editor keys, and queued prompts, and [Conversation sections](CONFIG.md#conversation-sections) for stable command targets. Bundled submission hooks compact automatically near a known context-window limit and report Git identity changes.
 
 Both compaction commands leave the source unchanged and open a child through the client. Startup context and the first user message are protected outside the recent-history allowance. They preserve recent turns' model-visible content in full, targeting 80 KiB of text and always keeping the latest turn. `/compact` summarizes the older conversation into the first user message, alongside the original user request preserved verbatim. Later compactions replace that summary rather than accumulating summaries. `/compact_tools` instead replaces older tool results, including images, with omission markers while preserving the conversation, tool calls, and exit status. Neither command creates a child when there is nothing to reduce. Automatic compaction preserves the interrupted prompt as an editable draft.
 
@@ -176,9 +178,9 @@ Skills come from these sources in precedence order:
 
 With `~/.shellfish`, the last source is `~/.agents/skills/`. A project's `.shellfish` uses that project's `.agents/skills/` instead. There is no bundled skill fallback.
 
-Set `"config": {"skills": ["skill-creator", "code-review"]}` to allow only those literal names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Missing names are ignored. The filter controls advertising, the `skill` tool, and explicit `$skill-name` requests, not filesystem permissions.
+Set `"config": {"skills": ["skill-creator", "code-review"]}` to allow only those literal names. Omit `config.skills` to allow every discovered skill, or use `[]` to allow none. Missing names are ignored. The filter controls advertising, the `skill` tool, and `/skill`, not filesystem permissions.
 
-With the `skills/mention` hook, `$skill-name` in an ordinary prompt loads matching allowed skills before inference, including user-only skills with `disable-model-invocation: true`. The submitted prompt stays unchanged. Unknown and excluded names are ignored.
+A skill with `disable-model-invocation: true` is user-only. It is never advertised to the model or loaded by the `skill` tool, and loads only through `/skill`.
 
 ## Optional bundled components
 
@@ -196,7 +198,7 @@ Both modes use the parent's profile and model unless a fresh start selects alter
 }}
 ```
 
-Without the choice lists, every subagent uses the parent's profile and model. Subagents cannot launch their own subagents. `max_active` is a positive integer, default `4`, limiting running subagents per parent. A subagent holds its slot only while its turn runs. Supplied settings freeze with the session.
+Without the choice lists, every subagent uses the parent's profile and model. Subagents cannot launch their own subagents. Commands are user actions, so subagents get none, and a task that looks like `/NAME` is an ordinary prompt. `max_active` is a positive integer, default `4`, limiting running subagents per parent. A subagent holds its slot only while its turn runs. Supplied settings freeze with the session.
 
 Background work returns control after launch. Inspection distinguishes running work from a stopped subagent without a final outcome. Continuing a stopped subagent recovers unfinished work. A subagent killed during its stop hooks can appear settled, and those hooks do not run again.
 

@@ -40,6 +40,17 @@ project live \
 assert_equal 'message_delta | 0 | text |  look. |
 message_delta | 1 | reasoning | weighing |
 message_end' "$REPLY"
+# A long response carries across batches without exceeding the argument limit.
+typeset long=${(l:140000::x:)}
+project live '{"type":"_assistant_start"}' \
+  "{\"type\":\"_assistant_message_delta\",\"text\":\"$long\"}"
+project live "{\"type\":\"assistant\",\"stop\":\"end\",\"content\":[{\"type\":\"text\",\"text\":\"$long tail\"}]}"
+assert_equal 'message_delta | 0 | text |  tail |
+message_end' "$REPLY"
+# A final block that does not match the live prefix must not emit a sliced tail.
+project live '{"type":"_assistant_start"}' '{"type":"_assistant_message_delta","text":"Yes."}'
+project live '{"type":"assistant","stop":"end","content":[{"type":"reasoning","text":"Compare both paths."},{"type":"text","text":"Yes."}]}'
+[[ $REPLY != *'are both paths.'* ]] || fail 'the projector drew a suffix from the wrong block'
 # Deltas join the way a cancelled response saves them, so it draws nothing more.
 project live '{"type":"_assistant_start"}' \
   '{"type":"_assistant_message_delta","text":"a"}' \
@@ -93,7 +104,7 @@ message_end' "$REPLY"
 # Tool calls update one execution and settle it with their own preview hints.
 project live \
   '{"type":"_draft","id":"call_1","name":"shell","user_text":"shell · make test","user_preview_lines":2}' \
-  '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"make test"},"exit_code":0,"user_text":"shell · make test\nok","model_text":"ok","user_preview_lines":"full"}'
+  '{"type":"tool_result","id":"call_1","name":"shell","input":{"command":"make test"},"exit_code":0,"user_text":"shell · make test\nok","model_content":[{"type":"text","text":"ok"}],"user_preview_lines":"full"}'
 assert_equal 'execution_update | call_1 | tool | shell · make test | 2 |
 execution_end | call_1 | tool | shell · make test
 ok | full |  |  |' "$REPLY"
@@ -134,8 +145,8 @@ execution_end | call_3 | tool | Skill code-principles | default |  |  |' "$REPLY
 project live \
   '{"type":"_draft","lifecycle":"pre_tool_use","id":"1","user_text":"guard · checking","user_preview_lines":1}' \
   '{"type":"hook_result","lifecycle":"pre_tool_use","id":"1","user_text":"guard · ok","user_preview_lines":"full"}' \
-  '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_text":"context"}' \
-  '{"type":"hook_result","lifecycle":"session_start","id":"3","model_text":"Git branch: main"}'
+  '{"type":"hook_result","lifecycle":"session_start","id":"2","user_text":"project · read","model_content":[{"type":"text","text":"context"}]}' \
+  '{"type":"hook_result","lifecycle":"session_start","id":"3","model_content":[{"type":"text","text":"Git branch: main"}]}'
 assert_equal 'execution_update | 1 | notice | guard · checking | 1 |
 execution_end | 1 | notice | guard · ok | full |
 execution_end | 2 | context | project · read | default | system
@@ -143,10 +154,10 @@ execution_end | 3 | context |  | default | system' "$REPLY"
 
 # Hook headings follow their lifecycle, live or on replay.
 project load \
-  '{"type":"hook_result","lifecycle":"session_start","id":"1","model_text":"start"}' \
-  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"2","model_text":"prompt"}' \
-  '{"type":"hook_result","lifecycle":"pre_tool_use","id":"3","model_text":"before"}' \
-  '{"type":"hook_result","lifecycle":"stop","id":"4","model_text":"later"}'
+  '{"type":"hook_result","lifecycle":"session_start","id":"1","model_content":[{"type":"text","text":"start"}]}' \
+  '{"type":"hook_result","lifecycle":"user_prompt_submit","id":"2","model_content":[{"type":"text","text":"prompt"}]}' \
+  '{"type":"hook_result","lifecycle":"pre_tool_use","id":"3","model_content":[{"type":"text","text":"before"}]}' \
+  '{"type":"hook_result","lifecycle":"stop","id":"4","model_content":[{"type":"text","text":"later"}]}'
 assert_equal 'execution_end | 1 | context |  | default | system
 execution_end | 2 | context |  | default |
 execution_end | 3 | context |  | default |
@@ -154,6 +165,9 @@ execution_end | 4 | context |  | default |' "$REPLY"
 project load \
   '{"type":"hook_result","lifecycle":"session_start","id":"5","user_text":"startup notice"}'
 assert_equal 'execution_end | 5 | notice | startup notice | default | system' "$REPLY"
+project load \
+  '{"type":"hook_result","lifecycle":"session_start","id":"6","user_text":"reference image","model_content":[{"type":"image","url":"data:image/png;base64,iVBORw0KGgo="}]}'
+assert_equal 'execution_end | 6 | context | reference image | default | system' "$REPLY"
 
 # A command denies the prompt it handles; that is not a failure.
 project load \

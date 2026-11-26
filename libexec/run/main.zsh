@@ -2,6 +2,7 @@
 
 emulate -R zsh
 setopt no_aliases no_bg_nice no_multios pipe_fail
+zmodload -F zsh/files b:zf_rm
 
 typeset -gr SF_ROOT=${0:A:h:h:h}
 typeset -gr SF_ENTRY="$SF_ROOT/bin/shellfish"
@@ -145,7 +146,7 @@ sf_run_main() {
     }
     if [[ -n ${SHELLFISH_BACKGROUND_WORKER-} && -n ${SHELLFISH_BACKGROUND_INPUT-} ]]; then
       input=$(<"$SHELLFISH_BACKGROUND_INPUT") || { sf_die 'cannot read background input'; return 1; }
-      rm -f -- "$SHELLFISH_BACKGROUND_INPUT"
+      zf_rm -f -- "$SHELLFISH_BACKGROUND_INPUT"
       unset SHELLFISH_BACKGROUND_INPUT
     else
       IFS= read -r input || [[ -n $input ]] || input=''
@@ -224,18 +225,18 @@ sf_run_main() {
     local input_file ack_dir ack_file
     input_file=$(mktemp "${TMPDIR:-/tmp}/shellfish-background-input.XXXXXX") || return 1
     ack_dir=$(mktemp -d "${TMPDIR:-/tmp}/shellfish-background-ack.XXXXXX") || {
-      rm -f -- "$input_file"
+      zf_rm -f -- "$input_file"
       return 1
     }
     ack_file="$ack_dir/ready"
     print -r -- "$input" >"$input_file" && mkfifo "$ack_file" || {
-      rm -f -- "$input_file" "$ack_file"
+      zf_rm -f -- "$input_file" "$ack_file"
       rmdir "$ack_dir"
       sf_die 'cannot prepare background turn'
       return 1
     }
     exec 4<>"$ack_file" || {
-      rm -f -- "$input_file" "$ack_file"
+      zf_rm -f -- "$input_file" "$ack_file"
       rmdir "$ack_dir"
       sf_die 'cannot prepare background acknowledgement'
       return 1
@@ -249,15 +250,15 @@ sf_run_main() {
     local acknowledgement=''
     if read -r -t 10 -u 4 acknowledgement && [[ $acknowledgement == ready ]]; then
       exec 4>&-
-      rm -f -- "$ack_file"
+      zf_rm -f -- "$ack_file"
       rmdir "$ack_dir"
       print -r -- "$session"
       return 0
     fi
     exec 4>&-
-    rm -f -- "$ack_file"
+    zf_rm -f -- "$ack_file"
     rmdir "$ack_dir"
-    kill -0 "$launch_pid" 2>/dev/null || rm -f -- "$input_file"
+    kill -0 "$launch_pid" 2>/dev/null || zf_rm -f -- "$input_file"
     if [[ $acknowledgement == lock_failed ]]; then
       sf_die "background worker could not acquire session lock: $session"
     else
