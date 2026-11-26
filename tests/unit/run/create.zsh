@@ -111,15 +111,56 @@ jq -se 'map(.type) == ["session"]' \
 zsystem flock -t 0 -f lock_fd "$failed.lock" || fail 'failed startup kept its lock'
 zsystem flock -u "$lock_fd"
 
-# Join system components in order.
-typeset joined="$tmp/joined.jsonl"
+# Join static and executable system sources in profile order, running each once.
+typeset joined="$tmp/joined.jsonl" forked actions="$tmp/prompt-fork.jsonl"
+export PROMPT_RUNS="$tmp/prompt-runs"
 printf 'first prompt\n\n\n' >"$system/first.md"
-printf 'second prompt\n' >"$system/second.md"
-sf_test_profile joined '{"system": ["first.md", "second.md"]}'
-zsh -f "$entry" run --session-create --session-out "$joined" -p joined >/dev/null ||
+cat >"$system/z-first" <<'SH'
+#!/bin/sh
+echo first >>"$PROMPT_RUNS"
+printf 'generated first\n\n'
+SH
+cat >"$system/a-second" <<'SH'
+#!/bin/sh
+[ "$(cat "$PROMPT_RUNS")" = first ] || exit 7
+echo second >>"$PROMPT_RUNS"
+printf 'generated second\n'
+SH
+chmod +x "$system/z-first" "$system/a-second"
+sf_test_profile joined '{"system": ["first.md", "z-first", "a-second", "z-first"]}'
+zsh -f "$entry" run --session-create --session-out "$joined" -p joined --command fork >/dev/null ||
   fail 'multi-component create failed'
-jq -se '.[0].profile.system == [{text:"first prompt\n\nsecond prompt"}]' \
-  "$joined" >/dev/null || fail 'create did not join the system components'
+typeset expected=$'first prompt\n\ngenerated first\n\ngenerated second'
+jq -e --arg text "$expected" '.profile.system == [{text:$text}]' "$joined" >/dev/null ||
+  fail 'create did not freeze the generated system text in order'
+forked=$joined
+for generation in 1 2; do
+  SF_TEST_PROVIDER_REQUEST="$tmp/prompt-request" sf_test_run hello "$forked" >/dev/null ||
+    fail 'resuming a session with a generated prompt failed'
+  jq -e --arg text "$expected" '.system == $text' "$tmp/prompt-request" >/dev/null ||
+    fail 'provider did not receive the frozen system text'
+  sf_test_run /fork "$forked" >"$actions" || fail 'could not fork the session'
+  forked=$(jq -er 'select(.type == "_handoff") | .argv[2]' "$actions") ||
+    fail 'fork did not return a session'
+done
+jq -se --arg text "$expected" '.[0].profile.system == [{text:$text}]' "$forked" >/dev/null ||
+  fail 'the second fork did not inherit the frozen system text'
+[[ $(<"$PROMPT_RUNS") == $'first\nsecond' ]] || fail 'resume or fork reran a prompt source'
+
+# Failure after writing stdout does not leave a partial session.
+typeset bad_prompt="$tmp/bad-prompt" bad_session="$tmp/bad-prompt.jsonl" bad_error="$tmp/bad-prompt.err"
+cat >"$bad_prompt" <<'SH'
+#!/bin/sh
+echo partial
+exit 9
+SH
+chmod +x "$bad_prompt"
+if zsh -f "$entry" run --session-create --session-out "$bad_session" \
+    --system "$bad_prompt" > /dev/null 2>"$bad_error"; then
+  fail 'a failing system prompt source created a session'
+fi
+[[ ! -e $bad_session && $(<"$bad_error") == *"status 9: $bad_prompt"* ]] ||
+  fail 'failing system prompt left a transcript or did not identify the source'
 
 # System options append after the profile's prompts, in order.
 typeset override="$tmp/override.jsonl" override_file="$tmp/override.md" derived

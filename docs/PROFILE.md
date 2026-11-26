@@ -43,7 +43,9 @@ shellfish --system ./review.md -t shell_readonly                   # Add a promp
 
 ### Settings and session lifetime
 
-Editing a profile or its prompt files affects new sessions only.
+Shellfish reads ordinary prompt files as text. When creating a fresh session, it runs executable prompt files in order and uses their stdout as text. They run from the session directory with your permissions, without arguments or input. Only select executable prompt files you trust. A nonzero exit prevents session creation.
+
+The session header stores the combined text. Resuming or forking a session does not read the files or run them again. Editing a profile or its prompt files affects fresh sessions only.
 
 Keep credentials out of `config`. Settings live under a component's name, such as `config.read_file` or `config.sandbox.approver` for the `sandbox/approver` hook, or under a shared feature name such as `config.skills`. Components validate their own settings and supply omitted defaults. Strings that look like paths remain unchanged.
 
