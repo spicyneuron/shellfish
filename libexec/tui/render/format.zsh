@@ -114,6 +114,12 @@ sf_tui_format_head() {
 sf_tui_format_fill() {
   local text=$1 character
   integer columns=$2 width=0
+  # Every execution rail glyph is one cell, like the ASCII after it.
+  if [[ ${text[2,-1]} != *[^[:ascii:]]* && $text != *$'\t'* ]]; then
+    REPLY=$text
+    (( ${#text} >= columns )) || REPLY=${(r:$columns:)text}
+    return
+  fi
   for character in ${(s::)text}; do
     if [[ $character == [[:ascii:]] && $character != $'\t' ]]; then
       (( ++width ))
@@ -229,12 +235,12 @@ sf_tui_format_status() {
 
 sf_tui_format_execution() {
   integer columns=$1 live=$(( ! $2 )) spinner=0 fold=0 diff=0
-  integer row limit total heading hidden=0 span background cursor start end pass lead
-  local body full head rest label badge='' suffix='' glyph preview text style kind=execution
+  integer row limit total heading hidden=0 cursor start stop pass lead
+  local body full head rest label badge='' suffix='' glyph preview text projected style kind=execution
   local base_style rail_style=${SF_TUI_STYLE[divider]-}
   local clamp=${SF_TUI_STYLE[clamp]-} badge_style='' glyph_style=''
   local strong=${SF_TUI_STYLE[syntax.strong]-}
-  local -a projected=() spans=()
+  local -a spans=()
 
   sf_tui_format_start
   sf_tui_format_trim "$SF_TUI_LIVE_TEXT"
@@ -331,12 +337,8 @@ sf_tui_format_execution() {
     elif (( ! live && ! hidden && row == limit )); then
       text="╰${text[2,-1]}"
     fi
-    projected=( ${=SF_TUI_WRAP_SPANS[row]} )
-    background=0
-    for (( span = 1; span <= ${#projected}; span += 3 )); do
-      [[ ${projected[span + 2]} != *bg=* ]] || background=1
-    done
-    if (( background )); then
+    projected=$SF_TUI_WRAP_SPANS[row]
+    if [[ $projected == *bg=* ]]; then
       sf_tui_format_fill "$text" $columns
       text=$REPLY
     fi
@@ -349,25 +351,23 @@ sf_tui_format_execution() {
       spans+=( 0 1 "$glyph_style" )
       cursor=1
     fi
-    for (( span = 1; span <= ${#projected}; span += 3 )); do
-      style=${projected[span + 2]}
-      start=${projected[span]}
-      end=${projected[span + 1]}
-      # The last background span on a diff row covers its padding.
-      if [[ $style == *bg=* ]] && (( span + 2 == ${#projected} )); then
-        end=${#text}
-      fi
+    for start stop style in ${=projected}; do
       (( start >= cursor )) || start=$cursor
-      (( end <= ${#text} )) || end=${#text}
-      (( start >= end )) && continue
+      (( stop <= ${#text} )) || stop=${#text}
+      (( start >= stop )) && continue
       if [[ -n $base_style ]] && (( cursor < start )); then
         spans+=( $cursor $start "$base_style" )
       fi
       # zsh keeps the first fg, so a span with its own color stands alone.
       [[ -z $base_style || $style == *fg=* ]] || style="$base_style,$style"
-      spans+=( $start $end "$style" )
-      cursor=$end
+      spans+=( $start $stop "$style" )
+      cursor=$stop
     done
+    # The last background span on a diff row covers its padding.
+    if [[ ${projected##* } == *bg=* && ${spans[-1]-} == *bg=* ]]; then
+      cursor=${#text}
+      spans[-2]=$cursor
+    fi
     if [[ -n $base_style ]] && (( cursor < ${#text} )); then
       spans+=( $cursor ${#text} "$base_style" )
     fi

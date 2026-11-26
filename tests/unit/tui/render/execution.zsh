@@ -230,6 +230,20 @@ done
 typeset removal='-keep old then' addition='+keep new then' continuation='more end'
 assert_tail $'⛭ edit_file path\n│ @@ -1 +1 @@\n│ '"${(r:18:)removal}"$'\n│ '"${(r:18:)continuation}"$'\n│ '"${(r:18:)addition}"$'\n╰ '"${(r:18:)continuation}"
 
+# Clipping past the safe prefix uses viewport-relative word offsets.
+sf_tui_transcript 20 3
+emphasis='fg=green,bg=darkgreen,bold'
+at=${SF_TUI_VIEWPORT_HIGHLIGHTS[(Ie)$emphasis]}
+(( at )) || fail 'clipped viewport lost word emphasis'
+assert_equal new "${SF_TUI_VIEWPORT_TEXT[SF_TUI_VIEWPORT_HIGHLIGHTS[at - 2] + 1,SF_TUI_VIEWPORT_HIGHLIGHTS[at - 1]]}"
+
+# A wide character and a tab count as cells, not source characters.
+sf_tui_reset
+sf_tui_action execution_end diff tool $'edit_file path\n@@ -1 +1 @@\n-界\told\n+界\tnew'
+view 20
+pad=${(l:9:)""}
+assert_tail $'│ -界   old'"$pad"$'\n╰ +界   new'"$pad"
+
 # Output that merely resembles a diff stays plain.
 sf_tui_reset
 sf_tui_action execution_update plain tool 'shell · run'

@@ -103,7 +103,14 @@ sf_tui_transcript() {
 
   total=$(( stable + ${#SF_TUI_LIVE_ROW_TEXT} ))
   start=$(( total > budget ? total - budget + 1 : 1 ))
-  for (( row = start; row <= total; row++ )); do
+  row=$start
+  if (( start == 1 && take )); then
+    SF_TUI_VIEWPORT_TEXT=$SF_TUI_SAFE_TEXT
+    SF_TUI_VIEWPORT_HIGHLIGHTS=( "${(@)SF_TUI_SAFE_HIGHLIGHTS}" )
+    offset=$safe_offset
+    row=$(( take + 1 ))
+  fi
+  for (( ; row <= total; row++ )); do
     if (( row <= stable )); then
       index=$(( SF_TUI_ROW_HEAD + row - 1 ))
       text=$SF_TUI_ROW_TEXT[index]
@@ -126,12 +133,11 @@ sf_tui_transcript() {
 
 # Sets reply to SPANS moved BASE characters right.
 sf_tui_shift_spans() {
-  integer base=$1 index
-  local -a parts=( ${=2} )
+  integer base=$1 start stop
+  local style
   reply=()
-  for (( index = 1; index <= ${#parts}; index += 3 )); do
-    reply+=(
-      $(( base + parts[index] )) $(( base + parts[index + 1] )) "$parts[index + 2]" )
+  for start stop style in ${=2}; do
+    reply+=( $(( base + start )) $(( base + stop )) "$style" )
   done
 }
 

@@ -86,10 +86,12 @@ sf_tui_wrap_slice() {
       (( span_head += 3 ))
     done
     for (( span = span_head; span <= ${#spans}; span += 3 )); do
-      (( spans[span] < last )) || break
-      (( spans[span + 1] >= first )) || continue
-      low=$(( spans[span] + 1 > first ? spans[span] + 1 : first ))
-      high=$(( spans[span + 1] < last ? spans[span + 1] : last ))
+      low=${spans[span]}
+      (( low < last )) || break
+      high=${spans[span + 1]}
+      (( high >= first )) || continue
+      low=$(( low + 1 > first ? low + 1 : first ))
+      (( high <= last )) || high=$last
       (( low <= high )) || continue
       projected+=( $(( prefix_length + low - first )) $(( prefix_length + high - first + 1 ))
         "$spans[span + 2]" )

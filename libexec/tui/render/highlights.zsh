@@ -497,7 +497,7 @@ sf_tui_diff_pairs() {
   done
 }
 
-# Compare each line pair independently, but launch Git only once per diff.
+# REPLY is Git's comparison of all line pairs, in one launch.
 sf_tui_diff_git() {
   local scratch index mate
   integer code=0
@@ -514,8 +514,9 @@ sf_tui_diff_git() {
       GIT_CONFIG_COUNT=0 GIT_CONFIG_PARAMETERS='' git -C "$scratch" \
       diff --no-index --no-color --no-ext-diff --no-textconv --no-prefix --text \
       --word-diff=porcelain --word-diff-regex='[[:alnum:]_]+|[[:blank:]]+|.' \
-      -- old new || code=$?
-    (( code <= 1 ))
+      -- old new >"$scratch/patch" || code=$?
+    (( code <= 1 )) || return 1
+    REPLY=$(<"$scratch/patch")
   } always {
     zf_rm -rf -- "$scratch"
   }
@@ -571,7 +572,7 @@ sf_tui_diff_word_runs() {
 }
 
 sf_tui_diff_highlight() {
-  local source=$1 line kind patch style MATCH MBEGIN MEND
+  local source=$1 line kind style REPLY MATCH MBEGIN MEND
   local -a lines=( "${(@ps:\n:)source}" ) match mbegin mend reply
   local -A pairs=() words=()
   local header='^@@ -[0-9]+(,([0-9]{1,2}))? [+][0-9]+(,([0-9]{1,2}))? @@'
@@ -590,8 +591,8 @@ sf_tui_diff_highlight() {
       done
       (( ${#pairs} <= 160 )) || break
     done
-    if (( ${#pairs} > 0 && ${#pairs} <= 160 )) && patch=$(sf_tui_diff_git 2>/dev/null); then
-      sf_tui_diff_word_runs "$patch"
+    if (( ${#pairs} > 0 && ${#pairs} <= 160 )) && sf_tui_diff_git 2>/dev/null; then
+      sf_tui_diff_word_runs "$REPLY"
     fi
   fi
 
