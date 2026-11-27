@@ -414,8 +414,8 @@ jq -e '(has("action") | not) and .state_update[0].value ==
 ' "$control" >/dev/null || fail 'decision failure did not defer'
 session=$parent_session
 
-# Stop review uses the same context budget but gates final text, not tools.
-hook="$ROOT/share/hooks/stop/review"
+# Self-review uses the same context budget but gates final text, not tools.
+hook="$ROOT/share/hooks/nudge/self_review"
 typeset stop_config='{}' final_text='Finished the requested setup.'
 typeset stop_mode stop_session="$tmp/stop.jsonl"
 session=$stop_session
@@ -430,14 +430,16 @@ stop_review() {
   hook_status=0
   SF_TEST_REQUEST="$sent" SF_TEST_MODE="$mode" \
     SHELLFISH_EXECUTABLE="$ROOT/bin/shellfish" SHELLFISH_SESSION="$session" \
-    SHELLFISH_CONFIG="{\"stop\":{\"review\":$stop_config}}" \
+    SHELLFISH_CONFIG="{\"nudge\":{\"self_review\":$stop_config}}" \
     SHELLFISH_TURN_STATE="$tmp" SHELLFISH_TURN_ID=6 \
     zsh -f "$hook/run" 3 \
     3>"$tmp/lines" >"$tmp/feedback" 2>"$tmp/user" <<<"$final_text" || hook_status=$?
   (( hook_status == 0 )) || fail 'stop review failed the turn'
 }
-typeset approved='{"answers":{"fulfilled":true,"reasonable":true,"scope":true},"reason":"Task completed reasonably."}'
-typeset denied='{"answers":{"fulfilled":false,"reasonable":true,"scope":true},"reason":"Finish the requested tests."}'
+typeset approved='{"answers":{"fulfilled":true,"reasonable":true,"scope":false},"reason":"Task completed reasonably."}'
+typeset denied='{"answers":{"fulfilled":false,"reasonable":true,"scope":false},"reason":"Finish the requested tests."}'
+typeset fulfilled_reminder="Finish the requested work or explain what prevents it."
+typeset scope_reminder="Keep the work within the user's requested scope and authorization."
 before=$(shasum <"$session")
 stop_review "$approved"
 [[ ! -s $tmp/lines && ! -s $tmp/feedback ]] || fail 'approved stop emitted model feedback or action'
@@ -450,7 +452,7 @@ jq -es '
   $context.latest_user_message.content[0].text == "run the local setup" and
   $context.recent_timeline[-2].model_content[0].text == "Setup succeeded." and
   ($context | has("target_tool_call") | not)
-' "$tmp/stop-review.jsonl" >/dev/null || fail 'stop review did not pin final text and user context'
+' "$tmp/self-review.jsonl" >/dev/null || fail 'stop review did not pin final text and user context'
 jq -e '.request.response_schema.properties.answers.required == ["fulfilled","reasonable","scope"] and
   (.request.response_schema.properties | keys) == ["answers","reason"]' "$sent" >/dev/null ||
   fail 'stop review did not request its question schema'
@@ -458,12 +460,17 @@ assert_equal "$before" "$(shasum <"$session")" 'stop review changed the parent s
 stop_review "$denied"
 jq -e '.action == "deny" and .reason == "Finish the requested tests."' "$tmp/lines" >/dev/null ||
   fail 'stop review did not deny unfinished work'
-assert_equal 'Finish the requested tests.' "$(<"$tmp/feedback")" 'stop denial omitted model feedback'
-stop_review "$denied"
+assert_equal "$fulfilled_reminder"$'\nFinish the requested tests.' "$(<"$tmp/feedback")" \
+  'stop denial did not send just the blocking question reminder before the reason'
+stop_review '{"answers":{"fulfilled":false,"reasonable":true,"scope":true},"reason":"Fix the review findings."}'
+jq -e '.action == "deny" and .reason == "Fix the review findings."' "$tmp/lines" >/dev/null ||
+  fail 'stop review did not deny failed questions of both polarities'
+assert_equal "$fulfilled_reminder"$'\n'"$scope_reminder"$'\nFix the review findings.' "$(<"$tmp/feedback")" \
+  'stop denial did not send both blocking question reminders'
 stop_review "$denied"
 [[ ! -s $tmp/lines && ! -e $sent ]] || fail 'stop review exceeded its rejection limit'
 grep -Fq 'Rejection limit (2) reached' "$tmp/user" || fail 'rejection limit was hidden'
-rm -f "$tmp/stop-review-rejections"
+rm -f "$tmp/self-review-rejections"
 
 # Exercise the bundled hook through the public turn boundary, including a fresh
 # retry allowance for the next turn in the same session.
@@ -478,11 +485,14 @@ for stop_mode in first second; do
   jq -es '
     [ .[] | select(.type == "assistant") ] | length == 3
   ' "$tmp/stop-stream" >/dev/null || fail 'bundled stop review did not bound continuations per turn'
-  jq -es '
+  jq -es --arg reminder "$fulfilled_reminder" '
     [ .[] | select(.type == "hook_result" and .action == "deny") ] |
     length == 2 and all(.[]; .reason == "Finish the requested tests." and
-      (.model_content[0].text | contains("Finish the requested tests.")))
+      (.model_content[0].text | contains($reminder + "\nFinish the requested tests.")))
   ' "$tmp/stop-stream" >/dev/null || fail 'bundled stop review did not persist rejection feedback'
+  jq -e --arg reminder "$fulfilled_reminder" '
+    .messages[-1].content[0].text | contains($reminder + "\nFinish the requested tests.")
+  ' "$sent" >/dev/null || fail 'bundled stop review did not send feedback on continuation'
 done
 session=$stop_session
 
@@ -503,7 +513,9 @@ for stop_mode in failure '{}' '{"answers":{"complete":1},"reason":"bad"}' \
 done
 for stop_config in '{"model":"missing"}' '{"max_rejections":0}' '{"max_input_kb":0}' \
     '{"allow_threshold":0.5}' '{"questions":{}}' '{"questions":null}' \
-    '{"questions":{"complete":{"instructions":4}}}' '{"unknown":true}'; do
+    '{"questions":{"complete":{"instructions":4}}}' \
+    '{"questions":{"complete":{"instructions":"Complete?","block_on":"false"}}}' \
+    '{"questions":{"complete":{"instructions":"Complete?","reminder":false}}}' '{"unknown":true}'; do
   stop_review "$approved"
   [[ ! -s $tmp/lines && ! -e $sent ]] || fail "invalid stop configuration called provider: $stop_config"
 done
@@ -512,16 +524,31 @@ stop_review "$approved"
 [[ ! -e $sent ]] || fail 'oversized pinned stop context called provider'
 grep -Fq 'context exceeds' "$tmp/user" || fail 'stop context budget failure was hidden'
 
-stop_config='{"decision_model":"decider","allow_threshold":0.6,"questions":{"complete":{"instructions":"Is the task complete?"}}}'
-stop_review '{"model":"d","answers":{"complete":{"type":"predicate","probability":0.7}}}'
-[[ ! -s $tmp/lines ]] || fail 'stop decision ignored configured threshold'
-jq -e '.questions == {complete:{type:"predicate",instructions:"Is the task complete?"}} and
+stop_config='{"decision_model":"decider","allow_threshold":0.6,"questions":{
+  "complete":{"instructions":"Is the task complete?"},
+  "overreach":{"instructions":"Did the agent exceed its scope?","block_on":true,"reminder":"Stay in scope."}}}'
+stop_decision() {
+  stop_review "$(jq -cn --argjson complete "$1" --argjson overreach "$2" '
+    {model:"d",answers:{complete:{type:"predicate",probability:$complete},overreach:$overreach}}
+  ')"
+}
+stop_decision 0.6 '{"type":"predicate","probability":0.4}'
+[[ ! -s $tmp/lines && ! -s $tmp/feedback ]] || fail 'stop decision blocked at the passing threshold'
+jq -e '.questions == {complete:{type:"predicate",instructions:"Is the task complete?"},
+    overreach:{type:"predicate",instructions:"Did the agent exceed its scope?"}} and
   .input[0].data.target_assistant_text == "Finished the requested setup.\n"' "$sent" >/dev/null ||
   fail 'stop decision sent the wrong policy or target'
-stop_review '{"model":"d","answers":{"complete":{"type":"predicate","probability":0.5}}}'
-jq -e '.action == "deny" and (.reason | contains("50%"))' "$tmp/lines" >/dev/null ||
-  fail 'stop decision allowed a failed question'
-stop_review '{"model":"d","answers":{"complete":{"type":"refusal"}}}'
+stop_decision 0.6 '{"type":"refusal"}'
 [[ ! -s $tmp/lines ]] || fail 'stop decision refusal blocked completion'
 grep -Fq 'Review failed' "$tmp/user" || fail 'stop decision refusal was hidden'
-rm -f "$tmp/stop-review-rejections"
+stop_decision 0.5 '{"type":"predicate","probability":0.4}'
+jq -e '.action == "deny" and (.reason | contains("50%"))' "$tmp/lines" >/dev/null ||
+  fail 'stop decision allowed a failed question'
+assert_equal "$(jq -r .reason "$tmp/lines")" "$(<"$tmp/feedback")" \
+  'stop decision with no blocking reminder did not send just the reason'
+stop_decision 0.6 '{"type":"predicate","probability":0.9}'
+jq -e '.action == "deny" and (.reason | contains("overreach: 10%"))' "$tmp/lines" >/dev/null ||
+  fail 'stop decision did not apply the threshold to the passing answer'
+assert_equal "Stay in scope."$'\n'"$(jq -r .reason "$tmp/lines")" "$(<"$tmp/feedback")" \
+  'stop decision did not send the blocking reminder'
+rm -f "$tmp/self-review-rejections"

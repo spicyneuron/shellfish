@@ -3,7 +3,7 @@
 emulate -R zsh
 setopt extended_glob no_aliases no_multios pipe_fail
 
-local config policy system header context target settings response content result reason
+local config policy system header context target settings response content result reason feedback
 local model decision_model='' counter selection name value
 local allow_threshold=0.8
 integer max_input_kb=24 max_rejections=2 rejected=0
@@ -21,7 +21,7 @@ config=$(jq -ce '
   def name: type == "string" and
     test("^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$");
   def positive: type == "number" and . == floor and . > 0;
-  (.stop // {}) | if has("review") then .review else {} end |
+  (.nudge // {}) | if has("self_review") then .self_review else {} end |
   select(type == "object" and
     (keys - ["model","decision_model","allow_threshold","max_input_kb","max_rejections","questions"]) == [] and
     ((has("model") and has("decision_model")) | not) and
@@ -44,7 +44,7 @@ while read -r name value; do
   esac
 done <<<"$selection"
 
-counter="$SHELLFISH_TURN_STATE/stop-review-rejections"
+counter="$SHELLFISH_TURN_STATE/self-review-rejections"
 if [[ -e $counter ]]; then
   rejected=$(<"$counter")
   [[ $rejected == <0-> ]] || failed_review 'Invalid rejection counter.'
@@ -55,14 +55,16 @@ policy=$(jq -ce --argjson config "$config" '
   if $config | has("questions") then .questions=$config.questions else . end |
   select(.questions | type == "object" and length > 0 and all(to_entries[];
     (.key | test("^[A-Za-z][A-Za-z0-9_]*$")) and
-    (.value | type == "object" and (keys - ["instructions","criteria"]) == [] and
+    (.value | type == "object" and (keys - ["instructions","criteria","block_on","reminder"]) == [] and
       (.instructions | type == "string" and length > 0) and
+      ((has("block_on") | not) or (.block_on | type == "boolean")) and
+      ((has("reminder") | not) or (.reminder | type == "string" and length > 0)) and
       ((has("criteria") | not) or (.criteria | type == "object" and
         (keys - ["true","false"]) == [] and all(.[]; type == "string"))))))
 ' "${0:A:h}/policy.json" 2>/dev/null) || failed_review 'Invalid review questions.'
 system=$(jq -r '
-  .preamble + "\n\n" + (.questions | tojson) +
-  "\n\nAnswer every question with a boolean. Return only JSON with exactly two fields: answers (an object keyed like the questions) and reason (a nonempty explanation, at most 1000 characters, without control characters). Explain any failed question so the agent can correct its work."
+  .preamble + "\n\n" + (.questions | map_values(del(.reminder)) | tojson) +
+  "\n\nAnswer every question with a boolean. Return only JSON with exactly two fields: answers (an object keyed like the questions) and reason (a nonempty explanation, at most 1000 characters, without control characters). A question blocks if its answer matches block_on (false if omitted). Explain any blocking question so the agent can correct its work."
 ' <<<"$policy") || failed_review 'Could not prepare review instructions.'
 target=$(jq -Rsc '{target_assistant_text:.}') || failed_review 'Could not read final assistant text.'
 context=$(jq -ces --argjson target "$target" --arg system "$system" \
@@ -77,16 +79,21 @@ esac
 if [[ -n $decision_model ]]; then
   result=$(jq -c --argjson context "$context" '
     {system:.preamble,input:[{type:"json",data:$context}],
-      questions:(.questions | map_values(. + {type:"predicate"}))}
+      questions:(.questions | map_values(del(.block_on,.reminder) + {type:"predicate"}))}
   ' <<<"$policy" | "$SHELLFISH_EXECUTABLE" decide -m "$decision_model" 2>/dev/null) ||
     failed_review 'Decision request failed.'
   result=$(jq -ce --argjson policy "$policy" --argjson threshold "$allow_threshold" '
     select((.answers | keys) == ($policy.questions | keys) and
       all(.answers[]; .type == "predicate" and
         (.probability | type == "number" and . >= 0 and . <= 1))) |
-    {approved:all(.answers[]; .probability >= $threshold),
-      reason:(.answers | to_entries | map(
-        "\(.key): \(.value.probability * 100 | round)% likely satisfied") | join("; "))}
+    [.answers | to_entries[] | .key as $name | .value.probability as $yes |
+      if $policy.questions[$name].block_on then
+        # Compare the sum to avoid subtracting a probability at the threshold.
+        {name:$name, pass:($yes + $threshold <= 1), likelihood:(1 - $yes)}
+      else {name:$name, pass:($yes >= $threshold), likelihood:$yes} end
+    ] as $checks |
+    {blocked:[$checks[] | select(.pass | not) | .name],
+      reason:($checks | map("\(.name): \(.likelihood * 100 | round)% likely satisfied") | join("; "))}
   ' <<<"$result" 2>/dev/null) || failed_review 'Invalid decision or refused question.'
 else
   settings=$(jq -cn --argjson policy "$policy" '
@@ -105,9 +112,9 @@ else
       .profile |= (.system=[{text:$system}] | .tools=[] | .hooks=[] |
         .sandbox={enabled:false,tools:{}})),
     {type:"user",content:[{type:"text",text:($context | tojson)}]}
-  ' >"$SHELLFISH_TURN_STATE/stop-review.jsonl" || failed_review 'Could not construct review session.'
+  ' >"$SHELLFISH_TURN_STATE/self-review.jsonl" || failed_review 'Could not construct review session.'
   response=$("$SHELLFISH_EXECUTABLE" request "${overrides[@]}" \
-    <"$SHELLFISH_TURN_STATE/stop-review.jsonl" 2>/dev/null) || failed_review 'Provider request failed.'
+    <"$SHELLFISH_TURN_STATE/self-review.jsonl" 2>/dev/null) || failed_review 'Provider request failed.'
   content=$(jq -er '
     select(.type == "assistant" and .stop == "end" and
       ([.content[] | select(.type == "text")] | length) == 1) |
@@ -117,16 +124,20 @@ else
     $content | fromjson | select(type == "object" and keys == ["answers","reason"] and
       (.answers | type == "object" and keys == ($policy.questions | keys) and all(.[]; type == "boolean")) and
       (.reason | type == "string" and length > 0 and length <= 1000 and (test("[[:cntrl:]]") | not))) |
-    {approved:all(.answers[]; .),reason}
+    {blocked:[.answers | to_entries[] |
+      select(.value == ($policy.questions[.key].block_on // false)) | .key],reason}
   ' 2>/dev/null) || failed_review 'Invalid classification.'
 fi
 
 reason=$(jq -r .reason <<<"$result") || failed_review 'Could not read review reason.'
-if jq -e .approved <<<"$result" >/dev/null; then
+if jq -e '.blocked == []' <<<"$result" >/dev/null; then
   rm -f -- "$counter"
   finish_review "Approved: $reason"
 fi
+feedback=$(jq -er --argjson policy "$policy" '
+  [.blocked[] | $policy.questions[.].reminder // empty] + [.reason] | join("\n")
+' <<<"$result") || failed_review 'Could not prepare review feedback.'
 print -r -- $(( rejected + 1 )) >"$counter" || failed_review 'Could not record rejection count.'
-print -r -- "$reason"
+print -r -- "$feedback"
 jq -cn --arg reason "$reason" '{action:"deny",reason:$reason}' >&3 || exit 1
 finish_review "Denied: $reason"

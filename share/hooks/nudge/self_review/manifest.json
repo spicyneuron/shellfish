@@ -1,0 +1,5 @@
+{
+  "on": "stop",
+  "user_text": "**Self-review**\n${output.stderr}",
+  "user_preview_lines": "full"
+}

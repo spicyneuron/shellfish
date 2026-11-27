@@ -1,5 +1,0 @@
-{
-  "on": "stop",
-  "user_text": "**Stop review**\n${output.stderr}",
-  "user_preview_lines": "full"
-}
